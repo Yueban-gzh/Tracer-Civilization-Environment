@@ -1,0 +1,114 @@
+# A - MapEngine 模块设计与接口（定稿即按此实现）
+> 本文档定义 **MapEngine（A）** 的模块边界、需实现的数据结构、以及对外部（主要是主流程）的接口规格。
+> 与 [设计与接口.md](设计与接口.md) 一致；id 类型等若阶段 0 有变更，仅改本节类型定义即可。
+---
+## 一、模块划分与职责
+| 模块           | 职责                                                                                                                                  | 课设数据结构落点                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **A - MapEngine** | 管理游戏地图：生成一个多层的、有向无环图（DAG）结构的地图；提供按层查询节点、查询前后置节点、验证路径可达性等功能；核心是图的构建与遍历。 | **图**：存储地图节点及连接关系。**BFS/DFS**：用于路径可达性分析或寻找最短路径（用于演示）。 |
+
+**依赖**：A 模块**不依赖**其他任何业务模块（B、C、D、E）。地图的节点类型（战斗、事件等）和内容ID（如怪物ID、事件ID）仅作为数据载体，由主流程在构建地图时传入或由A内部根据常量生成。A本身不关心这些ID的具体含义。
+
+## 二、公共类型与数据结构
+以下类型在 A 的实现中**直接使用**；部分类型与全团队共用，部分为 A 模块内部定义。
+
+### 2.1 公共标识类型（与团队约定一致）
+```cpp
+// 节点类型枚举，对应界面上的不同图标和交互
+// 定义在公共头文件（如 include/Common/Types.hpp）中
+enum class NodeType {
+    Battle,   // 战斗
+    Event,    // 事件
+    Rest,     // 休息
+    Shop,     // 商店
+    Boss      // BOSS战（战斗的一种特殊形式，单独列出）
+};
+// 节点唯一标识符，由主流程或地图生成时分配
+// 示例："1-2" 表示第1层第2个节点
+using NodeId = std::string; // 或 int 类型，团队统一即可
+// 内容ID：指向具体战斗的怪物组ID、具体事件的ID等
+// 与E模块定义的ID类型保持一致
+using ContentId = std::string; // 示例："monster_group_1", "event_1"
+
+2.2 A 模块内部数据结构
+（1）地图节点（MapNode）
+地图由多个节点构成。每个节点包含其在图中的静态信息。
+struct MapNode {
+    NodeId id;                 // 节点唯一标识，如 "1-2"
+    NodeType type;             // 节点类型（战斗、事件、休息等）
+    ContentId contentId;       // 内容ID，主流程用于加载具体内容
+    int layer;                 // 节点所在的层数（从0/1开始，团队约定）
+    std::vector<NodeId> prevNodes; // 前置节点ID列表（从哪些节点可到达当前节点）
+    std::vector<NodeId> nextNodes; // 后置节点ID列表（当前节点可到达哪些节点）
+    // 可选：节点坐标（用于UI展示，若UI层不负责布局可在此记录）
+    // float x, y;
+};
+（2）地图数据（MapData）
+整个地图的容器。这是 A 模块的核心数据结构，由 init_map 生成并持有。
+class MapData {
+private:
+    std::unordered_map<NodeId, MapNode> nodes_;        // 哈希表：通过NodeId快速查找节点
+    std::unordered_map<int, std::vector<NodeId>> layers_; // 按层索引：快速获取某层所有节点ID
+    // 其他内部维护成员...
+public:
+    // 图的构建、查询相关接口声明...
+};
+课设落点说明：
+图（Graph）：nodes_ 中存储的 MapNode 及其内部的 prevNodes/nextNodes 共同构成有向无环图（DAG）；
+哈希（Hash）：nodes_ 使用 std::unordered_map（或std::map树结构）实现 NodeId 的快速查找，是查找数据结构的核心应用。
+三、A 对外接口（函数规格）
+以下为 A 模块必须实现的对外 API。入参 / 出参类型为逻辑描述，实现时替换为实际 C++ 类型。
+接口	签名（逻辑）	行为
+init_map（初始化地图）	void init_map(int layers, int nodes_per_layer, const std::vector<NodeType>& layer_content_types)	核心接口。生成layers层、每层约nodes_per_layer个节点的有向无环图（DAG）。1. 生成节点：创建 MapNode 并分配唯一 NodeId，按layer_content_types设置 type 和 contentId；2. 构建连接：相邻层间随机建连接，一个节点连下一层 1-2 个节点，保证起点到 Boss 节点可达；3. 建立索引：填充 nodes_和 layers_等内部数据结构。
+get_nodes_at_layer（按层查节点）	std::vector<MapNode> get_nodes_at_layer(int layer) const	返回指定layer的所有节点完整信息（MapNode），主流程用于 UI 渲染当前层节点。
+get_node_by_id（按 ID 查节点）	MapNode get_node_by_id(NodeId node_id) const	返回指定node_id的节点完整信息，主流程用于玩家选中节点后加载详情（类型、内容 ID 等）。
+get_next_nodes（查后置节点）	std::vector<MapNode> get_next_nodes(NodeId node_id) const	返回从node_id可到达的所有后置节点，主流程用于玩家通关当前节点后解锁下一层节点。
+get_prev_nodes（查前置节点）	std::vector<MapNode> get_prev_nodes(NodeId node_id) const	返回可到达node_id的所有前置节点，可用于 UI 绘制路径或路径验证。
+is_reachable（验证路径可达性）	bool is_reachable(NodeId from_node, NodeId to_node) const	BFS/DFS 应用。判断是否存在从from_node到to_node的有效路径，主流程用于验证起点到 Boss 可达性，或特殊事件 / 遗物效果（如传送到可达节点）。
+find_shortest_path（找最短路径）	std::vector<NodeId> find_shortest_path(NodeId from_node, NodeId to_node) const	BFS 应用。返回从from_node到to_node的最短路径（节点 ID 列表），用于演示 BFS 算法或 UI 绘制引导线。
+find_all_paths_to_boss（找所有通 Boss 路径）	std::vector<std::vector<NodeId>> find_all_paths_to_boss() const	DFS 应用。找到从起点（第一层节点）到终点（最后一层 Boss 节点）的所有可能路径，用于演示 DFS 算法。
+get_map_snapshot（获取地图快照）	MapSnapshot get_map_snapshot() const	返回当前地图的完整快照，用于 UI 一次性绘制整个地图；MapSnapshot 定义为包含所有节点及连接关系的结构。
+3.1 地图快照结构（MapSnapshot）
+struct MapSnapshot {
+    // 所有地图节点信息
+    std::vector<MapNode> all_nodes;
+    // 地图所有连接关系（边）
+    struct Edge {
+        NodeId from;  // 起始节点ID
+        NodeId to;    // 目标节点ID
+    };
+    std::vector<Edge> all_edges;
+    // 地图总层数
+    int total_layers;
+};
+3.2 与规则条文对照
+地图结构：多层有向无环图（DAG），每一层多个节点，玩家仅能在相邻层间沿固定方向前进；
+节点类型：节点分为战斗、事件、休息、商店和 Boss 五种，对应不同 UI 图标与交互；
+路径选择：玩家通关当前节点后，解锁并选择其一个 / 多个后置节点继续前进，选择具备策略性；
+Boss 战：最后一层为唯一 Boss 节点，击败 Boss 即通关当前幕。
+四、A 依赖其他模块的接口
+A 模块无任何外部依赖，不调用 B、C、D、E 模块的任何接口。NodeType和ContentId仅为与团队约定的透明数据载体，地图的结构生成、连接关系构建完全由 A 自身逻辑控制。
+五、文件与符号归属
+内容	放置位置
+公共类型 (NodeType, NodeId, ContentId)	include/Common/Types.hpp（与团队协商确认，统一存放）
+A 模块：MapNode, MapSnapshot 结构体声明	include/MapEngine/MapEngine.hpp
+A 模块：MapEngine 类及对外接口声明	include/MapEngine/MapEngine.hpp
+A 模块：所有接口的具体实现	src/MapEngine/MapEngine.cpp
+A 模块内部辅助结构 / 算法（如 BFS/DFS 工具）	src/MapEngine/ 下的独立 .cpp/.hpp 文件（如 MapAlgorithms.cpp）
+六、小结：实现清单（阶段 1 目标）
+数据结构实现
+定义MapNode结构体，包含 id、type、contentId、layer、prevNodes/nextNodes 核心字段；
+设计MapData类，内部通过std::unordered_map<NodeId, MapNode>存储节点，std::unordered_map<int, std::vector<NodeId>>建立层索引；
+定义MapSnapshot结构体，包含全量节点、边列表、总层数，用于地图快照导出。
+核心接口实现
+init_map：按规则生成 DAG 地图，保证起点到 Boss 节点的可达性；
+基础查询接口：get_nodes_at_layer/get_node_by_id/get_next_nodes/get_prev_nodes；
+地图快照接口：get_map_snapshot，支持 UI 全量绘制地图。
+算法演示接口（课设报告专用）
+is_reachable：基于 BFS/DFS 实现路径可达性验证；
+find_shortest_path：基于 BFS 实现最短路径查找；
+find_all_paths_to_boss：基于 DFS 实现全路径查找。
+测试与验证
+编写调试 / 测试代码，验证地图生成符合DAG 无环特性；
+验证任意生成的地图中，起点到 Boss 节点必然存在有效路径；
+验证 BFS/DFS 算法正确性，可打印路径 / 结果供课设报告使用。
