@@ -28,18 +28,21 @@
 ### 卡牌表 `cards.json`
 
 - **格式**：JSON 数组，每项为一张卡牌对象。
-- **字段**：
+- **字段**（与 BC 模块设计文档一致，词条由 E 提供、效果由 C 的 id→效果函数实现）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| id | string | 是 | 唯一 id，如 `"card_001"` |
+| id | string | 是 | 唯一 id；已升级用另一条 id，如 `"card_001+"` |
 | name | string | 是 | 卡牌名称 |
-| cardType | string | 是 | `"attack"` / `"defend"` / `"skill"` / `"support"` |
-| cost | int | 是 | 消耗墨力 |
+| cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒） |
+| cost | int | 是 | 消耗墨力（特殊值如 -1 表示 X，由 B/C 约定） |
 | rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"` |
-| description | string | 是 | 效果说明 + 使用此牌时的文化行为描述 |
-| effectType | string | 否 | 如 `"damage"` / `"block"` / `"heal"` |
-| effectValue | int | 否 | 数值（伤害/护盾/治疗等） |
+| description | string | 是 | 展示用描述 |
+| exhaust | bool | 是 | 词条：消耗（打出后进消耗堆） |
+| ethereal | bool | 是 | 词条：虚无（回合末未打出则进消耗堆） |
+| innate | bool | 是 | 词条：固有（首回合必入手牌） |
+| retain | bool | 是 | 词条：保留（回合末不弃掉） |
+| unplayable | bool | 是 | 词条：不能被打出 |
 
 - **示例一条**：
 
@@ -47,12 +50,15 @@
 {
   "id": "card_001",
   "name": "与子同袍",
-  "cardType": "attack",
+  "cardType": "Attack",
   "cost": 1,
   "rarity": "common",
   "description": "造成8点伤害。使用此牌时，吟诵《秦风·无衣》，与幻境中的同袍之志共鸣，挥出刚劲一击。",
-  "effectType": "damage",
-  "effectValue": 8
+  "exhaust": false,
+  "ethereal": false,
+  "innate": false,
+  "retain": false,
+  "unplayable": false
 }
 ```
 

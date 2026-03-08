@@ -39,12 +39,13 @@ const MonsterData* get_monster_by_id(MonsterId id) {
 
 namespace DataLayer {
 
-// JSON 字符串到 tce 枚举的映射（cardType/rarity 与 DataLayer.hpp 一致）
+// cardType 直接按 DataLayer.hpp 枚举名解析，无额外映射
 static tce::CardType card_type_from_string(const std::string& s) {
-    if (s == "attack") return tce::CardType::Attack;
-    if (s == "defend") return tce::CardType::Skill;
-    if (s == "skill")  return tce::CardType::Skill;
-    if (s == "support") return tce::CardType::Power;
+    if (s == "Attack") return tce::CardType::Attack;
+    if (s == "Skill")  return tce::CardType::Skill;
+    if (s == "Power")  return tce::CardType::Power;
+    if (s == "Status") return tce::CardType::Status;
+    if (s == "Curse")  return tce::CardType::Curse;
     return tce::CardType::Attack;
 }
 static tce::Rarity rarity_from_string(const std::string& s) {

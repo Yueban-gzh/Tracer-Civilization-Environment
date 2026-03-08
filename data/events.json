@@ -15,7 +15,7 @@
     "description": "你静心研读，文韵与残卷共鸣，获得了一丝文化遗卷之力。",
     "options": [
       { "text": "获得感悟", "result": { "type": "heal", "value": 10 } },
-      { "text": "领悟攻击要义", "result": { "type": "card_reward", "value": "attack" } }
+      { "text": "领悟攻击要义", "result": { "type": "card_reward", "value": 1 } }
     ]
   },
   {
@@ -41,8 +41,35 @@
     "title": "墨迹未干",
     "description": "一方石台上有一幅未干的字迹，似在等人续写。",
     "options": [
-      { "text": "提笔续写一句", "result": { "type": "card_reward", "value": "skill" } },
+      { "text": "提笔续写一句", "result": { "type": "card_reward", "value": 1 } },
       { "text": "静观其变", "result": { "type": "gold", "value": 10 } }
+    ]
+  },
+  {
+    "id": "event_004",
+    "title": "古碑问心",
+    "description": "一座古碑立于道旁，碑文斑驳，唯「慎独」二字可辨。",
+    "options": [
+      { "text": "默念碑文，静心体悟", "result": { "type": "heal", "value": 8 } },
+      { "text": "拓下二字带走", "next": "event_004a" },
+      { "text": "匆匆而过", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_004a",
+    "title": "古碑问心·拓本",
+    "description": "拓本入手，文韵微动，你获得了一点墨力与银两。",
+    "options": [
+      { "text": "收好拓本", "result": { "type": "gold", "value": 20 } }
+    ]
+  },
+  {
+    "id": "event_005",
+    "title": "异化书灵",
+    "description": "一只被异化的书灵拦路，驱散后可获得其残留文韵。",
+    "options": [
+      { "text": "以文韵驱散", "result": { "type": "card_reward", "value": 1 } },
+      { "text": "绕道而行", "result": { "type": "none", "value": 0 } }
     ]
   }
 ]
