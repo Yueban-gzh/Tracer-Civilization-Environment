@@ -1,0 +1,48 @@
+[
+  {
+    "id": "event_001",
+    "title": "拾遗卷",
+    "description": "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+    "options": [
+      { "text": "小心拂去尘埃，尝试解读", "next": "event_001a" },
+      { "text": "将残卷收好，留待日后", "result": { "type": "gold", "value": 15 } },
+      { "text": "置之不理，继续前行", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_001a",
+    "title": "拾遗卷·解读",
+    "description": "你静心研读，文韵与残卷共鸣，获得了一丝文化遗卷之力。",
+    "options": [
+      { "text": "获得感悟", "result": { "type": "heal", "value": 10 } },
+      { "text": "领悟攻击要义", "result": { "type": "card_reward", "value": "attack" } }
+    ]
+  },
+  {
+    "id": "event_002",
+    "title": "义仓赈济",
+    "description": "路遇义仓，乡民正在分发粮草。管事者望向你。",
+    "options": [
+      { "text": "捐出部分银两相助", "next": "event_002a" },
+      { "text": "婉拒离开", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_002a",
+    "title": "义仓赈济·善果",
+    "description": "乡民感念你的义举，赠你些许盘缠与干粮。",
+    "options": [
+      { "text": "收下银两", "result": { "type": "gold", "value": 25 } },
+      { "text": "只取干粮，恢复精神", "result": { "type": "heal", "value": 15 } }
+    ]
+  },
+  {
+    "id": "event_003",
+    "title": "墨迹未干",
+    "description": "一方石台上有一幅未干的字迹，似在等人续写。",
+    "options": [
+      { "text": "提笔续写一句", "result": { "type": "card_reward", "value": "skill" } },
+      { "text": "静观其变", "result": { "type": "gold", "value": 10 } }
+    ]
+  }
+]
