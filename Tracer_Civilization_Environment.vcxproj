@@ -135,6 +135,8 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
+    <ClCompile Include="src\CardSystem\CardSystem.cpp" />
+    <ClCompile Include="src\BattleEngine\BattleEngine.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
