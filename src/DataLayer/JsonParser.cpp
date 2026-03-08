@@ -1,5 +1,11 @@
 /**
  * 简易 JSON 解析实现
+ *
+ * 课设数据结构：
+ * - get_key：哈希表按 key 查找（find），O(1) 平均；
+ * - parse_array：顺序表尾插（push_back）存储数组元素；
+ * - parse_object：哈希表插入（obj[key]=value）存储键值对；
+ * - parse_value 等递归调用：等价于借助系统栈实现递归下降解析。
  */
 
 #include "DataLayer/JsonParser.h"
@@ -10,6 +16,7 @@
 
 namespace DataLayer {
 
+// 哈希查找：在 JSON 对象（哈希表 obj）中按 key 查找，找不到返回 nullptr
 const JsonValue* JsonValue::get_key(const std::string& key) const {
     if (type != Type::Object) return nullptr;
     auto it = obj.find(key);
@@ -36,7 +43,7 @@ bool JsonValue::as_bool() const {
     return false;
 }
 
-// ----- 递归下降解析 -----
+// ----- 递归下降解析（递归即栈：每次 parse_value/parse_array/parse_object 调用压栈，返回时出栈）-----
 static std::string read_file_utf8(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return "";
@@ -85,6 +92,7 @@ static JsonValue parse_number(const std::string& s, size_t& i) {
     return v;
 }
 
+// 解析 JSON 数组 → 用顺序表 arr 存储，逐元素 push_back（顺序表尾插）
 static JsonValue parse_array(const std::string& s, size_t& i) {
     JsonValue v;
     v.type = JsonValue::Type::Array;
@@ -93,7 +101,7 @@ static JsonValue parse_array(const std::string& s, size_t& i) {
     i = skip_ws(s, i);
     if (i < s.size() && s[i] == ']') { ++i; return v; }
     while (i < s.size()) {
-        v.arr.push_back(parse_value(s, i));
+        v.arr.push_back(parse_value(s, i));  // 顺序表尾插，保持元素顺序
         i = skip_ws(s, i);
         if (i < s.size() && s[i] == ',') { ++i; i = skip_ws(s, i); continue; }
         if (i < s.size() && s[i] == ']') { ++i; break; }
@@ -102,6 +110,7 @@ static JsonValue parse_array(const std::string& s, size_t& i) {
     return v;
 }
 
+// 解析 JSON 对象 → 用哈希表 obj 存储键值对，按 key 插入（便于后续 get_key 查找）
 static JsonValue parse_object(const std::string& s, size_t& i) {
     JsonValue v;
     v.type = JsonValue::Type::Object;
@@ -114,7 +123,7 @@ static JsonValue parse_object(const std::string& s, size_t& i) {
         i = skip_ws(s, i);
         if (i < s.size() && s[i] == ':') ++i;
         i = skip_ws(s, i);
-        v.obj[key] = parse_value(s, i);
+        v.obj[key] = parse_value(s, i);  // 哈希表插入：key 为 JSON 键名
         i = skip_ws(s, i);
         if (i < s.size() && s[i] == ',') { ++i; i = skip_ws(s, i); continue; }
         if (i < s.size() && s[i] == '}') { ++i; break; }
@@ -123,6 +132,7 @@ static JsonValue parse_object(const std::string& s, size_t& i) {
     return v;
 }
 
+// 递归下降入口：根据首字符分发到 parse_string/parse_array/parse_object/parse_number 等（递归调用栈）
 static JsonValue parse_value(const std::string& s, size_t& i) {
     i = skip_ws(s, i);
     if (i >= s.size()) return JsonValue();
