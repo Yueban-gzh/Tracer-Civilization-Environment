@@ -1,5 +1,6 @@
 # Visual Studio
 .vs/
+*.sln
 *.user
 *.suo
 *.userosscache
