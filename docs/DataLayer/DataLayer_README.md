@@ -106,16 +106,17 @@
 
 ## 三、数据类型（C++）
 
-定义在 `include/DataLayer/DataTypes.h`，与上表一一对应：
+- **卡牌/怪物**：定义在 `include/DataLayer/DataLayer.hpp` 命名空间 `tce` 下，与 B/C 共用。
+- **事件与 id 类型**：定义在 `include/DataLayer/DataTypes.h` 命名空间 `DataLayer` 下。
 
 | 类型 | 说明 |
 |------|------|
-| `Card` | id, name, cardType, cost, rarity, description, effectType, effectValue |
-| `Monster` | id, name, isBoss, maxHp, intentPattern, attackDamage, blockAmount |
+| `tce::CardData` | id, name, cardType, cost, rarity, description, exhaust, ethereal, innate, retain, unplayable |
+| `tce::MonsterData` | id, name, type (Normal/Elite/Boss), maxHp |
 | `Event` | id, title, description, options (`vector<EventOption>`) |
 | `EventOption` | text, next, result (`EventResult`) |
 | `EventResult` | type, value |
-| `CardId` / `MonsterId` / `EventId` | 均为 `std::string` |
+| `CardId` / `MonsterId` / `EventId` | 均为 `std::string`（DataLayer 中与 tce 中一致） |
 
 ---
 
@@ -137,8 +138,8 @@
 
 | 方法 | 返回值 | 说明 |
 |------|--------|------|
-| `const Card* get_card_by_id(const CardId& id) const` | 指针或 nullptr | id 不存在时返回 nullptr |
-| `const Monster* get_monster_by_id(const MonsterId& id) const` | 同上 | |
+| `const tce::CardData* get_card_by_id(const CardId& id) const` | 指针或 nullptr | id 不存在时返回 nullptr |
+| `const tce::MonsterData* get_monster_by_id(const MonsterId& id) const` | 同上 | |
 | `const Event* get_event_by_id(const EventId& id) const` | 同上 | |
 
 返回的是内部缓存的只读指针，调用方不要修改指向内容。
@@ -167,9 +168,9 @@ if (!data.load_cards(".") || !data.load_monsters(".") || !data.load_events("."))
     return -1;
 
 // 查找
-const Card* c = data.get_card_by_id("card_001");
+const tce::CardData* c = data.get_card_by_id("card_001");
 if (c) { /* c->name, c->cost, c->description ... */ }
-const Monster* m = data.get_monster_by_id("monster_boss_1");
+const tce::MonsterData* m = data.get_monster_by_id("monster_boss_1");
 const Event* e = data.get_event_by_id("event_001");
 
 // 按稀有度排序卡牌 id
@@ -181,7 +182,7 @@ ids = data.sort_cards_by_rarity(ids);
 
 ## 六、实现要点
 
-- **存储**：`std::unordered_map<Id, T>` 存卡牌/怪物/事件，按 id 查找平均 O(1)。
+- **存储**：卡牌/怪物数据存放在命名空间 `tce` 下的 `s_cards`、`s_monsters`（`std::unordered_map`），由 `load_cards`/`load_monsters` 填充，供 DataLayer 与 B/C 共用；事件表存放在 `DataLayerImpl::events_`。按 id 查找平均 O(1)。
 - **JSON**：自实现简易解析（`JsonParser.cpp`），无第三方库，仅支持当前 data 所用格式。
 - **编码**：文件按 UTF-8 读写；Windows 控制台需在程序开头设置 `SetConsoleOutputCP(65001)` 才能正确显示中文。
 

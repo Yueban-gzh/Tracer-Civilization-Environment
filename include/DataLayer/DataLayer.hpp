@@ -1,5 +1,10 @@
 /**
  * 数据层（E）：卡牌/怪物静态数据，供 B、C 只读使用
+ *
+ * - CardData / MonsterData 与 docs/BC模块设计与接口.md 一致，为唯一数据源（无冗余副本）。
+ * - 效果不由 E 提供（C 用卡牌 id→效果函数）；意图/伤害/格挡不由 E 提供（B 用怪物 id→行为函数）。
+ * - 实现与 load 在 DataLayer.cpp：主流程调用 DataLayerImpl::load_cards/load_monsters 直接填充本命名空间存储，
+ *   get_card_by_id / get_monster_by_id 供 B/C 与 DataLayer 共用。
  */
 #pragma once
 
@@ -36,5 +41,12 @@ struct MonsterData {
 // E 对外接口：按 id 获取数据，未就绪时可由 Mock 实现
 const CardData*    get_card_by_id(CardId id);
 const MonsterData* get_monster_by_id(MonsterId id);
+
+inline const char* to_string(Rarity r) {
+    switch (r) { case Rarity::Common: return "common"; case Rarity::Uncommon: return "uncommon"; case Rarity::Rare: return "rare"; default: return "common"; }
+}
+inline const char* to_string(MonsterType t) {
+    switch (t) { case MonsterType::Normal: return "normal"; case MonsterType::Elite: return "elite"; case MonsterType::Boss: return "boss"; default: return "normal"; }
+}
 
 } // namespace tce

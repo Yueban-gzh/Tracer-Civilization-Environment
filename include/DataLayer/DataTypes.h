@@ -14,28 +14,7 @@
 
 namespace DataLayer {
 
-// ---------- 卡牌（表的一条记录）----------
-struct Card {
-    std::string id;
-    std::string name;
-    std::string cardType;   // "attack" | "defend" | "skill" | "support"
-    int         cost       = 0;
-    std::string rarity;    // "common" | "uncommon" | "rare"
-    std::string description;
-    std::string effectType;
-    int         effectValue = 0;
-};
-
-// ---------- 怪物 ----------
-struct Monster {
-    std::string id;
-    std::string name;
-    bool        isBoss     = false;
-    int         maxHp      = 0;
-    std::string intentPattern;  // 如 "attack,block"
-    int         attackDamage = 0;
-    int         blockAmount  = 0;
-};
+// 卡牌/怪物静态数据统一使用 tce::CardData / tce::MonsterData（见 DataLayer.hpp），此处仅保留事件与 id 类型。
 
 // ---------- 事件：选项结果 ----------
 struct EventResult {

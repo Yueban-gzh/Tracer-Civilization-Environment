@@ -4,6 +4,9 @@
  * 课设数据结构对应：
  * - 哈希表：unordered_map，以 id 为关键字进行插入与查找；
  * - 排序：对 vector 使用比较排序（按稀有度/分数关键字）。
+ *
+ * 卡牌/怪物直接填充 tce::s_cards / tce::s_monsters（唯一存储），
+ * tce::get_card_by_id / get_monster_by_id 供 B/C 与 DataLayer 共用。
  */
 
 #include "DataLayer/DataLayer.h"
@@ -11,7 +14,45 @@
 #include <algorithm>
 #include <fstream>
 
+// -----------------------------------------------------------------------------
+// tce 命名空间：B/C 依赖的接口，存储由 load_cards/load_monsters 填充，此处仅做哈希查找 O(1)
+// 必须在 namespace DataLayer 之前定义，供 load_cards/load_monsters 写入 s_cards/s_monsters
+// -----------------------------------------------------------------------------
+namespace tce {
+
+static std::unordered_map<CardId, CardData>    s_cards;
+static std::unordered_map<MonsterId, MonsterData> s_monsters;
+
+const CardData* get_card_by_id(CardId id) {
+    auto it = s_cards.find(id);
+    if (it != s_cards.end()) return &it->second;
+    return nullptr;
+}
+
+const MonsterData* get_monster_by_id(MonsterId id) {
+    auto it = s_monsters.find(id);
+    if (it != s_monsters.end()) return &it->second;
+    return nullptr;
+}
+
+} // namespace tce
+
 namespace DataLayer {
+
+// JSON 字符串到 tce 枚举的映射（cardType/rarity 与 DataLayer.hpp 一致）
+static tce::CardType card_type_from_string(const std::string& s) {
+    if (s == "attack") return tce::CardType::Attack;
+    if (s == "defend") return tce::CardType::Skill;
+    if (s == "skill")  return tce::CardType::Skill;
+    if (s == "support") return tce::CardType::Power;
+    return tce::CardType::Attack;
+}
+static tce::Rarity rarity_from_string(const std::string& s) {
+    if (s == "common")   return tce::Rarity::Common;
+    if (s == "uncommon") return tce::Rarity::Uncommon;
+    if (s == "rare")     return tce::Rarity::Rare;
+    return tce::Rarity::Common;
+}
 
 std::string DataLayerImpl::resolve_data_path(const std::string& base, const std::string& filename) const {
     if (base.empty()) return "data/" + filename;
@@ -21,47 +62,54 @@ std::string DataLayerImpl::resolve_data_path(const std::string& base, const std:
     return b + "data/" + filename;
 }
 
-// 将 JSON 数组中的每条记录插入哈希表 cards_，以 id 为 key（散列存储）
+// 将 JSON 数组中的每条记录直接插入 tce::s_cards（唯一存储，供 B/C 与 DataLayer 共用）
 bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
     std::string path = resolve_data_path(path_or_base_dir, "cards.json");
     JsonValue root = parse_json_file(path);
     if (!root.is_array()) return false;
-    cards_.clear();
+    tce::s_cards.clear();
     for (const JsonValue& v : root.arr) {
         if (!v.is_object()) continue;
-        Card c;
-        if (const JsonValue* p = v.get_key("id")) c.id = p->as_string();
-        if (const JsonValue* p = v.get_key("name")) c.name = p->as_string();
-        if (const JsonValue* p = v.get_key("cardType")) c.cardType = p->as_string();
-        if (const JsonValue* p = v.get_key("cost")) c.cost = p->as_int();
-        if (const JsonValue* p = v.get_key("rarity")) c.rarity = p->as_string();
-        if (const JsonValue* p = v.get_key("description")) c.description = p->as_string();
-        if (const JsonValue* p = v.get_key("effectType")) c.effectType = p->as_string();
-        if (const JsonValue* p = v.get_key("effectValue")) c.effectValue = p->as_int();
-        if (!c.id.empty()) cards_[c.id] = std::move(c);  // 哈希表插入：key=c.id
+        tce::CardData cd;
+        if (const JsonValue* p = v.get_key("id")) cd.id = p->as_string();
+        if (const JsonValue* p = v.get_key("name")) cd.name = p->as_string();
+        if (const JsonValue* p = v.get_key("cardType")) cd.cardType = card_type_from_string(p->as_string());
+        if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
+        if (const JsonValue* p = v.get_key("rarity")) cd.rarity = rarity_from_string(p->as_string());
+        if (const JsonValue* p = v.get_key("description")) cd.description = p->as_string();
+        if (const JsonValue* p = v.get_key("exhaust")) cd.exhaust = p->as_bool();
+        if (const JsonValue* p = v.get_key("ethereal")) cd.ethereal = p->as_bool();
+        if (const JsonValue* p = v.get_key("innate")) cd.innate = p->as_bool();
+        if (const JsonValue* p = v.get_key("retain")) cd.retain = p->as_bool();
+        if (const JsonValue* p = v.get_key("unplayable")) cd.unplayable = p->as_bool();
+        if (!cd.id.empty()) tce::s_cards[cd.id] = std::move(cd);
     }
-    return !cards_.empty();
+    return !tce::s_cards.empty();
 }
 
-// 同上：将怪物表每条记录以 id 为 key 插入哈希表 monsters_
+// 将怪物表每条记录直接插入 tce::s_monsters（唯一存储，供 B 与 DataLayer 共用）
 bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
     std::string path = resolve_data_path(path_or_base_dir, "monsters.json");
     JsonValue root = parse_json_file(path);
     if (!root.is_array()) return false;
-    monsters_.clear();
+    tce::s_monsters.clear();
     for (const JsonValue& v : root.arr) {
         if (!v.is_object()) continue;
-        Monster m;
-        if (const JsonValue* p = v.get_key("id")) m.id = p->as_string();
-        if (const JsonValue* p = v.get_key("name")) m.name = p->as_string();
-        if (const JsonValue* p = v.get_key("isBoss")) m.isBoss = p->as_bool();
-        if (const JsonValue* p = v.get_key("maxHp")) m.maxHp = p->as_int();
-        if (const JsonValue* p = v.get_key("intentPattern")) m.intentPattern = p->as_string();
-        if (const JsonValue* p = v.get_key("attackDamage")) m.attackDamage = p->as_int();
-        if (const JsonValue* p = v.get_key("blockAmount")) m.blockAmount = p->as_int();
-        if (!m.id.empty()) monsters_[m.id] = std::move(m);  // 哈希表插入
+        tce::MonsterData md;
+        if (const JsonValue* p = v.get_key("id")) md.id = p->as_string();
+        if (const JsonValue* p = v.get_key("name")) md.name = p->as_string();
+        if (const JsonValue* p = v.get_key("maxHp")) md.maxHp = p->as_int();
+        if (const JsonValue* p = v.get_key("isBoss")) {
+            md.type = p->as_bool() ? tce::MonsterType::Boss : tce::MonsterType::Normal;
+        } else if (const JsonValue* p = v.get_key("type")) {
+            std::string t = p->as_string();
+            if (t == "elite") md.type = tce::MonsterType::Elite;
+            else if (t == "boss") md.type = tce::MonsterType::Boss;
+            else md.type = tce::MonsterType::Normal;
+        }
+        if (!md.id.empty()) tce::s_monsters[md.id] = std::move(md);
     }
-    return !monsters_.empty();
+    return !tce::s_monsters.empty();
 }
 
 static EventOption parse_option(const JsonValue& v) {
@@ -99,17 +147,12 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
     return !events_.empty();
 }
 
-// 哈希查找：按 key(id) 在哈希表中查找，平均 O(1)
-const Card* DataLayerImpl::get_card_by_id(const CardId& id) const {
-    auto it = cards_.find(id);
-    if (it == cards_.end()) return nullptr;
-    return &it->second;
+const tce::CardData* DataLayerImpl::get_card_by_id(const CardId& id) const {
+    return tce::get_card_by_id(id);
 }
 
-const Monster* DataLayerImpl::get_monster_by_id(const MonsterId& id) const {
-    auto it = monsters_.find(id);
-    if (it == monsters_.end()) return nullptr;
-    return &it->second;
+const tce::MonsterData* DataLayerImpl::get_monster_by_id(const MonsterId& id) const {
+    return tce::get_monster_by_id(id);
 }
 
 const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
@@ -118,24 +161,25 @@ const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
     return &it->second;
 }
 
-// 将稀有度映射为可比较的序数（用于排序的关键字）
-int DataLayerImpl::rarity_order(const std::string& rarity) const {
-    if (rarity == "common")   return 0;
-    if (rarity == "uncommon") return 1;
-    if (rarity == "rare")     return 2;
-    return 0;
+int DataLayerImpl::rarity_order(tce::Rarity r) {
+    switch (r) {
+        case tce::Rarity::Common:   return 0;
+        case tce::Rarity::Uncommon: return 1;
+        case tce::Rarity::Rare:     return 2;
+        default: return 0;
+    }
 }
 
-// 排序：对线性表（vector）按关键字 rarity 升序排序；比较排序，时间复杂度 O(n log n)
+// 排序：对线性表（vector）按关键字 rarity 升序排序；比较排序 O(n log n)
 std::vector<CardId> DataLayerImpl::sort_cards_by_rarity(const std::vector<CardId>& card_ids) const {
     std::vector<CardId> out = card_ids;
-    std::sort(out.begin(), out.end(), [this](const CardId& a, const CardId& b) {
-        const Card* ca = get_card_by_id(a);
-        const Card* cb = get_card_by_id(b);
-        int ra = ca ? rarity_order(ca->rarity) : 0;
-        int rb = cb ? rarity_order(cb->rarity) : 0;
-        if (ra != rb) return ra < rb;  // 先按稀有度关键字：common < uncommon < rare
-        return a < b;                   // 同稀有度按 id 字典序稳定
+    std::sort(out.begin(), out.end(), [](const CardId& a, const CardId& b) {
+        const tce::CardData* ca = tce::get_card_by_id(a);
+        const tce::CardData* cb = tce::get_card_by_id(b);
+        int ra = ca ? DataLayerImpl::rarity_order(ca->rarity) : 0;
+        int rb = cb ? DataLayerImpl::rarity_order(cb->rarity) : 0;
+        if (ra != rb) return ra < rb;
+        return a < b;
     });
     return out;
 }
