@@ -123,10 +123,14 @@ bool CardSystem::upgrade_card_in_deck(InstanceId instance_id) {
     return false;
 }
 
+void CardSystem::register_card_effect(CardId id, std::function<void(EffectContext&)> fn) {
+    if (fn) effect_registry_[std::move(id)] = std::move(fn);
+}
+
 void CardSystem::execute_effect(CardId id, EffectContext& ctx) {
-    (void)id;
-    (void)ctx;
-    // 效果由注册表查找并调用，此处桩为空
+    auto it = effect_registry_.find(id);
+    if (it != effect_registry_.end())
+        it->second(ctx);
 }
 
 } // namespace tce

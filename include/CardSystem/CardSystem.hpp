@@ -6,6 +6,7 @@
 #include "../Common/Types.hpp"
 #include <vector>
 #include <functional>
+#include <unordered_map>
 
 namespace tce {
 
@@ -39,6 +40,9 @@ public:
     bool upgrade_card_in_deck(InstanceId instance_id);
     void execute_effect(CardId id, EffectContext& ctx);
 
+    /** 注册卡牌效果：CardId → 效果函数，出牌时由 execute_effect 查表调用 */
+    void register_card_effect(CardId id, std::function<void(EffectContext&)> fn);
+
 private:
     GetCardByIdFn get_card_by_id_;
     int           next_instance_id_ = 0;
@@ -48,6 +52,7 @@ private:
     std::vector<CardInstance> hand_;
     std::vector<CardInstance> discard_pile_;
     std::vector<CardInstance> exhaust_pile_;
+    std::unordered_map<CardId, std::function<void(EffectContext&)>> effect_registry_;
 };
 
 } // namespace tce
