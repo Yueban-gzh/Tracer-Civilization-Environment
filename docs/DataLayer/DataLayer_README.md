@@ -34,7 +34,7 @@
 |------|------|------|------|
 | id | string | 是 | 唯一 id；已升级用另一条 id，如 `"card_001+"` |
 | name | string | 是 | 卡牌名称 |
-| cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒） |
+| cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒）；实现侧大小写不敏感（`"attack"` 等也能被解析），推荐仍按枚举名大小写书写 |
 | cost | int | 是 | 消耗墨力（特殊值如 -1 表示 X，由 B/C 约定） |
 | rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"` |
 | description | string | 是 | 展示用描述 |
@@ -65,7 +65,7 @@
 ### 怪物表 `monsters.json`
 
 - **格式**：JSON 数组，每项为一个怪物对象。
-- **字段**：
+- **字段**（当前实现**只使用粗粒度静态数据**：id/name/type/maxHp，意图与行为由 B 的怪物行为函数决定；下列可选字段预留给有需要时扩展使用）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -189,7 +189,8 @@ ids = data.sort_cards_by_rarity(ids);
 ## 六、实现要点
 
 - **存储**：卡牌/怪物数据存放在命名空间 `tce` 下的 `s_cards`、`s_monsters`（`std::unordered_map`），由 `load_cards`/`load_monsters` 填充，供 DataLayer 与 B/C 共用；事件表存放在 `DataLayerImpl::events_`。按 id 查找平均 O(1)。
-- **JSON**：自实现简易解析（`JsonParser.cpp`），无第三方库，仅支持当前 data 所用格式。
+- **JSON**：自实现简易解析（`JsonParser.cpp`），无第三方库，仅支持当前 data 所用格式；解析时会自动跳过 UTF-8 BOM，并对 `cardType` / `rarity` 做大小写不敏感匹配（如 `"attack"` / `"rare"` 也能正常解析，遇到未知取值会在控制台输出告警并使用安全默认值）。
+- **加载与校验**：`load_cards` / `load_monsters` / `load_events` 会在加载前清空旧数据，逐条校验：非对象条目会被忽略；缺少 `id` 的记录会被跳过并统计数量；同一 id 多次出现时保留**第一条**并忽略后续，均会在控制台输出 `[E][DataLayer] ...` 形式的调试信息。若某张表没有加载到任何有效记录则返回 `false`。
 - **编码**：文件按 UTF-8 读写；Windows 控制台需在程序开头设置 `SetConsoleOutputCP(65001)` 才能正确显示中文。
 
 ---
@@ -198,4 +199,16 @@ ids = data.sort_cards_by_rarity(ids);
 
 1. **工作目录**：运行 exe 时当前目录需为项目根（或包含 `data/` 的目录），否则 `load_*(".")` 会失败；在 VS 调试时可把“工作目录”设为 `$(ProjectDir)`。
 2. **id 唯一性**：三张表内 id 不可重复；卡牌/怪物/事件 id 互不冲突即可，可同用 string 如 `"card_001"`、`"monster_boss_1"`。
-3. **扩展数据**：新增卡牌/怪物/事件只需在对应 json 中追加条目并保证字段一致，无需改代码（除非增新字段）。
+3. **扩展数据（多加卡、多加怪、多加事件或改文案）**：
+   - **新增卡牌**：
+     - 选择一个新的 `id`（如 `"card_029"` 或 `"card_001+"`），确保在整张卡牌表中唯一；已存在的 id 不要随意改名，以免旧存档或其他模块引用失效。
+     - `cardType` 请仍写为 `"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"` 之一，尽管实现支持大小写不敏感，但文档与代码示例均按枚举名大小写书写；`rarity` 使用 `"common"` / `"uncommon"` / `"rare"`。
+     - 只要字段齐全、类型正确，DataLayer 会自动加载并通过 `get_card_by_id` 暴露给 C/B；更换文案只需改 `description` 字段，不影响逻辑。
+   - **新增怪物**：
+     - 按当前实现，只要补充 `id`、`name`、`type`（`"normal"|"elite"|"boss"`）和 `maxHp` 即可被 B 读到；`intentPattern` / `attackDamage` / `blockAmount` 为**可选扩展字段**，目前 B 的怪物行为逻辑不依赖它们。
+     - 新增怪物 id 后，需要在 B 侧补充对应的“怪物行为函数”并在注册表中登记，否则战斗中只会看到血量变化而缺少合理意图与行动。
+   - **新增事件**：
+     - 只要 `id` 唯一，`title` / `description` / `options[text/next/result{type,value}]` 字段符合本文件第二节约定即可；可以新增多层 `next` 跳转形成更复杂的事件树。
+     - 修改事件文案（`title` / `description` / `options.text`）不会影响 DataLayer 加载，只要保持 `id` 和结构稳定即可；需要新增新的 `result.type` 时，应与 D 模块约定并在 EventEngine 中支持该类型。
+   - **错误排查**：
+     - 若修改 data 后加载失败，`load_*` 会返回 `false`，同时在控制台打印类似 `[E][DataLayer] load_cards: ...` 的调试信息，可根据提示快速定位是“文件不是数组”“缺少 id”“重复 id”还是 JSON 语法问题。
