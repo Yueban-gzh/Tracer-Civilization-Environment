@@ -4,6 +4,8 @@
 #include "../../include/BattleEngine/BattleEngine.hpp"
 #include "../../include/DataLayer/DataLayer.hpp"
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 namespace tce {
 
@@ -34,7 +36,13 @@ void BattleEngine::start_battle(const std::vector<MonsterId>& monster_ids,
     turn_number_    = 0;
     if (card_system_) {  // 若已注入卡牌系统则初始化牌组，否则跳过（无 C 时仅做战斗状态初始化）
         card_system_->init_deck(deck_card_ids);
-        int draw_count = player_state_.cardsToDrawPerTurn - get_status_stacks(player_state_.statuses, "draw_reduction");
+        // 首回合抽牌：若带有抽牌减少，则下 N 个回合各少抽 1 张
+        int draw_count = player_state_.cardsToDrawPerTurn;
+        int draw_red   = get_status_stacks(player_state_.statuses, "draw_reduction");
+        if (draw_red > 0) {
+            --draw_count;
+            reduce_status_stacks(player_state_.statuses, "draw_reduction", 1);
+        }
         if (draw_count < 0) draw_count = 0;
         card_system_->draw_cards(draw_count);   // 首回合抽牌也受抽牌减少影响
     }
@@ -54,6 +62,7 @@ BattleStateSnapshot BattleEngine::get_battle_state() const {
     s.stance           = player_state_.stance;
     s.orbSlotCount     = player_state_.orbSlotCount;
     s.orbSlots         = player_state_.orbSlots;
+    s.potionSlotCount  = player_state_.potionSlotCount;
     s.potions          = player_state_.potions;
     s.relics           = relic_ids_;
     s.playerStatuses   = player_state_.statuses;
@@ -62,6 +71,15 @@ BattleStateSnapshot BattleEngine::get_battle_state() const {
     for (const auto& m : monsters_)
         s.monsterStatuses.push_back(m.statuses);
     s.turnNumber       = turn_number_;
+    switch (turn_phase_) {
+    case TurnPhase::PlayerTurnEnd:   s.phaseDebugLabel = L"玩家回合结束"; break;
+    case TurnPhase::EnemyTurnStart:  s.phaseDebugLabel = L"敌人回合开始"; break;
+    case TurnPhase::EnemyTurnActions:s.phaseDebugLabel = L"敌人行动";     break;
+    case TurnPhase::EnemyTurnEnd:    s.phaseDebugLabel = L"敌人回合结束"; break;
+    case TurnPhase::PlayerTurnStart: s.phaseDebugLabel = L"玩家回合开始"; break;
+    case TurnPhase::Idle:
+    default:                         s.phaseDebugLabel.clear();          break;
+    }
     if (card_system_) {  // 若已注入卡牌系统则从 C 取手牌与各牌堆张数填入快照，否则快照中牌相关字段保持默认
         s.hand            = card_system_->get_hand();
         s.drawPileSize    = card_system_->get_deck_size();
@@ -96,10 +114,14 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {
     return true;
 }
 
-// end_turn：结束回合。① 手牌按保留/虚无处理 ② 敌方行动 ③ 状态 duration 递减 ④ 清空格挡 ⑤ 下一回合抽牌回能
+// end_turn：结束回合。内部按「玩家回合结束 → 敌人回合开始 → 敌人行动 → 敌人回合结束 → 玩家回合开始」五个阶段运行
 void BattleEngine::end_turn() {
     if (!card_system_) return;
+    if (turn_phase_ != TurnPhase::Idle) return; // 动画进行中，忽略重复点击
+    turn_phase_ = TurnPhase::PlayerTurnEnd;
+}
 
+void BattleEngine::phase_player_turn_end(EffectContext& ctx) {
     // ① 手牌：保留留在手牌，虚无进消耗堆，其余进弃牌堆（从后往前删避免下标错位）
     const auto& hand = card_system_->get_hand();
     for (int i = static_cast<int>(hand.size()) - 1; i >= 0; --i) {
@@ -117,23 +139,38 @@ void BattleEngine::end_turn() {
     if (entangle > 0)
         deal_damage_to_player(entangle);
 
-    // ②.0 中毒（仅对敌人）：敌人回合开始时，每个怪物因中毒减少对应层数生命（无视格挡）
-    EffectContext tick_ctx;
-    fill_effect_context(tick_ctx);
+    // ①.6 玩家回合末状态 tick（金属化等），中毒已在敌人/己方回合开始单独处理
+    for (const auto& s : player_state_.statuses) {
+        if (s.id == "poison") continue;
+        auto it = status_tick_registry_.find(s.id);
+        if (it != status_tick_registry_.end())
+            it->second(s.stacks, true, -1, ctx);
+    }
+}
+
+void BattleEngine::phase_enemy_turn_start(EffectContext& tick_ctx) {
+    // ②.0 敌人回合开始：先清空所有怪物的格挡，再结算中毒
+    for (auto& m : monsters_)
+        m.block = 0;
     for (size_t i = 0; i < monsters_.size(); ++i) {
         if (monsters_[i].currentHp <= 0) continue;
-        for (const auto& s : monsters_[i].statuses) {
-            if (s.id == "poison" && s.stacks > 0)
-                tick_ctx.deal_damage_to_monster_ignoring_block(static_cast<int>(i), s.stacks);
+        int poison_stacks = get_status_stacks(monsters_[i].statuses, "poison");
+        if (poison_stacks > 0) {
+            tick_ctx.deal_damage_to_monster_ignoring_block(static_cast<int>(i), poison_stacks);
+            reduce_status_stacks(monsters_[i].statuses, "poison", 1);
         }
     }
+}
 
+void BattleEngine::phase_enemy_turn_actions(EffectContext&) {
     // ② 敌方行动（按队列顺序；当前为桩，后续接入怪物行为函数）
     for (size_t i = 0; i < monsters_.size(); ++i) {
         if (monsters_[i].currentHp <= 0) continue;
         (void)i;
     }
+}
 
+void BattleEngine::phase_enemy_turn_end(EffectContext& tick_ctx) {
     // ②.4 镣铐（仅对敌人）：敌人回合结束时，每个怪物回复对应层数力量
     for (size_t i = 0; i < monsters_.size(); ++i) {
         int shackles = get_status_stacks(monsters_[i].statuses, "shackles");
@@ -141,13 +178,7 @@ void BattleEngine::end_turn() {
             apply_status_to_monster(static_cast<int>(i), "strength", shackles, -1);
     }
 
-    // ②.5 按实例做回合末 tick（中毒已在 ②.0 仅对怪物处理，此处跳过中毒）
-    for (const auto& s : player_state_.statuses) {
-        if (s.id == "poison") continue;  // 中毒只对敌人生效
-        auto it = status_tick_registry_.find(s.id);
-        if (it != status_tick_registry_.end())
-            it->second(s.stacks, true, -1, tick_ctx);
-    }
+    // ②.5 敌人回合末状态 tick：只处理怪物身上的状态（玩家状态已在 ①.6 处理）
     for (size_t i = 0; i < monsters_.size(); ++i) {
         for (const auto& s : monsters_[i].statuses) {
             if (s.id == "poison") continue;  // 已在 ②.0 敌人回合开始时结算
@@ -177,17 +208,71 @@ void BattleEngine::end_turn() {
         m.statuses.erase(std::remove_if(m.statuses.begin(), m.statuses.end(), [](const StatusInstance& x) { return x.duration == 0; }), m.statuses.end());
     }
 
-    // ④ 清空玩家与所有怪物的格挡
+    // ④ 清空玩家格挡（怪物回合结束）
     player_state_.block = 0;
-    for (auto& m : monsters_)
-        m.block = 0;
+}
 
-    // ⑤ 下一回合开始：抽牌数受抽牌减少影响（仅玩家），能量回满
+void BattleEngine::phase_player_turn_start(EffectContext&) {
+    // ⑤ 下一回合开始：中毒先扣玩家生命并降低中毒层数；抽牌数受抽牌减少影响（仅玩家），能量回满
     ++turn_number_;
-    int draw_count = player_state_.cardsToDrawPerTurn - get_status_stacks(player_state_.statuses, "draw_reduction");
+    // 玩家中毒：在玩家回合开始时，损失 N 点生命，然后中毒层数减 1
+    int player_poison = get_status_stacks(player_state_.statuses, "poison");
+    if (player_poison > 0) {
+        deal_damage_to_player_ignoring_block(player_poison);
+        reduce_status_stacks(player_state_.statuses, "poison", 1);
+    }
+    // 抽牌减少：下 N 个回合内，各少抽 1 张牌
+    int draw_count = player_state_.cardsToDrawPerTurn;
+    int draw_red   = get_status_stacks(player_state_.statuses, "draw_reduction");
+    if (draw_red > 0) {
+        --draw_count;
+        reduce_status_stacks(player_state_.statuses, "draw_reduction", 1);
+    }
     if (draw_count < 0) draw_count = 0;
     card_system_->draw_cards(draw_count);
     player_state_.energy = player_state_.maxEnergy;
+
+    // 整个回合流程完成，回到空闲态
+    turn_phase_ = TurnPhase::Idle;
+}
+
+// 每帧调用一次，按阶段推进一小步，用于 UI 动画
+void BattleEngine::step_turn_phase() {
+    if (!card_system_) return;
+    if (turn_phase_ == TurnPhase::Idle) return;
+
+    EffectContext tick_ctx;
+    fill_effect_context(tick_ctx);
+
+    switch (turn_phase_) {
+    case TurnPhase::PlayerTurnEnd:
+        phase_player_turn_end(tick_ctx);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        turn_phase_ = TurnPhase::EnemyTurnStart;
+        break;
+    case TurnPhase::EnemyTurnStart:
+        phase_enemy_turn_start(tick_ctx);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        turn_phase_ = TurnPhase::EnemyTurnActions;
+        break;
+    case TurnPhase::EnemyTurnActions:
+        phase_enemy_turn_actions(tick_ctx);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        turn_phase_ = TurnPhase::EnemyTurnEnd;
+        break;
+    case TurnPhase::EnemyTurnEnd:
+        phase_enemy_turn_end(tick_ctx);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        turn_phase_ = TurnPhase::PlayerTurnStart;
+        break;
+    case TurnPhase::PlayerTurnStart:
+        phase_player_turn_start(tick_ctx);
+        // phase_player_turn_start 内部会把 turn_phase_ 设回 Idle
+        break;
+    case TurnPhase::Idle:
+    default:
+        break;
+    }
 }
 
 // is_battle_over：战斗是否结束。玩家血量≤0 为失败，所有怪物血量≤0 为胜利

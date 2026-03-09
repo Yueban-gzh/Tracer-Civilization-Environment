@@ -24,6 +24,9 @@ struct CardData {
     bool       innate     = false;
     bool       retain     = false;
     bool       unplayable = false;
+    // 是否需要确认目标：true 时需要外部提供具体目标（如敌人）；
+    // false 时使用默认目标（通常是玩家自身或全体）
+    bool       requiresTarget = false;
 };
 
 struct MonsterData {

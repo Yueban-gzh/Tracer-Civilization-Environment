@@ -39,6 +39,7 @@ struct PlayerBattleState {
     int                      orbSlotCount = 0;
     std::vector<OrbSlot>     orbSlots;
     int                      gold       = 0;
+    int                      potionSlotCount = 3;  // 药水槽数量，数据驱动，默认 3
     std::vector<PotionId>    potions;
     int                      cardsToDrawPerTurn = 5;  // 每回合开始时的抽牌数（可由遗物/效果修改）
     std::vector<StatusInstance> statuses;  // 本场战斗内玩家身上的增益/减益
@@ -116,6 +117,7 @@ struct BattleStateSnapshot {
     Stance                   stance;
     int                      orbSlotCount;
     std::vector<OrbSlot>     orbSlots;
+    int                      potionSlotCount = 3;  // 药水槽数量，默认 3
     std::vector<PotionId>    potions;
     std::vector<RelicId>     relics;
     std::vector<StatusInstance> playerStatuses;
@@ -126,6 +128,8 @@ struct BattleStateSnapshot {
     std::vector<MonsterInBattle> monsters;
     std::vector<std::vector<StatusInstance>> monsterStatuses;
     int                      turnNumber     = 0;
+    // 当前回合阶段（供 UI 调试显示，例：L"玩家回合开始"）
+    std::wstring             phaseDebugLabel;
 };
 
 class BattleEngine {
@@ -172,7 +176,27 @@ public:
     int get_effective_damage_dealt_to_player(int base_damage, int attacker_monster_index) const;
     int get_effective_block_for_player(int base_block) const;
 
+    /** 按阶段推进一小步，用于配合 UI 动画的逐帧结算 */
+    void step_turn_phase();
+
 private:
+    /** 回合流程阶段枚举 */
+    enum class TurnPhase {
+        Idle,
+        PlayerTurnEnd,
+        EnemyTurnStart,
+        EnemyTurnActions,
+        EnemyTurnEnd,
+        PlayerTurnStart,
+    };
+
+    /** 各阶段内部处理函数 */
+    void phase_player_turn_end(EffectContext& ctx);
+    void phase_enemy_turn_start(EffectContext& ctx);
+    void phase_enemy_turn_actions(EffectContext& ctx);
+    void phase_enemy_turn_end(EffectContext& ctx);
+    void phase_player_turn_start(EffectContext& ctx);
+
     void fill_effect_context(EffectContext& ctx);
     static int get_status_stacks(const std::vector<StatusInstance>& list, const StatusId& id);
     /** 将 list 中 id 对应状态的层数减少 amount（最少为 0），若为 0 则移除该条 */
@@ -187,6 +211,10 @@ private:
     std::vector<RelicId>          relic_ids_;
     int                           turn_number_ = 0;
     std::unordered_map<StatusId, StatusTickFn> status_tick_registry_;
+
+    // 回合阶段驱动
+    TurnPhase                     turn_phase_ = TurnPhase::Idle;
+    int                           turn_phase_hold_frames_ = 0;
 };
 
 } // namespace tce

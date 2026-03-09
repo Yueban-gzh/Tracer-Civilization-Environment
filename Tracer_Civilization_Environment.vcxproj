@@ -110,6 +110,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(SFML_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -131,6 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(SFML_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -148,7 +150,6 @@
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />
     <ClCompile Include="src\BattleEngine\BattleEngine.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUI.cpp" />
-    <ClCompile Include="src\BattleEngine\BattleUIMock.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
     <ClCompile Include="src\Effects\StatusEffects.cpp" />
@@ -161,7 +162,6 @@
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUI.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUIData.hpp" />
-    <ClInclude Include="include\BattleEngine\BattleUIMock.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp" />
     <ClInclude Include="include\Effects\StatusEffects.hpp" />
     <ClInclude Include="include\Effects\CardEffects.hpp" />
