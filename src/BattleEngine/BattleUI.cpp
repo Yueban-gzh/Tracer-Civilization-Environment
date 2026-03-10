@@ -460,7 +460,13 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
             || id == "multi_armor"
             || id == "barricade"
             || id == "artifact"
-            || id == "thorns";
+            || id == "thorns"
+            || id == "wraith_form"
+            || id == "buffer"
+            || id == "draw_up"
+            || id == "energy_up"
+            || id == "block_up"
+            || id == "vigor";
     };
     auto has_stack_number_ui = [](const std::string& id) {
         // 不可叠加或层数无意义的状态不显示下标
@@ -711,6 +717,18 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         } else if (id == "draw_reduction") {
             name = L"抽牌减少";
             line2 = L"下 " + std::to_wstring(n) + L" 个回合内，每回合少抽 1 张牌";
+        } else if (id == "draw_up") {
+            name = L"抽牌增加";
+            line2 = L"下回合多抽 " + std::to_wstring(n) + L" 张牌";
+        } else if (id == "energy_up") {
+            name = L"能量提升";
+            line2 = L"下回合额外获得 " + std::to_wstring(n) + L" 点能量";
+        } else if (id == "block_up") {
+            name = L"下回合格挡";
+            line2 = L"在你的下回合开始时，获得 " + std::to_wstring(n) + L" 点格挡";
+        } else if (id == "vigor") {
+            name = L"活力";
+            line2 = L"你的下一次攻击造成 " + std::to_wstring(n) + L" 点额外伤害";
         } else if (id == "poison") {
             name = L"中毒";
             line2 = L"在回合开始时，受到 " + std::to_wstring(n) + L" 点伤害，然后中毒层数减少 1";
@@ -735,6 +753,15 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         } else if (id == "artifact") {
             name = L"人工制品";
             line2 = L"免疫 " + std::to_wstring(n) + L" 次负面效果";
+        } else if (id == "fasting") {
+            name = L"斋戒";
+            line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点能量";
+        } else if (id == "wraith_form") {
+            name = L"幽魂形态";
+            line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点敏捷";
+        } else if (id == "buffer") {
+            name = L"缓冲";
+            line2 = L"阻止下 " + std::to_wstring(n) + L" 次你受到的生命值损伤";
         } else {
             name = sf::String(id).toWideString();
             line2 = L"效果层数 " + std::to_wstring(n);

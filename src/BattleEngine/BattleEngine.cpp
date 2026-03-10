@@ -237,16 +237,53 @@ void BattleEngine::phase_player_turn_start(EffectContext&) {
         deal_damage_to_player_ignoring_block(player_poison);
         reduce_status_stacks(player_state_.statuses, "poison", 1);
     }
-    // 抽牌减少：下 N 个回合内，各少抽 1 张牌
-    int draw_count = player_state_.cardsToDrawPerTurn;
-    int draw_red   = get_status_stacks(player_state_.statuses, "draw_reduction");
-    if (draw_red > 0) {
-        --draw_count;
-        reduce_status_stacks(player_state_.statuses, "draw_reduction", 1);
+   // 抽牌：基础抽牌数 + 抽牌减少 + 抽牌增加（下回合多抽 X 张）
+   int draw_count = player_state_.cardsToDrawPerTurn;
+   // 抽牌减少：下 N 个回合内，各少抽 1 张牌
+   int draw_red   = get_status_stacks(player_state_.statuses, "draw_reduction");
+   if (draw_red > 0) {
+       --draw_count;
+       reduce_status_stacks(player_state_.statuses, "draw_reduction", 1);
+   }
+   // 抽牌增加：本回合多抽 X 张牌，用完即消失
+   int draw_up = get_status_stacks(player_state_.statuses, "draw_up");
+   if (draw_up > 0) {
+       draw_count += draw_up;
+       reduce_status_stacks(player_state_.statuses, "draw_up", draw_up);
+   }
+   if (draw_count < 0) draw_count = 0;
+   card_system_->draw_cards(draw_count);
+   // 能量：基础能量 + 能量提升（下一回合获得额外 X 点能量）
+   {
+       int energy_up = get_status_stacks(player_state_.statuses, "energy_up");
+       player_state_.energy = player_state_.maxEnergy + energy_up;
+       if (energy_up > 0) {
+           reduce_status_stacks(player_state_.statuses, "energy_up", energy_up);
+       }
+   }
+   // 下回合格挡：在你的下回合开始时，获得 X 点格挡
+   {
+       int block_up = get_status_stacks(player_state_.statuses, "block_up");
+       if (block_up > 0) {
+           player_state_.block += block_up;
+           reduce_status_stacks(player_state_.statuses, "block_up", block_up);
+       }
+   }
+    // 斋戒：在你的回合开始时，失去 X 点能量（仅玩家）
+    {
+        int fasting = get_status_stacks(player_state_.statuses, "fasting");
+        if (fasting > 0) {
+            player_state_.energy -= fasting;
+            if (player_state_.energy < 0) player_state_.energy = 0;
+        }
     }
-    if (draw_count < 0) draw_count = 0;
-    card_system_->draw_cards(draw_count);
-    player_state_.energy = player_state_.maxEnergy;
+    // 幽魂形态：在你的回合开始时，失去 X 点敏捷（仅玩家）
+    {
+        int wraith = get_status_stacks(player_state_.statuses, "wraith_form");
+        if (wraith > 0) {
+            reduce_status_stacks(player_state_.statuses, "dexterity", wraith);
+        }
+    }
 
     // 整个回合流程完成，回到空闲态
     turn_phase_ = TurnPhase::Idle;
@@ -318,7 +355,9 @@ void BattleEngine::apply_status_to_player(StatusId id, int stacks, int duration)
                 id == "poison" ||
                 id == "shackles" ||
                 id == "dexterity_down" ||
-                id == "draw_reduction";
+                id == "draw_reduction" ||
+                id == "fasting" ||
+                id == "wraith_form";
             if (is_negative) {
                 reduce_status_stacks(player_state_.statuses, "artifact", 1);
                 return;
@@ -350,6 +389,14 @@ void BattleEngine::deal_damage_to_player(int amount) {
     // 无实体：本回合受到的每次伤害/生命减少效果降为 1
     if (get_status_stacks(player_state_.statuses, "intangible") > 0 && hp_damage > 1)
         hp_damage = 1;
+    // 缓冲：阻止下一次你受到的生命值损伤（在所有数值修正之后生效）
+    if (hp_damage > 0) {
+        int buffer = get_status_stacks(player_state_.statuses, "buffer");
+        if (buffer > 0) {
+            reduce_status_stacks(player_state_.statuses, "buffer", 1);
+            hp_damage = 0;
+        }
+    }
     // 多层护甲：只有在真正失去生命（hp_damage > 0）时才减少 1 层
     if (hp_damage > 0) {
         reduce_status_stacks(player_state_.statuses, "multi_armor", 1);
@@ -408,6 +455,14 @@ void BattleEngine::deal_damage_to_player_ignoring_block(int amount) {
     int hp_damage = amount;
     if (get_status_stacks(player_state_.statuses, "intangible") > 0 && hp_damage > 1)
         hp_damage = 1;
+    // 缓冲：阻止下一次你受到的生命值损伤
+    if (hp_damage > 0) {
+        int buffer = get_status_stacks(player_state_.statuses, "buffer");
+        if (buffer > 0) {
+            reduce_status_stacks(player_state_.statuses, "buffer", 1);
+            hp_damage = 0;
+        }
+    }
     player_state_.currentHp -= hp_damage;
     if (player_state_.currentHp < 0) player_state_.currentHp = 0;
 }
@@ -456,13 +511,21 @@ void BattleEngine::reduce_status_stacks(std::vector<StatusInstance>& list, const
     }
 }
 
-// 数值规则：力量 +1/层，易伤 1.5x，虚弱 0.75x；活动肌肉在回合末扣力量、不参与本回合公式
+// 数值规则：力量 +1/层，活力：本张攻击牌的下一次伤害 +X 并清空，易伤 1.5x，虚弱 0.75x；活动肌肉在回合末扣力量、不参与本回合公式
 int BattleEngine::get_effective_damage_dealt_by_player(int base_damage, int target_monster_index) const {
     if (base_damage <= 0) return 0;
     if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= monsters_.size())
         return base_damage;
+    // 力量：每层 +1
     int str = get_status_stacks(player_state_.statuses, "strength");
     int dmg = base_damage + str;
+    // 活力：本张攻击牌的「本次伤害结算」额外 +X，并在第一次结算时清空
+    int vigor = get_status_stacks(player_state_.statuses, "vigor");
+    if (vigor > 0) {
+        dmg += vigor;
+        // 注意：若一张牌需要多段但希望使用同一个 dmg，应在牌效果里只调用一次本函数并复用返回值
+        reduce_status_stacks(const_cast<std::vector<StatusInstance>&>(player_state_.statuses), "vigor", vigor);
+    }
     if (dmg <= 0) return 0;
     int vuln = get_status_stacks(monsters_[static_cast<size_t>(target_monster_index)].statuses, "vulnerable");
     if (vuln > 0) dmg = dmg * 3 / 2;
@@ -517,7 +580,9 @@ void BattleEngine::apply_status_to_monster(int monster_index, StatusId id, int s
                 id == "poison" ||
                 id == "shackles" ||
                 id == "dexterity_down" ||
-                id == "draw_reduction";
+                id == "draw_reduction" ||
+                id == "fasting" ||
+                id == "wraith_form";
             if (is_negative) {
                 reduce_status_stacks(list, "artifact", 1);
                 return;
