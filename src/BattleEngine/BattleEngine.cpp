@@ -2,6 +2,7 @@
  * B - 战斗引擎实现（桩）
  */
 #include "../../include/BattleEngine/BattleEngine.hpp"
+#include "../../include/BattleEngine/MonsterBehaviors.hpp"
 #include "../../include/DataLayer/DataLayer.hpp"
 #include <algorithm>
 #include <thread>
@@ -21,19 +22,19 @@ void BattleEngine::start_battle(const std::vector<MonsterId>& monster_ids,
                                 const std::vector<CardId>&    deck_card_ids,
                                 const std::vector<RelicId>&   relic_ids) {
     monsters_.clear();
+    turn_number_ = 1;
     for (const auto& mid : monster_ids) {
         const MonsterData* md = get_monster_by_id_ ? get_monster_by_id_(mid) : nullptr;  // 若注入了查怪回调则取数据，否则用默认
         MonsterInBattle m;
         m.id         = mid;
         m.maxHp      = md ? md->maxHp : 10;   // 有怪物数据则用表内最大血量，否则默认 10
         m.currentHp  = m.maxHp;
-        m.currentIntent = "";
+        m.currentIntent = get_monster_intent(mid, turn_number_);
         monsters_.push_back(m);
     }
     player_state_   = player_state;
     player_state_.statuses.clear();   // 新战斗清空玩家身上的效果
     relic_ids_      = relic_ids;
-    turn_number_    = 0;
     if (card_system_) {  // 若已注入卡牌系统则初始化牌组，否则跳过（无 C 时仅做战斗状态初始化）
         card_system_->init_deck(deck_card_ids);
         // 首回合抽牌：若带有抽牌减少，则下 N 个回合各少抽 1 张
@@ -149,9 +150,12 @@ void BattleEngine::phase_player_turn_end(EffectContext& ctx) {
 }
 
 void BattleEngine::phase_enemy_turn_start(EffectContext& tick_ctx) {
-    // ②.0 敌人回合开始：先清空所有怪物的格挡，再结算中毒
-    for (auto& m : monsters_)
+    // ②.0 敌人回合开始：先清空所有怪物的格挡，再结算中毒（意图文本保持不变，直到下一个玩家回合开始时再更新）
+    for (size_t i = 0; i < monsters_.size(); ++i) {
+        auto& m = monsters_[i];
         m.block = 0;
+        if (m.currentHp <= 0) continue;
+    }
     for (size_t i = 0; i < monsters_.size(); ++i) {
         if (monsters_[i].currentHp <= 0) continue;
         int poison_stacks = get_status_stacks(monsters_[i].statuses, "poison");
@@ -162,11 +166,12 @@ void BattleEngine::phase_enemy_turn_start(EffectContext& tick_ctx) {
     }
 }
 
-void BattleEngine::phase_enemy_turn_actions(EffectContext&) {
-    // ② 敌方行动（按队列顺序；当前为桩，后续接入怪物行为函数）
+void BattleEngine::phase_enemy_turn_actions(EffectContext& ctx) {
+    // ② 敌方行动：按怪物 ID + 当前回合数调用 MonsterBehaviors 执行（可含上 debuff 等）
     for (size_t i = 0; i < monsters_.size(); ++i) {
-        if (monsters_[i].currentHp <= 0) continue;
-        (void)i;
+        MonsterInBattle& m = monsters_[i];
+        if (m.currentHp <= 0) continue;
+        execute_monster_behavior(m.id, turn_number_, ctx, static_cast<int>(i));
     }
 }
 
@@ -213,8 +218,16 @@ void BattleEngine::phase_enemy_turn_end(EffectContext& tick_ctx) {
 }
 
 void BattleEngine::phase_player_turn_start(EffectContext&) {
-    // ⑤ 下一回合开始：中毒先扣玩家生命并降低中毒层数；抽牌数受抽牌减少影响（仅玩家），能量回满
+    // ⑤ 下一回合开始：先更新敌人下一个回合的意图，再处理中毒/抽牌/回满能量
     ++turn_number_;
+
+    // 敌人意图更新：按怪物 ID + 当前回合数取意图（MonsterBehaviors），整轮保持不变
+    for (auto& m : monsters_) {
+        if (m.currentHp <= 0) continue;
+        m.currentIntent = get_monster_intent(m.id, turn_number_);
+    }
+
+    // ⑤.1 玩家中毒：在玩家回合开始时，损失 N 点生命，然后中毒层数减 1
     // 玩家中毒：在玩家回合开始时，损失 N 点生命，然后中毒层数减 1
     int player_poison = get_status_stacks(player_state_.statuses, "poison");
     if (player_poison > 0) {

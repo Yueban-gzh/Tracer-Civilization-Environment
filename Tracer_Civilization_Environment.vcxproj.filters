@@ -10,6 +10,9 @@
     <ClCompile Include="src\BattleEngine\BattleEngine.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\BattleEngine\MonsterBehaviors.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\BattleEngine\BattleUI.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -40,6 +43,9 @@
       <Filter>头文件\include\CardSystem</Filter>
     </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp">
+      <Filter>头文件\include\BattleEngine</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp">
       <Filter>头文件\include\BattleEngine</Filter>
     </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleUI.hpp">

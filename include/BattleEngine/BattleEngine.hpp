@@ -5,6 +5,7 @@
 
 #include "../Common/Types.hpp"
 #include "../DataLayer/DataLayer.hpp"
+#include "MonsterBehaviors.hpp"
 #include "../CardSystem/CardSystem.hpp"
 #include <vector>
 #include <string>
@@ -51,7 +52,7 @@ struct MonsterInBattle {
     int        currentHp = 0;
     int        maxHp     = 0;
     int        block     = 0;  // 格挡，受伤时先吸收再扣血，回合末可清空
-    std::string currentIntent;
+    MonsterIntent currentIntent;
     std::vector<StatusInstance> statuses;  // 本场战斗内该怪物身上的增益/减益
 };
 

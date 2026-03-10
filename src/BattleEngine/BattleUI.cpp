@@ -3,7 +3,6 @@
  */
 #include "BattleEngine/BattleUI.hpp"
 #include "BattleEngine/BattleEngine.hpp"
-#include "DataLayer/DataLayer.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
@@ -445,8 +444,33 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         intentOrb.setOutlineColor(sf::Color(120, 160, 255));
         intentOrb.setOutlineThickness(1.f);
         window.draw(intentOrb);
-        if (!m.currentIntent.empty()) {
-            sf::Text intentText(font_, m.currentIntent, 12);
+        {
+            sf::String intentStr;
+            switch (m.currentIntent.kind) {
+            case MonsterIntentKind::Attack:
+                intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                break;
+            case MonsterIntentKind::Block:
+                intentStr = sf::String(L"防御");
+                break;
+            case MonsterIntentKind::Buff:
+                intentStr = sf::String(L"强化");
+                break;
+            case MonsterIntentKind::Debuff:
+                intentStr = sf::String(L"施加负面效果");
+                break;
+            case MonsterIntentKind::Sleep:
+                intentStr = sf::String(L"睡眠");
+                break;
+            case MonsterIntentKind::Stun:
+                intentStr = sf::String(L"晕眩");
+                break;
+            case MonsterIntentKind::Unknown:
+            default:
+                intentStr = sf::String(L"？？？");
+                break;
+            }
+            sf::Text intentText(fontForChinese(), intentStr, 14);
             intentText.setFillColor(sf::Color(200, 220, 255));
             intentText.setPosition(sf::Vector2f(monsterCenterX - 40.f, intentY - 14.f));
             window.draw(intentText);
@@ -931,7 +955,9 @@ void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot
         costCircle.setOutlineThickness(2.f);
         window.draw(costCircle, states);
 
-        std::snprintf(buf, sizeof(buf), "%d", 1);
+        const CardData* cd = get_card_by_id(s.hand[idx].id);
+        int cost = cd ? cd->cost : 1;
+        std::snprintf(buf, sizeof(buf), "%d", cost);
         sf::Text costText(font_, buf, 26);
         costText.setFillColor(sf::Color::White);
         const sf::FloatRect cb = costText.getLocalBounds();
@@ -939,7 +965,14 @@ void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot
         costText.setPosition(sf::Vector2f(costCx, costCy));
         window.draw(costText, states);
 
-        sf::String cardName = s.hand[idx].id.empty() ? sf::String(L"?") : (s.hand[idx].id == "strike" ? sf::String(L"打击") : sf::String(s.hand[idx].id));
+        sf::String cardName;
+        if (cd && !cd->name.empty()) {
+            cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
+        } else if (s.hand[idx].id.empty()) {
+            cardName = sf::String(L"?");
+        } else {
+            cardName = sf::String(s.hand[idx].id);
+        }
         sf::Text nameText(fontForChinese(), cardName, 20);
         nameText.setFillColor(sf::Color::White);
         const sf::FloatRect nb = nameText.getLocalBounds();
@@ -947,14 +980,30 @@ void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot
         nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, titleY + titleH * 0.5f));
         window.draw(nameText, states);
 
-        sf::Text typeText(fontForChinese(), sf::String(L"攻击"), 16);
+        sf::String typeStr = sf::String(L"?");
+        if (cd) {
+            switch (cd->cardType) {
+            case CardType::Attack: typeStr = sf::String(L"攻击"); break;
+            case CardType::Skill:  typeStr = sf::String(L"技能"); break;
+            case CardType::Power:  typeStr = sf::String(L"能力"); break;
+            case CardType::Status: typeStr = sf::String(L"状态"); break;
+            case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;
+            }
+        }
+        sf::Text typeText(fontForChinese(), typeStr, 16);
         typeText.setFillColor(sf::Color::White);
         const sf::FloatRect tb = typeText.getLocalBounds();
         typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
         typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeY + typeH * 0.5f));
         window.draw(typeText, states);
 
-        sf::Text descText(fontForChinese(), sf::String(L"造成6点伤害。"), 15);
+        sf::String descStr;
+        if (cd && !cd->description.empty()) {
+            descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
+        } else {
+            descStr = sf::String(L"");
+        }
+        sf::Text descText(fontForChinese(), descStr, 15);
         descText.setFillColor(sf::Color(240, 238, 235));
         descText.setPosition(sf::Vector2f(innerL + 12.f, typeY + typeH + 14.f));
         window.draw(descText, states);

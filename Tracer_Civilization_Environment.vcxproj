@@ -149,6 +149,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />
     <ClCompile Include="src\BattleEngine\BattleEngine.cpp" />
+    <ClCompile Include="src\BattleEngine\MonsterBehaviors.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUI.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
@@ -160,6 +161,7 @@
     <ClInclude Include="include\DataLayer\DataLayer.hpp" />
     <ClInclude Include="include\CardSystem\CardSystem.hpp" />
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
+    <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUI.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUIData.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp" />
