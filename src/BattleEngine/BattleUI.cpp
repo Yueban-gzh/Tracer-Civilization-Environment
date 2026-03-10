@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 
 namespace tce {
@@ -97,6 +98,57 @@ void BattleUI::setMousePosition(sf::Vector2f pos) {
     mousePos_ = pos;
 }
 
+void BattleUI::show_center_tip(std::wstring text, float seconds) {
+    centerTipText_ = std::move(text);
+    centerTipSeconds_ = seconds;
+    centerTipClock_.restart();
+}
+
+bool BattleUI::can_pay_selected_card_cost() const {
+    if (!lastSnapshot_) return true; // 没有快照时不拦截
+    if (selectedHandIndex_ < 0 || static_cast<size_t>(selectedHandIndex_) >= lastSnapshot_->hand.size())
+        return true;
+    const auto& id = lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id;
+    const CardData* cd = get_card_by_id(id);
+    int cost = cd ? cd->cost : 0;
+    return lastSnapshot_->energy >= cost;
+}
+
+void BattleUI::draw_center_tip(sf::RenderWindow& window) {
+    if (centerTipText_.empty() || centerTipSeconds_ <= 0.f) return;
+    float t = centerTipClock_.getElapsedTime().asSeconds();
+    if (t > centerTipSeconds_) return;
+
+    // 简单淡出
+    float alpha01 = 1.f;
+    const float fade = 0.25f;
+    if (centerTipSeconds_ > 0.f && t > centerTipSeconds_ - fade) {
+        alpha01 = (centerTipSeconds_ - t) / fade;
+        if (alpha01 < 0.f) alpha01 = 0.f;
+    }
+    auto a = static_cast<std::uint8_t>(200.f * alpha01);
+
+    sf::Text tip(fontForChinese(), sf::String(centerTipText_), 40);
+    tip.setFillColor(sf::Color(255, 240, 220, static_cast<std::uint8_t>(255.f * alpha01)));
+    tip.setOutlineThickness(3.f);
+    tip.setOutlineColor(sf::Color(20, 10, 10, a));
+    const sf::FloatRect tb = tip.getLocalBounds();
+    tip.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+    tip.setPosition(sf::Vector2f(width_ * 0.5f, height_ * 0.5f));
+
+    // 半透明背景条
+    const float padX = 26.f;
+    const float padY = 14.f;
+    sf::RectangleShape bg(sf::Vector2f(tb.size.x + padX * 2.f, tb.size.y + padY * 2.f));
+    bg.setOrigin(sf::Vector2f(bg.getSize().x * 0.5f, bg.getSize().y * 0.5f));
+    bg.setPosition(sf::Vector2f(width_ * 0.5f, height_ * 0.5f));
+    bg.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(120.f * alpha01)));
+    bg.setOutlineThickness(2.f);
+    bg.setOutlineColor(sf::Color(255, 220, 180, static_cast<std::uint8_t>(90.f * alpha01)));
+    window.draw(bg);
+    window.draw(tip);
+}
+
 bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
     if (ev.is<sf::Event::MouseButtonPressed>()) {
         auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
@@ -109,6 +161,10 @@ bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
                 if (selectedCardTargetsEnemy_) {
                     // 敌人目标牌：当鼠标在怪物模型上点击时视为对怪物使用
                     if (monsterModelRect_.contains(mousePos)) {
+                        if (!can_pay_selected_card_cost()) {
+                            show_center_tip(L"能量不足", 1.2f);
+                            return false;
+                        }
                         pendingPlayHandIndex_ = selectedHandIndex_;
                         pendingPlayTargetMonsterIndex_ = 0;  // 目前只有一个怪物
                         selectedHandIndex_ = -1;
@@ -118,6 +174,10 @@ bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
                 } else {
                     // 自选（玩家）目标牌：当鼠标已离开原位矩形（玩家模型出现黄框）时点击，视为对玩家使用
                     if (!selectedCardInsideOriginRect_) {
+                        if (!can_pay_selected_card_cost()) {
+                            show_center_tip(L"能量不足", 1.2f);
+                            return false;
+                        }
                         pendingPlayHandIndex_ = selectedHandIndex_;
                         pendingPlayTargetMonsterIndex_ = -1; // -1 表示玩家自身
                         selectedHandIndex_ = -1;
@@ -160,6 +220,7 @@ bool BattleUI::pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex
 void BattleUI::draw(sf::RenderWindow& window, IBattleUIDataProvider& data) {
     const BattleStateSnapshot& s = data.get_snapshot();
     if (!fontLoaded_) return;
+    lastSnapshot_ = &s;
 
     // 顶栏背景色块
     sf::RectangleShape topBg(sf::Vector2f(static_cast<float>(width_), TOP_BAR_BG_H));
@@ -180,6 +241,7 @@ void BattleUI::draw(sf::RenderWindow& window, IBattleUIDataProvider& data) {
 
     drawBottomBar(window, s);
     drawTopRight(window, s);
+    draw_center_tip(window);
 }
 
 // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽、当前层数、当前难度（统一高度、信息间有间隙）
@@ -390,7 +452,19 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
     const float stBaseY = barY + HP_BAR_H + 6.f;
     int hoveredPlayerStatus = -1;
     auto is_positive_status_ui = [](const std::string& id) {
-        return id == "strength" || id == "dexterity" || id == "metallicize" || id == "flex";
+        return id == "strength"
+            || id == "dexterity"
+            || id == "metallicize"
+            || id == "flex"
+            || id == "ritual"
+            || id == "multi_armor"
+            || id == "barricade"
+            || id == "artifact"
+            || id == "thorns";
+    };
+    auto has_stack_number_ui = [](const std::string& id) {
+        // 不可叠加或层数无意义的状态不显示下标
+        return id != "barricade";
     };
 
     for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
@@ -405,21 +479,23 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         icon.setOutlineColor(sf::Color(180, 170, 150));
         icon.setOutlineThickness(1.f);
         window.draw(icon);
-        std::snprintf(buf, sizeof(buf), "%d", st.stacks);
-        sf::Text stText(font_, buf, statusFontSize);
-        // 正面效果：正值为绿色，负值为红色；负面效果下标始终白色
-        if (is_positive_status_ui(st.id)) {
-            if (st.stacks >= 0)
-                stText.setFillColor(sf::Color(120, 230, 120));
-            else
-                stText.setFillColor(sf::Color(230, 120, 120));
-        } else {
-            stText.setFillColor(sf::Color::White);
+        if (has_stack_number_ui(st.id)) {
+            std::snprintf(buf, sizeof(buf), "%d", st.stacks);
+            sf::Text stText(font_, buf, statusFontSize);
+            // 正面效果：正值为绿色，负值为红色；负面效果下标始终白色
+            if (is_positive_status_ui(st.id)) {
+                if (st.stacks >= 0)
+                    stText.setFillColor(sf::Color(120, 230, 120));
+                else
+                    stText.setFillColor(sf::Color(230, 120, 120));
+            } else {
+                stText.setFillColor(sf::Color::White);
+            }
+            const sf::FloatRect textBounds = stText.getLocalBounds();
+            stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
+            stText.setPosition(sf::Vector2f(stX + statusIconSz, stY + statusIconSz));
+            window.draw(stText);
         }
-        const sf::FloatRect textBounds = stText.getLocalBounds();
-        stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
-        stText.setPosition(sf::Vector2f(stX + statusIconSz, stY + statusIconSz));
-        window.draw(stText);
 
         // 悬停检测
         if (hoveredPlayerStatus < 0 &&
@@ -568,21 +644,23 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
                 icon.setOutlineColor(sf::Color(190, 180, 160));
                 icon.setOutlineThickness(1.f);
                 window.draw(icon);
-                std::snprintf(buf, sizeof(buf), "%d", st.stacks);
-                sf::Text stText(font_, buf, statusFontSize);
-                // 怪物状态下标颜色规则同玩家
-                if (is_positive_status_ui(st.id)) {
-                    if (st.stacks >= 0)
-                        stText.setFillColor(sf::Color(120, 230, 120));
-                    else
-                        stText.setFillColor(sf::Color(230, 120, 120));
-                } else {
-                    stText.setFillColor(sf::Color::White);
+                if (has_stack_number_ui(st.id)) {
+                    std::snprintf(buf, sizeof(buf), "%d", st.stacks);
+                    sf::Text stText(font_, buf, statusFontSize);
+                    // 怪物状态下标颜色规则同玩家
+                    if (is_positive_status_ui(st.id)) {
+                        if (st.stacks >= 0)
+                            stText.setFillColor(sf::Color(120, 230, 120));
+                        else
+                            stText.setFillColor(sf::Color(230, 120, 120));
+                    } else {
+                        stText.setFillColor(sf::Color::White);
+                    }
+                    const sf::FloatRect textBounds = stText.getLocalBounds();
+                    stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
+                    stText.setPosition(sf::Vector2f(mstX + statusIconSz, mstY + statusIconSz));
+                    window.draw(stText);
                 }
-                const sf::FloatRect textBounds = stText.getLocalBounds();
-                stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
-                stText.setPosition(sf::Vector2f(mstX + statusIconSz, mstY + statusIconSz));
-                window.draw(stText);
 
                 // 悬停检测
                 if (hoveredMonsterStatus < 0 &&
@@ -639,6 +717,24 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         } else if (id == "metallicize") {
             name = L"金属化";
             line2 = L"在你的回合结束时，获得 " + std::to_wstring(n) + L" 点格挡";
+        } else if (id == "ritual") {
+            name = L"仪式";
+            line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点力量";
+        } else if (id == "multi_armor") {
+            name = L"多层护甲";
+            line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点格挡；\n该单位受到攻击伤害而失去生命时，层数减少 1";
+        } else if (id == "barricade") {
+            name = L"壁垒";
+            line2 = L"格挡不会在其回合开始时消失";
+        } else if (id == "intangible") {
+            name = L"无实体";
+            line2 = L"在本回合内，将该单位每次受到的伤害和生命减少效果降为 1";
+        } else if (id == "thorns") {
+            name = L"荆棘";
+            line2 = L"每受到一次攻击，对攻击者造成 " + std::to_wstring(n) + L" 点反伤";
+        } else if (id == "artifact") {
+            name = L"人工制品";
+            line2 = L"免疫 " + std::to_wstring(n) + L" 次负面效果";
         } else {
             name = sf::String(id).toWideString();
             line2 = L"效果层数 " + std::to_wstring(n);
@@ -820,6 +916,16 @@ void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot
         }
         // 若本帧没有显式选中牌且有 hover，按 hover 行为处理
         if (hoverIndex >= 0 && selectedHandIndex_ < 0 && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
+            // 能量不足时直接在中央弹出提示，不进入瞄准/选牌
+            if (lastSnapshot_) {
+                const auto& id = s.hand[static_cast<size_t>(hoverIndex)].id;
+                const CardData* cd = get_card_by_id(id);
+                int cost = cd ? cd->cost : 0;
+                if (lastSnapshot_->energy < cost) {
+                    show_center_tip(L"能量不足", 1.2f);
+                    return;
+                }
+            }
             selectedHandIndex_ = hoverIndex;
             // 选中时即进入“出牌瞄准/选择目标”阶段，根据卡牌类型决定是否需要敌人目标
             selectedCardTargetsEnemy_ = card_targets_enemy(s, static_cast<size_t>(hoverIndex));

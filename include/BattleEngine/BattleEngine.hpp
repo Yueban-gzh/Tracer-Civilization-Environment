@@ -216,6 +216,9 @@ private:
     // 回合阶段驱动
     TurnPhase                     turn_phase_ = TurnPhase::Idle;
     int                           turn_phase_hold_frames_ = 0;
+
+    // 用于防止荆棘反伤递归
+    bool                          in_thorns_recoil_ = false;
 };
 
 } // namespace tce

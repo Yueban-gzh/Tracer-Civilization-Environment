@@ -33,6 +33,9 @@ private:
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    void show_center_tip(std::wstring text, float seconds);
+    void draw_center_tip(sf::RenderWindow& window);
+    bool can_pay_selected_card_cost() const;
 
     unsigned width_;
     unsigned height_;
@@ -65,6 +68,14 @@ private:
 
     // 选中牌当前屏幕中心位置（用于绘制瞄准箭头）
     sf::Vector2f selectedCardScreenPos_{0.f, 0.f};
+
+    // 最近一次绘制使用的快照（用于在事件处理阶段校验能量等 UI 侧逻辑）
+    const BattleStateSnapshot* lastSnapshot_ = nullptr;
+
+    // 屏幕中间提示（如“能量不足”）
+    sf::Clock    centerTipClock_;
+    float        centerTipSeconds_ = 0.f;
+    std::wstring centerTipText_;
 };
 
 } // namespace tce

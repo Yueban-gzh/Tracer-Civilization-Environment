@@ -84,7 +84,7 @@ std::unordered_map<CardId, CardData> s_cards{
             "bash",
             u8"重击",
             CardType::Attack,
-            1,
+            2,
             Rarity::Uncommon,
             u8"造成8点伤害，并施加2层易伤",
             false,
@@ -101,7 +101,7 @@ std::unordered_map<CardId, CardData> s_cards{
             "bash+",
             u8"重击+",
             CardType::Attack,
-            1,
+            2,
             Rarity::Uncommon,
             u8"造成10点伤害，并施加3层易伤。",
             false,
@@ -114,7 +114,17 @@ std::unordered_map<CardId, CardData> s_cards{
     },
 };
 
-std::unordered_map<MonsterId, MonsterData> s_monsters;
+std::unordered_map<MonsterId, MonsterData> s_monsters{
+    {
+        "cultist",
+        MonsterData{
+            "cultist",
+            u8"邪教徒",
+            MonsterType::Normal,
+            100
+        }
+    },
+};
 
 } // namespace
 

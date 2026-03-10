@@ -150,10 +150,12 @@ void BattleEngine::phase_player_turn_end(EffectContext& ctx) {
 }
 
 void BattleEngine::phase_enemy_turn_start(EffectContext& tick_ctx) {
-    // ②.0 敌人回合开始：先清空所有怪物的格挡，再结算中毒（意图文本保持不变，直到下一个玩家回合开始时再更新）
+    // ②.0 敌人回合开始：先清空所有怪物的格挡（若无壁垒），再结算中毒（意图文本保持不变，直到下一个玩家回合开始时再更新）
     for (size_t i = 0; i < monsters_.size(); ++i) {
         auto& m = monsters_[i];
-        m.block = 0;
+        // 壁垒：拥有该状态的怪物，其格挡不会在回合开始时消失
+        if (get_status_stacks(m.statuses, "barricade") <= 0)
+            m.block = 0;
         if (m.currentHp <= 0) continue;
     }
     for (size_t i = 0; i < monsters_.size(); ++i) {
@@ -213,8 +215,9 @@ void BattleEngine::phase_enemy_turn_end(EffectContext& tick_ctx) {
         m.statuses.erase(std::remove_if(m.statuses.begin(), m.statuses.end(), [](const StatusInstance& x) { return x.duration == 0; }), m.statuses.end());
     }
 
-    // ④ 清空玩家格挡（怪物回合结束）
-    player_state_.block = 0;
+    // ④ 清空玩家格挡（怪物回合结束）；若玩家拥有壁垒，则保留格挡
+    if (get_status_stacks(player_state_.statuses, "barricade") <= 0)
+        player_state_.block = 0;
 }
 
 void BattleEngine::phase_player_turn_start(EffectContext&) {
@@ -302,6 +305,26 @@ std::vector<CardId> BattleEngine::get_reward_cards(int count) {
 
 // apply_status_to_player：对玩家施加增益/减益，写入玩家实例的 statuses
 void BattleEngine::apply_status_to_player(StatusId id, int stacks, int duration) {
+    // 人工制品：免疫 X 次负面效果。若本次为负面状态且仍有层数，则消耗 1 层并直接免疫。
+    if (stacks > 0 && id != "artifact") {
+        int artifact = get_status_stacks(player_state_.statuses, "artifact");
+        if (artifact > 0) {
+            // 负面效果 id 列表（后续可扩展）
+            const bool is_negative =
+                id == "vulnerable" ||
+                id == "weak" ||
+                id == "frail" ||
+                id == "entangle" ||
+                id == "poison" ||
+                id == "shackles" ||
+                id == "dexterity_down" ||
+                id == "draw_reduction";
+            if (is_negative) {
+                reduce_status_stacks(player_state_.statuses, "artifact", 1);
+                return;
+            }
+        }
+    }
     for (auto& s : player_state_.statuses) {
         if (s.id == id) {
             s.stacks += stacks;
@@ -324,6 +347,22 @@ void BattleEngine::deal_damage_to_player(int amount) {
     int absorbed = (amount < player_state_.block) ? amount : player_state_.block;
     player_state_.block -= absorbed;
     int hp_damage = amount - absorbed;
+    // 无实体：本回合受到的每次伤害/生命减少效果降为 1
+    if (get_status_stacks(player_state_.statuses, "intangible") > 0 && hp_damage > 1)
+        hp_damage = 1;
+    // 多层护甲：只有在真正失去生命（hp_damage > 0）时才减少 1 层
+    if (hp_damage > 0) {
+        reduce_status_stacks(player_state_.statuses, "multi_armor", 1);
+    }
+    // 荆棘：每次受到攻击时（无论是否真正掉血），对攻击者造成 X 点反伤（当前 Demo 仅一个怪物，下标 0）
+    if (!in_thorns_recoil_) {
+        int thorns = get_status_stacks(player_state_.statuses, "thorns");
+        if (thorns > 0 && !monsters_.empty()) {
+            in_thorns_recoil_ = true;
+            deal_damage_to_monster(0, thorns);
+            in_thorns_recoil_ = false;
+        }
+    }
     player_state_.currentHp -= hp_damage;
     if (player_state_.currentHp < 0) player_state_.currentHp = 0;
 }
@@ -343,6 +382,22 @@ void BattleEngine::deal_damage_to_monster(int monster_index, int amount) {
     int absorbed = (amount < m.block) ? amount : m.block;
     m.block -= absorbed;
     int hp_damage = amount - absorbed;
+    // 无实体：本回合受到的每次伤害/生命减少效果降为 1
+    if (get_status_stacks(m.statuses, "intangible") > 0 && hp_damage > 1)
+        hp_damage = 1;
+    // 多层护甲：怪物在真正失去生命（hp_damage > 0）时层数减少 1
+    if (hp_damage > 0) {
+        reduce_status_stacks(m.statuses, "multi_armor", 1);
+    }
+    // 荆棘：每次受到攻击时（无论是否真正掉血），对攻击者造成 X 点反伤
+    if (!in_thorns_recoil_) {
+        int thorns = get_status_stacks(m.statuses, "thorns");
+        if (thorns > 0) {
+            in_thorns_recoil_ = true;
+            deal_damage_to_player(thorns);
+            in_thorns_recoil_ = false;
+        }
+    }
     m.currentHp -= hp_damage;
     if (m.currentHp < 0) m.currentHp = 0;
 }
@@ -350,7 +405,10 @@ void BattleEngine::deal_damage_to_monster(int monster_index, int amount) {
 // deal_damage_to_player_ignoring_block：无视格挡对玩家造成伤害（如中毒）
 void BattleEngine::deal_damage_to_player_ignoring_block(int amount) {
     if (amount <= 0) return;
-    player_state_.currentHp -= amount;
+    int hp_damage = amount;
+    if (get_status_stacks(player_state_.statuses, "intangible") > 0 && hp_damage > 1)
+        hp_damage = 1;
+    player_state_.currentHp -= hp_damage;
     if (player_state_.currentHp < 0) player_state_.currentHp = 0;
 }
 
@@ -359,7 +417,10 @@ void BattleEngine::deal_damage_to_monster_ignoring_block(int monster_index, int 
     if (amount <= 0) return;
     if (monster_index < 0 || static_cast<size_t>(monster_index) >= monsters_.size()) return;
     MonsterInBattle& m = monsters_[static_cast<size_t>(monster_index)];
-    m.currentHp -= amount;
+    int hp_damage = amount;
+    if (get_status_stacks(m.statuses, "intangible") > 0 && hp_damage > 1)
+        hp_damage = 1;
+    m.currentHp -= hp_damage;
     if (m.currentHp < 0) m.currentHp = 0;
 }
 
@@ -444,6 +505,25 @@ void BattleEngine::apply_status_to_monster(int monster_index, StatusId id, int s
     if (monster_index < 0 || static_cast<size_t>(monster_index) >= monsters_.size())
         return;
     auto& list = monsters_[static_cast<size_t>(monster_index)].statuses;
+    // 人工制品：免疫 X 次负面效果。若本次为负面状态且仍有层数，则消耗 1 层并直接免疫。
+    if (stacks > 0 && id != "artifact") {
+        int artifact = get_status_stacks(list, "artifact");
+        if (artifact > 0) {
+            const bool is_negative =
+                id == "vulnerable" ||
+                id == "weak" ||
+                id == "frail" ||
+                id == "entangle" ||
+                id == "poison" ||
+                id == "shackles" ||
+                id == "dexterity_down" ||
+                id == "draw_reduction";
+            if (is_negative) {
+                reduce_status_stacks(list, "artifact", 1);
+                return;
+            }
+        }
+    }
     for (auto& s : list) {
         if (s.id == id) {   // 找到已有同 id 状态则叠加层数
             s.stacks += stacks;

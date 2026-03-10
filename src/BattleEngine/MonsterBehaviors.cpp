@@ -11,7 +11,7 @@ namespace {
 MonsterIntent intent_unknown(MonsterId, int) { return MonsterIntent{MonsterIntentKind::Unknown, 0}; }
 void behavior_unknown(MonsterId, int, EffectContext&, int) {}
 
-// ---------- cultist：奇数回合攻击 5，偶数回合强化（自身力量 +2） ----------
+// ---------- cultist：奇数回合攻击 5，偶数回合给自己施加 2 层“仪式” ----------
 MonsterIntent intent_cultist(MonsterId, int turn_number) {
     if (turn_number % 2 == 1)
         return MonsterIntent{MonsterIntentKind::Attack, 5};
@@ -22,8 +22,8 @@ void behavior_cultist(MonsterId, int turn_number, EffectContext& ctx, int monste
         int dmg = ctx.get_effective_damage_dealt_to_player(5, monster_index);
         ctx.deal_damage_to_player(dmg);
     } else {
-        // 力量为持续效果：duration = -1
-        ctx.apply_status_to_monster(monster_index, "strength", 2, -1);
+        // 仪式本身是一个状态：在敌人回合结束时，每层为自身提供 1 点力量
+        ctx.apply_status_to_monster(monster_index, "ritual", 2, -1);
     }
 }
 
