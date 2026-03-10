@@ -8,6 +8,7 @@
 ## 一、职责与位置
 
 - **职责**：加载并缓存卡牌表、怪物表、事件表；按 id 提供 O(1) 查找；提供按稀有度排序（奖励展示）及排行榜排序。
+- **静态数据原则**：E模块仅提供静态数据（id、name、type、maxHp等），不包含动态行为逻辑（如intentPattern、attackDamage、blockAmount、卡牌效果数值等）。动态行为由B/C模块通过ID调用对应的效果函数实现。
 - **依赖**：无；被 BattleEngine(B)、CardSystem(C)、EventEngine(D) 及主流程调用。
 - **课设落点**：哈希表查找、排序算法。
 
@@ -36,8 +37,8 @@
 | name | string | 是 | 卡牌名称 |
 | cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒）；实现侧大小写不敏感（`"attack"` 等也能被解析），推荐仍按枚举名大小写书写 |
 | cost | int | 是 | 消耗墨力（特殊值如 -1 表示 X，由 B/C 约定） |
-| rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"` |
-| description | string | 是 | 展示用描述 |
+| rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"`（JSON中使用小写字符串，解析时映射到 `tce::Rarity` 枚举） |
+| description | string | 是 | 展示用文学描述（不含数值效果，数值由C模块的效果函数实现） |
 | exhaust | bool | 是 | 词条：消耗（打出后进消耗堆） |
 | ethereal | bool | 是 | 词条：虚无（回合末未打出则进消耗堆） |
 | innate | bool | 是 | 词条：固有（首回合必入手牌） |
@@ -53,7 +54,7 @@
   "cardType": "Attack",
   "cost": 1,
   "rarity": "common",
-  "description": "造成8点伤害。使用此牌时，吟诵《秦风·无衣》，与幻境中的同袍之志共鸣，挥出刚劲一击。",
+  "description": "吟诵《秦风·无衣》，与幻境中的同袍之志共鸣，挥出刚劲一击。",
   "exhaust": false,
   "ethereal": false,
   "innate": false,
@@ -65,17 +66,25 @@
 ### 怪物表 `monsters.json`
 
 - **格式**：JSON 数组，每项为一个怪物对象。
-- **字段**（当前实现**只使用粗粒度静态数据**：id/name/type/maxHp，意图与行为由 B 的怪物行为函数决定；下列可选字段预留给有需要时扩展使用）：
+- **字段**（E模块仅提供静态数据，意图与行为由B的怪物行为函数决定）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | id | string | 是 | 唯一 id，如 `"monster_001"`、`"monster_boss_1"` |
 | name | string | 是 | 怪物名称 |
-| isBoss | bool | 是 | 是否为 Boss |
+| type | string | 是 | `"normal"` / `"elite"` / `"boss"`（JSON中使用小写字符串，解析时映射到 `tce::MonsterType` 枚举） |
 | maxHp | int | 是 | 最大生命值 |
-| intentPattern | string | 否 | 意图顺序，如 `"attack,block"`，由战斗引擎解析 |
-| attackDamage | int | 否 | 攻击伤害 |
-| blockAmount | int | 否 | 格挡值 |
+
+- **示例一条**：
+
+```json
+{
+  "id": "monster_001",
+  "name": "残鼎之灵",
+  "type": "normal",
+  "maxHp": 28
+}
+```
 
 ### 事件表 `events.json`
 
@@ -92,7 +101,7 @@
 - **options 每项**：
   - `text` (string)：选项文案。
   - `next` (string)：有则表示跳转到对应 EventId 的子事件。
-  - `result` (object)：有则表示该选项的结局，由 EventEngine 解析；含 `type`（如 `"gold"` / `"heal"` / `"card_reward"` / `"none"`）和 `value` (int)。
+  - `result` (object)：有则表示该选项的结局，由 EventEngine 解析；含 `type`（如 `"gold"` / `"heal"` / `"card_reward"` / `"none"` / `"relic"` / `"max_hp"` / `"remove_card"`）和 `value` (int)。
 
 - **示例**：一个选项跳转子事件，一个选项直接给结果。
 
@@ -199,16 +208,4 @@ ids = data.sort_cards_by_rarity(ids);
 
 1. **工作目录**：运行 exe 时当前目录需为项目根（或包含 `data/` 的目录），否则 `load_*(".")` 会失败；在 VS 调试时可把“工作目录”设为 `$(ProjectDir)`。
 2. **id 唯一性**：三张表内 id 不可重复；卡牌/怪物/事件 id 互不冲突即可，可同用 string 如 `"card_001"`、`"monster_boss_1"`。
-3. **扩展数据（多加卡、多加怪、多加事件或改文案）**：
-   - **新增卡牌**：
-     - 选择一个新的 `id`（如 `"card_029"` 或 `"card_001+"`），确保在整张卡牌表中唯一；已存在的 id 不要随意改名，以免旧存档或其他模块引用失效。
-     - `cardType` 请仍写为 `"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"` 之一，尽管实现支持大小写不敏感，但文档与代码示例均按枚举名大小写书写；`rarity` 使用 `"common"` / `"uncommon"` / `"rare"`。
-     - 只要字段齐全、类型正确，DataLayer 会自动加载并通过 `get_card_by_id` 暴露给 C/B；更换文案只需改 `description` 字段，不影响逻辑。
-   - **新增怪物**：
-     - 按当前实现，只要补充 `id`、`name`、`type`（`"normal"|"elite"|"boss"`）和 `maxHp` 即可被 B 读到；`intentPattern` / `attackDamage` / `blockAmount` 为**可选扩展字段**，目前 B 的怪物行为逻辑不依赖它们。
-     - 新增怪物 id 后，需要在 B 侧补充对应的“怪物行为函数”并在注册表中登记，否则战斗中只会看到血量变化而缺少合理意图与行动。
-   - **新增事件**：
-     - 只要 `id` 唯一，`title` / `description` / `options[text/next/result{type,value}]` 字段符合本文件第二节约定即可；可以新增多层 `next` 跳转形成更复杂的事件树。
-     - 修改事件文案（`title` / `description` / `options.text`）不会影响 DataLayer 加载，只要保持 `id` 和结构稳定即可；需要新增新的 `result.type` 时，应与 D 模块约定并在 EventEngine 中支持该类型。
-   - **错误排查**：
-     - 若修改 data 后加载失败，`load_*` 会返回 `false`，同时在控制台打印类似 `[E][DataLayer] load_cards: ...` 的调试信息，可根据提示快速定位是“文件不是数组”“缺少 id”“重复 id”还是 JSON 语法问题。
+3. **扩展数据**：新增卡牌/怪物/事件只需在对应 json 中追加条目并保证字段一致，无需改代码（除非增新字段）。

@@ -71,5 +71,95 @@
       { "text": "以文韵驱散", "result": { "type": "card_reward", "value": 1 } },
       { "text": "绕道而行", "result": { "type": "none", "value": 0 } }
     ]
+  },
+  {
+    "id": "event_006",
+    "title": "藏书阁",
+    "description": "一座古老的藏书阁矗立在幻境深处，门扉半掩，隐约可见内里书卷堆积如山。",
+    "options": [
+      { "text": "推门而入，探索藏书", "next": "event_006a" },
+      { "text": "在门外驻足片刻", "result": { "type": "gold", "value": 10 } },
+      { "text": "转身离开", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_006a",
+    "title": "藏书阁·古籍",
+    "description": "阁内尘封的古籍散发着淡淡墨香，你注意到一本封皮残破的典籍格外引人注目。",
+    "options": [
+      { "text": "小心翼翼翻阅古籍", "next": "event_006b" },
+      { "text": "寻找其他有价值的书籍", "result": { "type": "card_reward", "value": 1 } },
+      { "text": "离开藏书阁", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_006b",
+    "title": "藏书阁·传承",
+    "description": "古籍记载着前人的修行心得，字里行间蕴含着深厚的文化底蕴。你感受到一股力量在体内涌动。",
+    "options": [
+      { "text": "接受文化传承", "result": { "type": "relic", "value": 1 } },
+      { "text": "汲取知识精华", "result": { "type": "max_hp", "value": 5 } },
+      { "text": "将古籍放回原处", "result": { "type": "heal", "value": 15 } }
+    ]
+  },
+  {
+    "id": "event_007",
+    "title": "武道传承",
+    "description": "幻境中出现一座古老的武道场，场中隐约可见武者练功的身影，剑气纵横。",
+    "options": [
+      { "text": "上前挑战", "next": "event_007a" },
+      { "text": "在一旁观摩学习", "result": { "type": "gold", "value": 15 } },
+      { "text": "悄然离去", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_007a",
+    "title": "武道传承·试炼",
+    "description": "武道场的守门人是一位白发老者，他目光如炬，似乎看穿了你的实力。",
+    "options": [
+      { "text": "接受更高层次的试炼", "next": "event_007b" },
+      { "text": "请求指点一二", "result": { "type": "heal", "value": 12 } },
+      { "text": "知难而退", "result": { "type": "gold", "value": 8 } }
+    ]
+  },
+  {
+    "id": "event_007b",
+    "title": "武道传承·突破",
+    "description": "经过层层试炼，你感受到武道真意，身心都得到了淬炼与升华。",
+    "options": [
+      { "text": "突破极限，提升实力", "result": { "type": "max_hp", "value": 8 } },
+      { "text": "领悟武学奥义", "result": { "type": "card_reward", "value": 2 } },
+      { "text": "获得武道传承", "result": { "type": "relic", "value": 1 } }
+    ]
+  },
+  {
+    "id": "event_008",
+    "title": "洗心池",
+    "description": "一方清澈的池水映照着你的倒影，池水泛着淡淡的灵光，似乎能洗涤心灵。",
+    "options": [
+      { "text": "静坐池边，冥想感悟", "next": "event_008a" },
+      { "text": "掬水洗脸", "result": { "type": "heal", "value": 10 } },
+      { "text": "绕池而行", "result": { "type": "none", "value": 0 } }
+    ]
+  },
+  {
+    "id": "event_008a",
+    "title": "洗心池·净化",
+    "description": "在冥想中，你感受到内心的杂念逐渐消散，身心变得澄澈通透。",
+    "options": [
+      { "text": "净化心灵，移除负面", "next": "event_008b" },
+      { "text": "汲取池水灵力", "result": { "type": "max_hp", "value": 6 } },
+      { "text": "结束冥想", "result": { "type": "heal", "value": 8 } }
+    ]
+  },
+  {
+    "id": "event_008b",
+    "title": "洗心池·新生",
+    "description": "池水净化了你的身心，你感到前所未有的轻松与力量。",
+    "options": [
+      { "text": "移除一张诅咒牌", "result": { "type": "remove_card", "value": 1 } },
+      { "text": "获得净化之力", "result": { "type": "card_reward", "value": 1 } },
+      { "text": "铭记此番感悟", "result": { "type": "relic", "value": 1 } }
+    ]
   }
 ]
