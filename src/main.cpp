@@ -1,12 +1,13 @@
 /**
- * 《溯源者：文明环境》课设 - 程序入口
- * 模块：MapEngine(A)、BattleEngine(B)、CardSystem(C)、EventEngine(D)、DataLayer(E)
- * 运行本程序可一次验证 E→C→B 数据加载与联调是否正常。
+ * Tracer: Civilization Environment - entry point
+ * Modules: MapEngine(A), BattleEngine(B), CardSystem(C), EventEngine(D), DataLayer(E)
+ * This program runs a simple E->C->B->D integration test.
  */
 
 #include <iostream>
 #include "DataLayer/DataLayer.h"
 #include "BattleEngine/BattleEngine.hpp"
+#include "EventEngine/EventEngine.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -64,7 +65,7 @@ static bool test_battle_engine(DataLayer::DataLayerImpl& data) {
     tce::CardSystem cs(tce::get_card_by_id);
     tce::BattleEngine engine(cs, tce::get_monster_by_id, tce::get_card_by_id);
     tce::PlayerBattleState player;
-    player.playerName = "测试";
+    player.playerName = "test";
     player.character = "default";
     player.currentHp = player.maxHp = 70;
     player.energy = player.maxEnergy = 3;
@@ -74,7 +75,7 @@ static bool test_battle_engine(DataLayer::DataLayerImpl& data) {
     std::vector<tce::CardId> deck = { "card_001", "card_002", "card_007" };
     engine.start_battle(monster_ids, player, deck, {});
     tce::BattleStateSnapshot snap = engine.get_battle_state();
-    if (snap.monsters.empty() || snap.playerName != "测试") {
+    if (snap.monsters.empty() || snap.playerName != "test") {
         std::cout << "[B] BattleEngine: start_battle/get_battle_state unexpected\n";
         return false;
     }
@@ -89,15 +90,61 @@ static bool test_battle_engine(DataLayer::DataLayerImpl& data) {
     return true;
 }
 
+static bool test_event_engine(DataLayer::DataLayerImpl& data) {
+    auto get_event = [&data](DataLayer::EventId id) { return data.get_event_by_id(id); };
+    tce::EventEngine ev(get_event);
+
+    ev.start_event("event_001");
+    const DataLayer::Event* cur = ev.get_current_event();
+    if (!cur) {
+        std::cout << "[D] EventEngine: start_event(event_001) unexpected (null)\n";
+        return false;
+    }
+    std::cout << "[D] EventEngine: start_event -> title=" << cur->title
+              << " options=" << cur->options.size() << "\n";
+
+    if (!ev.choose_option(0)) {
+        std::cout << "[D] EventEngine: choose_option(0) failed\n";
+        return false;
+    }
+    cur = ev.get_current_event();
+    if (!cur) {
+        std::cout << "[D] EventEngine: choose_option(0) next unexpected (null)\n";
+        return false;
+    }
+    std::cout << "[D] EventEngine: choose_option(0) -> title=" << cur->title << "\n";
+
+    if (!ev.choose_option(0)) {
+        std::cout << "[D] EventEngine: choose_option(0) result failed\n";
+        return false;
+    }
+    DataLayer::EventResult res;
+    if (!ev.get_event_result(res) || res.type != "heal" || res.value != 10) {
+        std::cout << "[D] EventEngine: get_event_result unexpected\n";
+        return false;
+    }
+    std::cout << "[D] EventEngine: get_event_result -> type=" << res.type
+              << " value=" << res.value << "\n";
+
+    // 先序/层序遍历
+    int pre_count = 0, level_count = 0;
+    ev.traverse_preorder("event_001", [&pre_count](const DataLayer::Event& e) { (void)e; ++pre_count; });
+    ev.traverse_level_order("event_001", [&level_count](const DataLayer::Event& e) { (void)e; ++level_count; });
+    std::cout << "[D] EventEngine: traverse_preorder(event_001) visited " << pre_count << " nodes, level_order " << level_count << " nodes\n";
+    std::cout << "[D] EventEngine OK\n";
+    return true;
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(65001);
 #endif
-    std::cout << "--- 模块联调测试 (E→C→B) ---\n";
+    std::cout << "--- Integration test (E->C->B->D) ---\n";
     DataLayer::DataLayerImpl data;
     if (!test_data_layer(data)) return 1;
     if (!test_card_system()) return 2;
     if (!test_battle_engine(data)) return 3;
+    if (!test_event_engine(data)) return 4;
     std::cout << "--- Tracer: Civilization Environment - 全部通过 ---\n";
     return 0;
 }
