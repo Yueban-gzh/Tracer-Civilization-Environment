@@ -43,6 +43,8 @@ void register_all_status_effects(BattleEngine& engine) {
                 ctx.apply_status_to_monster(monster_index, "strength", stacks, -1);
             }
         });
+
+    // 自燃（combust）：仅玩家状态，在 BattleEngine::phase_player_turn_end 中直接处理 AoE 伤害，不在此注册 tick
 }
 
 } // namespace tce

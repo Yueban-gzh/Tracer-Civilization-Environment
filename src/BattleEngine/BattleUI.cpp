@@ -466,7 +466,9 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
             || id == "draw_up"
             || id == "energy_up"
             || id == "block_up"
-            || id == "vigor";
+            || id == "vigor"
+            || id == "combust"
+            || id == "rupture";
     };
     auto has_stack_number_ui = [](const std::string& id) {
         // 不可叠加或层数无意义的状态不显示下标
@@ -762,6 +764,28 @@ void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnaps
         } else if (id == "buffer") {
             name = L"缓冲";
             line2 = L"阻止下 " + std::to_wstring(n) + L" 次你受到的生命值损伤";
+        } else if (id == "combust") {
+            name = L"自燃";
+            // Y 为自燃层数（本状态 st.stacks），X 为由牌提供的总伤害数值：来自状态 \"combust_damage\" 的层数
+            int y = n;
+            int x = 0;
+            // 在玩家身上的状态列表中查找 combust_damage
+            for (const auto& st2 : s.playerStatuses) {
+                if (st2.id == "combust_damage") {
+                    x = st2.stacks;
+                    break;
+                }
+            }
+            if (x <= 0) {
+                // 若尚未有 combust_damage，则描述中仅展示生命损失部分
+                line2 = L"在你的回合结束时，失去 " + std::to_wstring(y) + L" 点生命";
+            } else {
+                line2 = L"在你的回合结束时，失去 " + std::to_wstring(y)
+                    + L" 点生命，并对所有敌人造成 " + std::to_wstring(x) + L" 点伤害";
+            }
+        } else if (id == "rupture") {
+            name = L"撕裂";
+            line2 = L"当你从一张牌中失去生命时，获得 " + std::to_wstring(n) + L" 点力量";
         } else {
             name = sf::String(id).toWideString();
             line2 = L"效果层数 " + std::to_wstring(n);

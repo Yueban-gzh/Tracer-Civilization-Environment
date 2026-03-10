@@ -219,6 +219,8 @@ private:
 
     // 用于防止荆棘反伤递归
     bool                          in_thorns_recoil_ = false;
+    // 标记当前是否正在结算一张牌的效果（用于区分「从牌中失去生命」与其它来源）
+    bool                          in_card_effect_ = false;
 };
 
 } // namespace tce

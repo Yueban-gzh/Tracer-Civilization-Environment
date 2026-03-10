@@ -104,7 +104,10 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {
     EffectContext ctx;
     ctx.target_monster_index = target_monster_index;
     fill_effect_context(ctx);
+    // 标记：接下来的一切伤害/失去生命都视为「来自牌」
+    in_card_effect_ = true;
     card_system_->execute_effect(hand[static_cast<size_t>(hand_index)].id, ctx);
+    in_card_effect_ = false;
     CardInstance played = card_system_->remove_from_hand(hand_index);
     if (cd && cd->exhaust)
         card_system_->add_to_exhaust(played);   // 消耗词条：打出后移入消耗堆
@@ -139,6 +142,26 @@ void BattleEngine::phase_player_turn_end(EffectContext& ctx) {
     int entangle = get_status_stacks(player_state_.statuses, "entangle");
     if (entangle > 0)
         deal_damage_to_player(entangle);
+
+    // ①.55 自燃（仅玩家）：在你的回合结束时，失去 Y 点生命，并对所有敌人造成 X 点伤害
+    // 其中 Y 为 combust 的层数；X 为所有自燃牌累积提供的伤害值（可由不同牌给出 5/8 等不同数值）
+    {
+        int combust_hp = get_status_stacks(player_state_.statuses, "combust");
+        int combust_dmg = get_status_stacks(player_state_.statuses, "combust_damage");
+        if (combust_hp > 0 || combust_dmg > 0) {
+            // 对玩家自身：无视格挡扣血，但受无实体、缓冲等影响
+            if (combust_hp > 0) {
+                ctx.deal_damage_to_player_ignoring_block(combust_hp);
+            }
+            // 对所有存活敌人：按层数造成范围伤害（可被格挡等减免）
+            if (combust_dmg > 0) {
+                for (size_t i = 0; i < monsters_.size(); ++i) {
+                    if (monsters_[i].currentHp <= 0) continue;
+                    ctx.deal_damage_to_monster(static_cast<int>(i), combust_dmg);
+                }
+            }
+        }
+    }
 
     // ①.6 玩家回合末状态 tick（金属化等），中毒已在敌人/己方回合开始单独处理
     for (const auto& s : player_state_.statuses) {
@@ -412,6 +435,13 @@ void BattleEngine::deal_damage_to_player(int amount) {
     }
     player_state_.currentHp -= hp_damage;
     if (player_state_.currentHp < 0) player_state_.currentHp = 0;
+    // 撕裂：当你从一张牌中失去生命时，获得 X 点力量（仅玩家，X 为撕裂层数）
+    if (in_card_effect_ && hp_damage > 0) {
+        int rupture = get_status_stacks(player_state_.statuses, "rupture");
+        if (rupture > 0) {
+            apply_status_to_player("strength", rupture, -1);
+        }
+    }
 }
 
 // add_block_to_monster：为指定怪物增加格挡（效果/怪物行为调用）
@@ -465,6 +495,13 @@ void BattleEngine::deal_damage_to_player_ignoring_block(int amount) {
     }
     player_state_.currentHp -= hp_damage;
     if (player_state_.currentHp < 0) player_state_.currentHp = 0;
+    // 撕裂：当你从一张牌中失去生命时，获得 X 点力量（仅玩家，X 为撕裂层数）
+    if (in_card_effect_ && hp_damage > 0) {
+        int rupture = get_status_stacks(player_state_.statuses, "rupture");
+        if (rupture > 0) {
+            apply_status_to_player("strength", rupture, -1);
+        }
+    }
 }
 
 // deal_damage_to_monster_ignoring_block：无视格挡对怪物造成伤害（如中毒）
