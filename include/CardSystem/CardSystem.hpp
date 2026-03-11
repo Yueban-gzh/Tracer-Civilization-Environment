@@ -27,6 +27,12 @@ public:
 
     explicit CardSystem(GetCardByIdFn get_card_by_id);
 
+    /** 战斗中“生成”一张临时牌：不会进入玩家真实牌组（右上角牌组视图会过滤掉 temporary=true）。 */
+    void generate_to_hand(CardId id);
+    void generate_to_draw_pile(CardId id);
+    void generate_to_discard_pile(CardId id);
+    void generate_to_exhaust_pile(CardId id);
+
     void init_deck(const std::vector<CardId>& initial_card_ids);
     void draw_cards(int n);
     const std::vector<CardInstance>& get_hand() const;

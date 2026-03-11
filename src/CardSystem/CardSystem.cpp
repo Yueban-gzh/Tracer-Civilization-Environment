@@ -12,6 +12,34 @@ namespace tce {
 CardSystem::CardSystem(GetCardByIdFn get_card_by_id)
     : get_card_by_id_(std::move(get_card_by_id)) {}
 
+void CardSystem::generate_to_hand(CardId id) {
+    CardInstance c;
+    c.id = std::move(id);
+    c.temporary = true;
+    add_to_hand(c);
+}
+
+void CardSystem::generate_to_draw_pile(CardId id) {
+    CardInstance c;
+    c.id = std::move(id);
+    c.temporary = true;
+    add_to_deck(c);
+}
+
+void CardSystem::generate_to_discard_pile(CardId id) {
+    CardInstance c;
+    c.id = std::move(id);
+    c.temporary = true;
+    add_to_discard(c);
+}
+
+void CardSystem::generate_to_exhaust_pile(CardId id) {
+    CardInstance c;
+    c.id = std::move(id);
+    c.temporary = true;
+    add_to_exhaust(c);
+}
+
 void CardSystem::init_deck(const std::vector<CardId>& initial_card_ids) {
     next_instance_id_ = 0;
     draw_pile_.clear();
@@ -54,7 +82,6 @@ CardInstance CardSystem::remove_from_hand(int hand_index) {
 void CardSystem::add_to_hand(CardInstance card) {
     if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
-        card.temporary  = true;
     }
     if (static_cast<int>(hand_.size()) >= hand_limit_) {
         discard_pile_.push_back(card);
@@ -66,7 +93,6 @@ void CardSystem::add_to_hand(CardInstance card) {
 void CardSystem::add_to_discard(CardInstance card) {
     if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
-        card.temporary  = true;
     }
     discard_pile_.push_back(card);
 }
@@ -74,7 +100,6 @@ void CardSystem::add_to_discard(CardInstance card) {
 void CardSystem::add_to_exhaust(CardInstance card) {
     if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
-        card.temporary  = true;
     }
     exhaust_pile_.push_back(card);
 }
@@ -91,8 +116,6 @@ void CardSystem::shuffle_discard_into_draw() {
 void CardSystem::add_to_deck(CardInstance card) {
     if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
-        // add_to_deck 更偏向“获得到牌组/永久加入”，默认视为非临时牌
-        card.temporary  = false;
     }
     draw_pile_.push_back(card);
 }
