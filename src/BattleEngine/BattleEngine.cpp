@@ -528,6 +528,10 @@ void BattleEngine::fill_effect_context(EffectContext& ctx) {
     ctx.get_effective_block_for_player_ = [this](int base) { return get_effective_block_for_player(base); };
     ctx.apply_status_to_player_ = [this](StatusId id, int stacks, int duration) { apply_status_to_player(std::move(id), stacks, duration); };
     ctx.apply_status_to_monster_ = [this](int i, StatusId id, int stacks, int duration) { apply_status_to_monster(i, std::move(id), stacks, duration); };
+    ctx.generate_to_discard_pile_ = [this](CardId id) {
+        if (!card_system_) return;
+        card_system_->generate_to_discard_pile(std::move(id));
+    };
 }
 
 int BattleEngine::get_status_stacks(const std::vector<StatusInstance>& list, const StatusId& id) {

@@ -92,6 +92,11 @@ public:
         if (apply_status_to_monster_) apply_status_to_monster_(monster_index, std::move(id), stacks, duration);
     }
 
+    /** 战斗中生成一张牌到弃牌堆（用于如“愤怒：在弃牌堆加入一张此牌”一类效果）。 */
+    void generate_to_discard_pile(CardId id) const {
+        if (generate_to_discard_pile_) generate_to_discard_pile_(std::move(id));
+    }
+
     std::function<void(int)> add_block_to_player_;
     std::function<void(int, int)> add_block_to_monster_;
     std::function<void(int)> deal_damage_to_player_;
@@ -103,6 +108,7 @@ public:
     std::function<int(int)> get_effective_block_for_player_;
     std::function<void(StatusId, int, int)> apply_status_to_player_;
     std::function<void(int, StatusId, int, int)> apply_status_to_monster_;
+    std::function<void(CardId)> generate_to_discard_pile_;
 };
 
 // --- 战斗状态快照（供 UI）---

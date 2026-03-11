@@ -13,11 +13,18 @@
 #include "CardSystem/CardSystem.hpp"
 #include "CardSystem/DeckViewCollection.hpp"
 #include "DataLayer/DataLayer.hpp"
+#include "DataLayer/DataLayer.h"
 #include "Effects/CardEffects.hpp"
 #include "Effects/StatusEffects.hpp"
 
 static void runBattleUI(sf::RenderWindow& window) {
     using namespace tce;
+
+    // 加载卡牌/怪物 JSON 到 tce::s_cards / tce::s_monsters（get_card_by_id/get_monster_by_id 会查这两张表）
+    // 默认路径：data/cards.json、data/monsters.json
+    DataLayer::DataLayerImpl data;
+    data.load_cards("");
+    data.load_monsters("");
 
     CardSystem card_system([](CardId id) { return get_card_by_id(id); });
     BattleEngine engine(
@@ -40,7 +47,7 @@ static void runBattleUI(sf::RenderWindow& window) {
     player.cardsToDrawPerTurn = 5;
 
     // Mock：永久牌组（master deck）
-    card_system.init_master_deck({"strike", "strike", "strike", "strike", "strike", "strike", "defend", "defend", "defend", "defend", "bash"});
+    card_system.init_master_deck({"anger", "anger", "anger", "anger", "anger"});
     std::vector<MonsterId> monsters = {"cultist"};
     // Mock 5 个遗物以便顶栏遗物行显示多格
     std::vector<RelicId> relics = {"burning_blood", "relic_2", "relic_3", "relic_4", "relic_5"};

@@ -75,6 +75,86 @@ namespace tce {
             if (id == "strike" || id == "bash") return true;
             return false;
         }
+
+        // 将文本按像素宽度自动换行，并限制在给定高度内；超出行数用省略号截断，避免绘制出卡牌区域
+        inline void draw_wrapped_text(
+            sf::RenderTarget& target,
+            const sf::Font& font,
+            const sf::String& text,
+            unsigned int charSize,
+            sf::Vector2f pos,
+            float maxWidth,
+            float maxHeight,
+            sf::Color color,
+            const sf::RenderStates& states = sf::RenderStates::Default
+        ) {
+            if (maxWidth <= 1.f || maxHeight <= 1.f || text.isEmpty()) return;
+
+            sf::Text measure(font, sf::String(L""), charSize);
+            measure.setFillColor(color);
+
+            const float lineH = font.getLineSpacing(charSize);
+            const int maxLines = static_cast<int>(std::floor(maxHeight / lineH));
+            if (maxLines <= 0) return;
+
+            std::vector<sf::String> lines;
+            lines.reserve(static_cast<size_t>(maxLines));
+
+            sf::String current;
+            auto flush_line = [&]() {
+                lines.push_back(current);
+                current.clear();
+            };
+
+            for (std::size_t i = 0; i < text.getSize(); ++i) {
+                const char32_t ch = text[i]; // SFML3: operator[] 返回 char32_t（UTF-32）
+                if (ch == U'\r') continue;
+                if (ch == U'\n') {
+                    flush_line();
+                    if (static_cast<int>(lines.size()) >= maxLines) break;
+                    continue;
+                }
+
+                sf::String candidate = current;
+                candidate += ch;
+                measure.setString(candidate);
+                const float w = measure.getLocalBounds().size.x;
+
+                if (!current.isEmpty() && w > maxWidth) {
+                    flush_line();
+                    if (static_cast<int>(lines.size()) >= maxLines) break;
+                    current += ch;
+                } else {
+                    current = std::move(candidate);
+                }
+            }
+            if (!current.isEmpty() && static_cast<int>(lines.size()) < maxLines) {
+                lines.push_back(current);
+            }
+            if (lines.empty()) return;
+
+            // 如果文本被截断（还有剩余字符），给最后一行加省略号，并保证不超宽
+            std::size_t joinedLen = 0;
+            for (const auto& l : lines) joinedLen += l.getSize();
+            if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {
+                sf::String& last = lines.back();
+                const sf::String ell = sf::String(L"…");
+                while (true) {
+                    measure.setString(last + ell);
+                    if (measure.getLocalBounds().size.x <= maxWidth) break;
+                    if (last.isEmpty()) break;
+                    last.erase(last.getSize() - 1, 1);
+                }
+                last += ell;
+            }
+
+            for (std::size_t li = 0; li < lines.size(); ++li) {
+                sf::Text t(font, lines[li], charSize);
+                t.setFillColor(color);
+                t.setPosition(sf::Vector2f(pos.x, pos.y + static_cast<float>(li) * lineH));
+                target.draw(t, states);
+            }
+        }
     }
 
     BattleUI::BattleUI(unsigned width, unsigned height) : width_(width), height_(height) {
@@ -586,10 +666,13 @@ namespace tce {
             sf::String descStr;
             if (cd && !cd->description.empty())
                 descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
-            sf::Text descText(fontForChinese(), descStr, 15);
-            descText.setFillColor(sf::Color(240, 238, 235));
-            descText.setPosition(sf::Vector2f(cardX + innerL + 12.f, typeY + typeH + 14.f));
-            window.draw(descText);
+            const float descX = cardX + innerL + 12.f;
+            const float descY = typeY + typeH + 14.f;
+            const float descMaxW = innerW - 24.f;
+            const float descMaxH = (cardY + h) - descY - 14.f;
+            draw_wrapped_text(window, fontForChinese(), descStr, 15,
+                              sf::Vector2f(descX, descY), descMaxW, descMaxH,
+                              sf::Color(240, 238, 235));
         }
 
         const float returnW = 180.f, returnH = 50.f;
@@ -1458,10 +1541,13 @@ namespace tce {
             else {
                 descStr = sf::String(L"");
             }
-            sf::Text descText(fontForChinese(), descStr, 15);
-            descText.setFillColor(sf::Color(240, 238, 235));
-            descText.setPosition(sf::Vector2f(innerL + 12.f, typeY + typeH + 14.f));
-            window.draw(descText, states);
+            const float descX = innerL + 12.f;
+            const float descY = typeY + typeH + 14.f;
+            const float descMaxW = innerW - 24.f;
+            const float descMaxH = h - descY - 14.f;
+            draw_wrapped_text(window, fontForChinese(), descStr, 15,
+                              sf::Vector2f(descX, descY), descMaxW, descMaxH,
+                              sf::Color(240, 238, 235), states);
             };
 
         for (size_t i = 0; i < handCount; ++i) {

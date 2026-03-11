@@ -9,6 +9,16 @@ namespace tce {
 
 namespace {
 
+// 愤怒：未升级 6 伤并在弃牌堆加入一张愤怒；升级 8 伤并加入一张愤怒
+void effect_anger(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index >= 0) {
+        int base = is_upgraded ? 8 : 6;
+        int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+        ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+        ctx.generate_to_discard_pile("anger");
+    }
+}
+
 // 打击：未升级 6 伤，升级 9 伤
 void effect_strike(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index >= 0) {
@@ -39,6 +49,8 @@ void effect_bash(EffectContext& ctx, bool is_upgraded) {
 } // namespace
 
 void register_all_card_effects(CardSystem& card_system) {
+    card_system.register_card_effect("anger", [](EffectContext& c) { effect_anger(c, false); });
+    card_system.register_card_effect("anger+", [](EffectContext& c) { effect_anger(c, true); });
     card_system.register_card_effect("strike", [](EffectContext& c) { effect_strike(c, false); });
     card_system.register_card_effect("strike+", [](EffectContext& c) { effect_strike(c, true); });
     card_system.register_card_effect("defend", [](EffectContext& c) { effect_defend(c, false); });

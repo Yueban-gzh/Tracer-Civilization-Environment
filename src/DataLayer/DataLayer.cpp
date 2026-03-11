@@ -25,12 +25,12 @@ namespace tce {
 
 // 初始内置一组简单卡牌/怪物数据，便于战斗调试；若主流程调用 load_cards/load_monsters 则会覆盖
 std::unordered_map<CardId, CardData> s_cards{
-    { "strike", CardData{ "strike", u8"打击", CardType::Attack, 1, Rarity::Common, u8"造成6点伤害。", false, false, false, false, false, true } },
-    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, Rarity::Common, u8"造成9点伤害。", false, false, false, false, false, true } },
-    { "defend", CardData{ "defend", u8"防御", CardType::Skill, 1, Rarity::Common, u8"获得5点格挡。", false, false, false, false, false, false } },
-    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill, 1, Rarity::Common, u8"获得8点格挡。", false, false, false, false, false, false } },
-    { "bash", CardData{ "bash", u8"重击", CardType::Attack, 2, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true } },
-    { "bash+", CardData{ "bash+", u8"重击+", CardType::Attack, 2, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true } },
+    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true } },
+    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true } },
+    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false } },
+    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false } },
+    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true } },
+    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true } },
 };
 std::unordered_map<MonsterId, MonsterData> s_monsters{
     { "cultist", MonsterData{ "cultist", u8"邪教徒", MonsterType::Normal, 100 } },
@@ -65,7 +65,18 @@ static tce::Rarity rarity_from_string(const std::string& s) {
     if (s == "common")   return tce::Rarity::Common;
     if (s == "uncommon") return tce::Rarity::Uncommon;
     if (s == "rare")     return tce::Rarity::Rare;
+    if (s == "special")  return tce::Rarity::Special;
     return tce::Rarity::Common;
+}
+
+static tce::CardColor color_from_string(const std::string& s) {
+    if (s == "red") return tce::CardColor::Red;
+    if (s == "blue") return tce::CardColor::Blue;
+    if (s == "green") return tce::CardColor::Green;
+    if (s == "purple") return tce::CardColor::Purple;
+    if (s == "colorless") return tce::CardColor::Colorless;
+    if (s == "curse") return tce::CardColor::Curse;
+    return tce::CardColor::Colorless;
 }
 
 std::string DataLayerImpl::resolve_data_path(const std::string& base, const std::string& filename) const {
@@ -89,6 +100,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("name")) cd.name = p->as_string();
         if (const JsonValue* p = v.get_key("cardType")) cd.cardType = card_type_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
+        if (const JsonValue* p = v.get_key("color")) cd.color = color_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("rarity")) cd.rarity = rarity_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("description")) cd.description = p->as_string();
         if (const JsonValue* p = v.get_key("exhaust")) cd.exhaust = p->as_bool();
@@ -96,6 +108,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("innate")) cd.innate = p->as_bool();
         if (const JsonValue* p = v.get_key("retain")) cd.retain = p->as_bool();
         if (const JsonValue* p = v.get_key("unplayable")) cd.unplayable = p->as_bool();
+        if (const JsonValue* p = v.get_key("requiresTarget")) cd.requiresTarget = p->as_bool();
         if (!cd.id.empty()) tce::s_cards[cd.id] = std::move(cd);
     }
     return !tce::s_cards.empty();
@@ -180,6 +193,7 @@ int DataLayerImpl::rarity_order(tce::Rarity r) {
         case tce::Rarity::Common:   return 0;
         case tce::Rarity::Uncommon: return 1;
         case tce::Rarity::Rare:     return 2;
+        case tce::Rarity::Special:  return 3;
         default: return 0;
     }
 }

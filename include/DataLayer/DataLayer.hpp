@@ -14,7 +14,9 @@
 namespace tce {
 
 enum class CardType { Attack, Skill, Power, Status, Curse };
-enum class Rarity { Common, Uncommon, Rare };
+// 卡牌颜色（对应不同角色/无色/诅咒）
+enum class CardColor { Red, Blue, Green, Purple, Colorless, Curse };
+enum class Rarity { Common, Uncommon, Rare, Special };
 enum class MonsterType { Normal, Elite, Boss };
 
 struct CardData {
@@ -22,6 +24,7 @@ struct CardData {
     std::string name;
     CardType   cardType   = CardType::Attack;
     int        cost       = 0;
+    CardColor  color      = CardColor::Colorless;
     Rarity     rarity     = Rarity::Common;
     std::string description;
     bool       exhaust    = false;
@@ -46,7 +49,24 @@ const CardData*    get_card_by_id(CardId id);
 const MonsterData* get_monster_by_id(MonsterId id);
 
 inline const char* to_string(Rarity r) {
-    switch (r) { case Rarity::Common: return "common"; case Rarity::Uncommon: return "uncommon"; case Rarity::Rare: return "rare"; default: return "common"; }
+    switch (r) {
+    case Rarity::Common: return "common";
+    case Rarity::Uncommon: return "uncommon";
+    case Rarity::Rare: return "rare";
+    case Rarity::Special: return "special";
+    default: return "common";
+    }
+}
+inline const char* to_string(CardColor c) {
+    switch (c) {
+    case CardColor::Red: return "red";
+    case CardColor::Blue: return "blue";
+    case CardColor::Green: return "green";
+    case CardColor::Purple: return "purple";
+    case CardColor::Colorless: return "colorless";
+    case CardColor::Curse: return "curse";
+    default: return "colorless";
+    }
 }
 inline const char* to_string(MonsterType t) {
     switch (t) { case MonsterType::Normal: return "normal"; case MonsterType::Elite: return "elite"; case MonsterType::Boss: return "boss"; default: return "normal"; }
