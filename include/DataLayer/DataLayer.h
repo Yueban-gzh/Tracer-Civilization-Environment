@@ -1,0 +1,53 @@
+/**
+ * DataLayer 对外接口
+ * 提供卡牌/怪物/事件表加载与按 id 查找（哈希）、奖励排序
+ * 见 docs/设计与接口.md 第五节 E - DataLayer
+ *
+ * 课设数据结构对应：
+ * - 查找：哈希表（unordered_map），key=id，按 key 查找平均 O(1)；
+ * - 排序：对线性表（vector）做排序，用于奖励展示与排行榜。
+ */
+
+#pragma once
+
+#include "DataTypes.h"
+#include "DataLayer/DataLayer.hpp"
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+namespace DataLayer {
+
+class DataLayerImpl {
+public:
+    DataLayerImpl() = default;
+
+    // ---------- 加载（主流程启动时各调一次，或首次 get 时懒加载）----------
+    bool load_cards(const std::string& path_or_base_dir);
+    bool load_monsters(const std::string& path_or_base_dir);
+    bool load_events(const std::string& path_or_base_dir);
+
+    // ---------- 查找（哈希表）：按 id 作为 key 查找，平均 O(1)；卡牌/怪物统一用 tce 类型，与 B/C 一致 ----------
+    const tce::CardData*    get_card_by_id(const CardId& id) const;
+    const tce::MonsterData* get_monster_by_id(const MonsterId& id) const;
+    const Event*            get_event_by_id(const EventId& id) const;
+
+    // ---------- 排序：对卡牌 id 序列按稀有度关键字排序（common < uncommon < rare），用于战斗奖励展示 ----------
+    std::vector<CardId> sort_cards_by_rarity(const std::vector<CardId>& card_ids) const;
+
+    // ---------- 排序：对排行榜按 score 关键字降序排序（可选）----------
+    struct LeaderboardEntry {
+        std::string playerId;
+        int         score = 0;
+        int         time  = 0;
+    };
+    std::vector<LeaderboardEntry> sort_leaderboard(std::vector<LeaderboardEntry> entries) const;
+
+private:
+    std::unordered_map<EventId, Event> events_;
+
+    static int rarity_order(tce::Rarity r);
+    std::string resolve_data_path(const std::string& base, const std::string& filename) const;
+};
+
+} // namespace DataLayer
