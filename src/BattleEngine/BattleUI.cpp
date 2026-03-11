@@ -187,7 +187,7 @@ namespace tce {
             return false;
         }
 
-        // 非牌组界面：点击「牌组」=整个牌组、左下角抽牌堆图标=抽牌堆、右下角弃牌堆图标=弃牌堆
+        // 非牌组界面：点击「牌组」=牌组、左下角抽牌堆图标=抽牌堆、右下角弃牌堆图标=弃牌堆、弃牌堆上方小块=消耗堆
         if (ev.is<sf::Event::MouseButtonPressed>()) {
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (btn && btn->button == sf::Mouse::Button::Left) {
@@ -195,7 +195,7 @@ namespace tce {
                 const float btnW = 58.f, btnH = 48.f, gap = 18.f;
                 const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;
                 if (mousePos.x >= deckBtnLeft && mousePos.x <= deckBtnLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
-                    pending_deck_view_mode_ = 1;  // 整个牌组
+                    pending_deck_view_mode_ = 1;  // 牌组
                     return false;
                 }
                 const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
@@ -208,6 +208,15 @@ namespace tce {
                 const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
                 if (mousePos.x >= discardX && mousePos.x <= discardX + PILE_ICON_W && mousePos.y >= discardY && mousePos.y <= discardY + PILE_ICON_H) {
                     pending_deck_view_mode_ = 3;  // 弃牌堆
+                    return false;
+                }
+                // 消耗堆：弃牌堆上方的小图标区域（与绘制位置一致）
+                const float exhaustX = discardX + 3.f;
+                const float exhaustY = discardY - 56.f;
+                const float exhaustW = PILE_ICON_W - 6.f;
+                const float exhaustH = 48.f;
+                if (mousePos.x >= exhaustX && mousePos.x <= exhaustX + exhaustW && mousePos.y >= exhaustY && mousePos.y <= exhaustY + exhaustH) {
+                    pending_deck_view_mode_ = 4;  // 消耗堆
                     return false;
                 }
             }
@@ -1568,16 +1577,23 @@ namespace tce {
         // 弃牌堆：往右 4px，往上 4px
         const float discardX = width_ - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;
         const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
-        if (s.exhaustPileSize > 0) {
+        // 消耗堆：弃牌堆上方的小图标（为空也显示，便于点击查看）
+        {
             sf::RectangleShape exhaustIcon(sf::Vector2f(PILE_ICON_W - 6.f, 48.f));
             exhaustIcon.setPosition(sf::Vector2f(discardX + 3.f, discardY - 56.f));
-            exhaustIcon.setFillColor(sf::Color(70, 70, 70));
-            exhaustIcon.setOutlineColor(sf::Color(100, 100, 100));
+            if (s.exhaustPileSize > 0) {
+                exhaustIcon.setFillColor(sf::Color(70, 70, 70));
+                exhaustIcon.setOutlineColor(sf::Color(120, 120, 120));
+            } else {
+                exhaustIcon.setFillColor(sf::Color(55, 55, 55));
+                exhaustIcon.setOutlineColor(sf::Color(85, 85, 85));
+            }
             exhaustIcon.setOutlineThickness(1.f);
             window.draw(exhaustIcon);
+
             std::snprintf(buf, sizeof(buf), "%d", s.exhaustPileSize);
             sf::Text exNum(font_, buf, 16);
-            exNum.setFillColor(sf::Color(180, 180, 180));
+            exNum.setFillColor(s.exhaustPileSize > 0 ? sf::Color(200, 200, 200) : sf::Color(160, 160, 160));
             exNum.setPosition(sf::Vector2f(discardX + 14.f, discardY - 48.f));
             window.draw(exNum);
         }

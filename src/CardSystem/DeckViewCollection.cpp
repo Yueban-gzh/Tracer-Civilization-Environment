@@ -23,6 +23,9 @@ std::vector<CardInstance> collect_deck_view_cards(const CardSystem& card_system,
     case DeckViewMode::DiscardPile:
         for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
         break;
+    case DeckViewMode::ExhaustPile:
+        for (const auto& c : card_system.get_exhaust_pile()) cards.push_back(c);
+        break;
     default:
         break;
     }
@@ -35,6 +38,7 @@ std::wstring deck_view_empty_tip(DeckViewMode mode) {
     case DeckViewMode::Deck: return L"牌组为空";
     case DeckViewMode::DrawPile: return L"抽牌堆为空";
     case DeckViewMode::DiscardPile: return L"弃牌堆为空";
+    case DeckViewMode::ExhaustPile: return L"消耗堆为空";
     default: return L"牌堆为空";
     }
 }

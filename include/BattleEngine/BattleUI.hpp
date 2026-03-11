@@ -34,7 +34,7 @@ public:
     void set_deck_view_cards(std::vector<CardInstance> cards);
     void set_deck_view_active(bool active);
     bool is_deck_view_active() const { return deck_view_active_; }
-    /** 轮询一次是否请求打开牌组界面；outMode: 1=整个牌组(右上角牌组)，2=抽牌堆(左下角)，3=弃牌堆(右下角) */
+    /** 轮询一次是否请求打开牌组界面；outMode: 1=牌组(右上角)，2=抽牌堆(左下角)，3=弃牌堆(右下角)，4=消耗堆(弃牌堆上方) */
     bool pollOpenDeckViewRequest(int& outMode);
 
     /** 屏幕中央短时提示（如“抽牌堆为空”），seconds 为显示秒数 */

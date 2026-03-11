@@ -13,6 +13,7 @@ enum class DeckViewMode : int {
     Deck       = 1, // 玩家真实牌组（不包含战斗中临时生成牌）
     DrawPile   = 2,
     DiscardPile = 3,
+    ExhaustPile = 4,
 };
 
 /** 根据牌组界面模式，从 CardSystem 收集要展示的卡牌列表。 */
