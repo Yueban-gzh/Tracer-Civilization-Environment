@@ -11,6 +11,7 @@
 #include "BattleEngine/BattleUISnapshotAdapter.hpp"
 #include "BattleEngine/BattleEngine.hpp"
 #include "CardSystem/CardSystem.hpp"
+#include "CardSystem/DeckViewCollection.hpp"
 #include "DataLayer/DataLayer.hpp"
 #include "Effects/CardEffects.hpp"
 #include "Effects/StatusEffects.hpp"
@@ -82,21 +83,10 @@ static void runBattleUI(sf::RenderWindow& window) {
         // 打开牌组界面：1=整个牌组(右上角牌组)，2=抽牌堆(左下角)，3=弃牌堆(右下角)；空则提示不打开
         int deckViewMode = 0;
         if (ui.pollOpenDeckViewRequest(deckViewMode)) {
-            std::vector<CardInstance> cards;
-            if (deckViewMode == 1) {
-                for (const auto& c : card_system.get_hand()) cards.push_back(c);
-                for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
-                for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
-                for (const auto& c : card_system.get_exhaust_pile()) cards.push_back(c);
-            } else if (deckViewMode == 2) {
-                for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
-            } else if (deckViewMode == 3) {
-                for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
-            }
+            const auto mode = static_cast<DeckViewMode>(deckViewMode);
+            std::vector<CardInstance> cards = collect_deck_view_cards(card_system, mode);
             if (cards.empty()) {
-                if (deckViewMode == 1) ui.showTip(L"牌组为空");
-                else if (deckViewMode == 2) ui.showTip(L"抽牌堆为空");
-                else ui.showTip(L"弃牌堆为空");
+                ui.showTip(deck_view_empty_tip(mode));
             } else {
                 ui.set_deck_view_cards(std::move(cards));
                 ui.set_deck_view_active(true);

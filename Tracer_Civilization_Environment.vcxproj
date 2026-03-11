@@ -147,6 +147,7 @@
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />
+    <ClCompile Include="src\CardSystem\DeckViewCollection.cpp" />
     <ClCompile Include="src\BattleEngine\BattleEngine.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUI.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp" />
@@ -161,6 +162,7 @@
     <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp" />
     <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp" />
     <ClInclude Include="include\CardSystem\CardSystem.hpp" />
+    <ClInclude Include="include\CardSystem\DeckViewCollection.hpp" />
     <ClInclude Include="include\Common\Types.hpp" />
     <ClInclude Include="include\DataLayer\DataLayer.h" />
     <ClInclude Include="include\DataLayer\DataLayer.hpp" />
