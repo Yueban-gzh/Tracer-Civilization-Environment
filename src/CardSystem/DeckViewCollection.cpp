@@ -10,11 +10,12 @@ std::vector<CardInstance> collect_deck_view_cards(const CardSystem& card_system,
     std::vector<CardInstance> cards;
 
     switch (mode) {
-    case DeckViewMode::FullDeck:
-        for (const auto& c : card_system.get_hand()) cards.push_back(c);
-        for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
-        for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
-        for (const auto& c : card_system.get_exhaust_pile()) cards.push_back(c);
+    case DeckViewMode::Deck:
+        // “牌组”仅展示玩家真实牌组：过滤掉战斗中临时生成的牌（temporary=true）
+        for (const auto& c : card_system.get_hand()) if (!c.temporary) cards.push_back(c);
+        for (const auto& c : card_system.get_draw_pile()) if (!c.temporary) cards.push_back(c);
+        for (const auto& c : card_system.get_discard_pile()) if (!c.temporary) cards.push_back(c);
+        for (const auto& c : card_system.get_exhaust_pile()) if (!c.temporary) cards.push_back(c);
         break;
     case DeckViewMode::DrawPile:
         for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
@@ -31,7 +32,7 @@ std::vector<CardInstance> collect_deck_view_cards(const CardSystem& card_system,
 
 std::wstring deck_view_empty_tip(DeckViewMode mode) {
     switch (mode) {
-    case DeckViewMode::FullDeck: return L"牌组为空";
+    case DeckViewMode::Deck: return L"牌组为空";
     case DeckViewMode::DrawPile: return L"抽牌堆为空";
     case DeckViewMode::DiscardPile: return L"弃牌堆为空";
     default: return L"牌堆为空";

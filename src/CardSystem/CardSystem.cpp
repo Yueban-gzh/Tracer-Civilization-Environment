@@ -22,6 +22,7 @@ void CardSystem::init_deck(const std::vector<CardId>& initial_card_ids) {
         CardInstance c;
         c.instanceId = ++next_instance_id_;
         c.id         = id;
+        c.temporary  = false;
         draw_pile_.push_back(c);
     }
     std::random_device rd;
@@ -51,8 +52,10 @@ CardInstance CardSystem::remove_from_hand(int hand_index) {
 }
 
 void CardSystem::add_to_hand(CardInstance card) {
-    if (card.instanceId == 0)
+    if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
+        card.temporary  = true;
+    }
     if (static_cast<int>(hand_.size()) >= hand_limit_) {
         discard_pile_.push_back(card);
         return;
@@ -61,14 +64,18 @@ void CardSystem::add_to_hand(CardInstance card) {
 }
 
 void CardSystem::add_to_discard(CardInstance card) {
-    if (card.instanceId == 0)
+    if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
+        card.temporary  = true;
+    }
     discard_pile_.push_back(card);
 }
 
 void CardSystem::add_to_exhaust(CardInstance card) {
-    if (card.instanceId == 0)
+    if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
+        card.temporary  = true;
+    }
     exhaust_pile_.push_back(card);
 }
 
@@ -82,8 +89,11 @@ void CardSystem::shuffle_discard_into_draw() {
 }
 
 void CardSystem::add_to_deck(CardInstance card) {
-    if (card.instanceId == 0)
+    if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
+        // add_to_deck 更偏向“获得到牌组/永久加入”，默认视为非临时牌
+        card.temporary  = false;
+    }
     draw_pile_.push_back(card);
 }
 

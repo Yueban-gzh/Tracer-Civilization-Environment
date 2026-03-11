@@ -16,6 +16,9 @@ class EffectContext;
 struct CardInstance {
     InstanceId instanceId = 0;
     CardId     id;
+    // 战斗中临时生成的牌（如“复制/生成到手牌”）应标记为 temporary，
+    // 以便“牌组(Deck)”视图只展示玩家真实牌组（不包含临时生成牌）。
+    bool       temporary = false;
 };
 
 class CardSystem {

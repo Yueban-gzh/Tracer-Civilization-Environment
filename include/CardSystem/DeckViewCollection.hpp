@@ -10,7 +10,7 @@
 namespace tce {
 
 enum class DeckViewMode : int {
-    FullDeck   = 1, // 手牌 + 抽牌堆 + 弃牌堆 + 消耗堆
+    Deck       = 1, // 玩家真实牌组（不包含战斗中临时生成牌）
     DrawPile   = 2,
     DiscardPile = 3,
 };
