@@ -39,12 +39,13 @@ static void runBattleUI(sf::RenderWindow& window) {
     player.gold       = 99;
     player.cardsToDrawPerTurn = 5;
 
-    std::vector<CardId> deck = {"strike", "strike", "strike", "strike", "strike", "strike", "defend", "defend", "defend", "defend", "bash"};
+    // Mock：永久牌组（master deck）
+    card_system.init_master_deck({"strike", "strike", "strike", "strike", "strike", "strike", "defend", "defend", "defend", "defend", "bash"});
     std::vector<MonsterId> monsters = {"cultist"};
     // Mock 5 个遗物以便顶栏遗物行显示多格
     std::vector<RelicId> relics = {"burning_blood", "relic_2", "relic_3", "relic_4", "relic_5"};
 
-    engine.start_battle(monsters, player, deck, relics);
+    engine.start_battle(monsters, player, card_system.get_master_deck_card_ids(), relics);
 
     // Mock：玩家初始获得 6 层金属化
     engine.apply_status_to_player("metallicize", 6, -1);

@@ -16,10 +16,10 @@ enum class DeckViewMode : int {
     ExhaustPile = 4,
 };
 
-/** 根据牌组界面模式，从 CardSystem 收集要展示的卡牌列表。 */
+/** 根据牌组界面模式，从 CardSystem 收集要展示的卡牌列表（用于 UI 的网格展示）。 */
 std::vector<CardInstance> collect_deck_view_cards(const CardSystem& card_system, DeckViewMode mode);
 
-/** 对应模式为空时的提示文案。 */
+/** 对应模式为空时的提示文案（如“抽牌堆为空”“消耗堆为空”）。 */
 std::wstring deck_view_empty_tip(DeckViewMode mode);
 
 } // namespace tce
