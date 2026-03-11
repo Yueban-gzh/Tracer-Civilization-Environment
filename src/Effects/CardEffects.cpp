@@ -19,6 +19,17 @@ void effect_anger(EffectContext& ctx, bool is_upgraded) {
     }
 }
 
+// 铁斩波：未升级 5 格挡 + 5 伤，升级 7 格挡 + 7 伤
+void effect_iron_wave(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index >= 0) {
+        int base = is_upgraded ? 7 : 5;
+        int block = ctx.get_effective_block_for_player(base);
+        ctx.add_block_to_player(block);
+        int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+        ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
 // 打击：未升级 6 伤，升级 9 伤
 void effect_strike(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index >= 0) {
@@ -51,6 +62,8 @@ void effect_bash(EffectContext& ctx, bool is_upgraded) {
 void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("anger", [](EffectContext& c) { effect_anger(c, false); });
     card_system.register_card_effect("anger+", [](EffectContext& c) { effect_anger(c, true); });
+    card_system.register_card_effect("iron_wave", [](EffectContext& c) { effect_iron_wave(c, false); });
+    card_system.register_card_effect("iron_wave+", [](EffectContext& c) { effect_iron_wave(c, true); });
     card_system.register_card_effect("strike", [](EffectContext& c) { effect_strike(c, false); });
     card_system.register_card_effect("strike+", [](EffectContext& c) { effect_strike(c, true); });
     card_system.register_card_effect("defend", [](EffectContext& c) { effect_defend(c, false); });
