@@ -46,8 +46,16 @@ static void runBattleUI(sf::RenderWindow& window) {
     player.gold       = 99;
     player.cardsToDrawPerTurn = 5;
 
-    // Mock：永久牌组（master deck）
-    card_system.init_master_deck({"anger", "anger", "anger", "anger", "anger"});
+    // Mock：永久牌组（master deck）——4 张防御 + 1 张全身撞击+ + 2 张剑柄打击
+    card_system.init_master_deck({
+        "defend",
+        "defend",
+        "defend",
+        "defend",
+        "body_slam+",
+        "pommel_strike",
+        "pommel_strike"
+    });
     std::vector<MonsterId> monsters = {"cultist"};
     // Mock 5 个遗物以便顶栏遗物行显示多格
     std::vector<RelicId> relics = {"burning_blood", "relic_2", "relic_3", "relic_4", "relic_5"};

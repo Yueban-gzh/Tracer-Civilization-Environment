@@ -532,6 +532,30 @@ void BattleEngine::fill_effect_context(EffectContext& ctx) {
         if (!card_system_) return;
         card_system_->generate_to_discard_pile(std::move(id));
     };
+    ctx.draw_cards_ = [this](int n) {
+        if (!card_system_ || n <= 0) return;
+        card_system_->draw_cards(n);
+    };
+    ctx.add_energy_to_player_ = [this](int n) {
+        if (n == 0) return;
+        player_state_.energy += n;
+        if (player_state_.energy < 0) player_state_.energy = 0;
+    };
+    ctx.get_status_stacks_on_monster_ = [this](int monster_index, const StatusId& id) -> int {
+        if (monster_index < 0 || static_cast<size_t>(monster_index) >= monsters_.size()) return 0;
+        return get_status_stacks(monsters_[static_cast<size_t>(monster_index)].statuses, id);
+    };
+    ctx.deal_damage_to_all_monsters_ = [this](int base_damage) {
+        if (base_damage <= 0) return;
+        for (size_t i = 0; i < monsters_.size(); ++i) {
+            if (monsters_[i].currentHp <= 0) continue;
+            int dmg = get_effective_damage_dealt_by_player(base_damage, static_cast<int>(i));
+            deal_damage_to_monster(static_cast<int>(i), dmg);
+        }
+    };
+    ctx.get_player_block_ = [this]() {
+        return player_state_.block;
+    };
 }
 
 int BattleEngine::get_status_stacks(const std::vector<StatusInstance>& list, const StatusId& id) {

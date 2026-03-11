@@ -97,6 +97,27 @@ public:
         if (generate_to_discard_pile_) generate_to_discard_pile_(std::move(id));
     }
 
+    /** 抽牌（从抽牌堆抽 n 张到手牌，按 CardSystem 的抽牌规则）。 */
+    void draw_cards(int n) const { if (draw_cards_) draw_cards_(n); }
+
+    /** 增加玩家能量（用于如“飞踢：若目标易伤则获得1点能量”）。 */
+    void add_energy_to_player(int amount) const { if (add_energy_to_player_) add_energy_to_player_(amount); }
+
+    /** 读取怪物身上某状态的层数（如 vulnerable/weak）。 */
+    int get_status_stacks_on_monster(int monster_index, const StatusId& id) const {
+        return get_status_stacks_on_monster_ ? get_status_stacks_on_monster_(monster_index, id) : 0;
+    }
+
+    /** 对所有存活怪物造成伤害（会对每个怪物分别计算易伤等影响）。 */
+    void deal_damage_to_all_monsters(int base_damage) const {
+        if (deal_damage_to_all_monsters_) deal_damage_to_all_monsters_(base_damage);
+    }
+
+    /** 读取玩家当前格挡值（用于如「全身撞击：造成你当前格挡值的伤害」一类效果）。 */
+    int get_player_block() const {
+        return get_player_block_ ? get_player_block_() : 0;
+    }
+
     std::function<void(int)> add_block_to_player_;
     std::function<void(int, int)> add_block_to_monster_;
     std::function<void(int)> deal_damage_to_player_;
@@ -109,6 +130,11 @@ public:
     std::function<void(StatusId, int, int)> apply_status_to_player_;
     std::function<void(int, StatusId, int, int)> apply_status_to_monster_;
     std::function<void(CardId)> generate_to_discard_pile_;
+    std::function<void(int)> draw_cards_;
+    std::function<void(int)> add_energy_to_player_;
+    std::function<int(int, const StatusId&)> get_status_stacks_on_monster_;
+    std::function<void(int)> deal_damage_to_all_monsters_;
+    std::function<int()> get_player_block_;
 };
 
 // --- 战斗状态快照（供 UI）---
