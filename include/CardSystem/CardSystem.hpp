@@ -37,6 +37,10 @@ public:
     int  get_deck_size() const;
     int  get_discard_size() const;
     int  get_exhaust_size() const;
+    /** 牌组界面用：获取各牌堆列表以合并展示（手牌用 get_hand） */
+    const std::vector<CardInstance>& get_draw_pile() const;
+    const std::vector<CardInstance>& get_discard_pile() const;
+    const std::vector<CardInstance>& get_exhaust_pile() const;
     bool upgrade_card_in_deck(InstanceId instance_id);
     void execute_effect(CardId id, EffectContext& ctx);
 

@@ -38,7 +38,7 @@ static void runBattleUI(sf::RenderWindow& window) {
     player.gold       = 99;
     player.cardsToDrawPerTurn = 5;
 
-    std::vector<CardId> deck = {"strike", "strike", "strike", "defend", "defend", "bash"};
+    std::vector<CardId> deck = {"strike", "strike", "strike", "strike", "strike", "strike", "defend", "defend", "defend", "defend", "bash"};
     std::vector<MonsterId> monsters = {"cultist"};
     // Mock 5 个遗物以便顶栏遗物行显示多格
     std::vector<RelicId> relics = {"burning_blood", "relic_2", "relic_3", "relic_4", "relic_5"};
@@ -79,6 +79,30 @@ static void runBattleUI(sf::RenderWindow& window) {
             engine.play_card(handIndex, targetMonsterIndex);
         }
 
+        // 打开牌组界面：1=整个牌组(右上角牌组)，2=抽牌堆(左下角)，3=弃牌堆(右下角)；空则提示不打开
+        int deckViewMode = 0;
+        if (ui.pollOpenDeckViewRequest(deckViewMode)) {
+            std::vector<CardInstance> cards;
+            if (deckViewMode == 1) {
+                for (const auto& c : card_system.get_hand()) cards.push_back(c);
+                for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
+                for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
+                for (const auto& c : card_system.get_exhaust_pile()) cards.push_back(c);
+            } else if (deckViewMode == 2) {
+                for (const auto& c : card_system.get_draw_pile()) cards.push_back(c);
+            } else if (deckViewMode == 3) {
+                for (const auto& c : card_system.get_discard_pile()) cards.push_back(c);
+            }
+            if (cards.empty()) {
+                if (deckViewMode == 1) ui.showTip(L"牌组为空");
+                else if (deckViewMode == 2) ui.showTip(L"抽牌堆为空");
+                else ui.showTip(L"弃牌堆为空");
+            } else {
+                ui.set_deck_view_cards(std::move(cards));
+                ui.set_deck_view_active(true);
+            }
+        }
+
         // 先根据当前阶段获取快照并绘制 UI，再推进到下一个阶段
         BattleStateSnapshot snapshot = engine.get_battle_state();
         SnapshotBattleUIDataProvider adapter(&snapshot);
@@ -86,8 +110,9 @@ static void runBattleUI(sf::RenderWindow& window) {
         ui.draw(window, adapter);
         window.display();
 
-        // 每帧推进一次回合阶段，用于分阶段结算与调试显示
-        engine.step_turn_phase();
+        // 牌组界面打开时不推进回合；否则每帧推进一次回合阶段
+        if (!ui.is_deck_view_active())
+            engine.step_turn_phase();
     }
 }
 

@@ -1,11 +1,14 @@
 /**
  * Battle UI - 严格按照参考图：顶栏(名字/HP/金币/药水/球槽)、遗物行、战场、底栏(能量/抽牌/手牌/结束回合/弃牌)
+ * 牌组界面：顶栏+遗物栏不变，中间展示牌堆网格，支持滚轮滚动、返回按钮关闭。
  */
 #pragma once
 
 #include "BattleUIData.hpp"
+#include "../CardSystem/CardSystem.hpp"
 #include <SFML/Graphics.hpp>
 #include <string>
+#include <vector>
 
 namespace tce {
 
@@ -27,7 +30,18 @@ public:
     /** 轮询一次是否有“打出牌”的请求，若有则返回手牌下标与目标怪物下标 */
     bool pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex);
 
+    /** 牌组界面：设置要展示的牌列表（手牌+抽牌堆+弃牌堆+消耗堆合并），并打开/关闭牌组界面 */
+    void set_deck_view_cards(std::vector<CardInstance> cards);
+    void set_deck_view_active(bool active);
+    bool is_deck_view_active() const { return deck_view_active_; }
+    /** 轮询一次是否请求打开牌组界面；outMode: 1=整个牌组(右上角牌组)，2=抽牌堆(左下角)，3=弃牌堆(右下角) */
+    bool pollOpenDeckViewRequest(int& outMode);
+
+    /** 屏幕中央短时提示（如“抽牌堆为空”），seconds 为显示秒数 */
+    void showTip(std::wstring text, float seconds = 1.2f);
+
 private:
+    void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);
@@ -76,6 +90,13 @@ private:
     sf::Clock    centerTipClock_;
     float        centerTipSeconds_ = 0.f;
     std::wstring centerTipText_;
+
+    // 牌组界面
+    bool                          deck_view_active_ = false;
+    std::vector<CardInstance>     deck_view_cards_;
+    float                         deck_view_scroll_y_ = 0.f;
+    int                           pending_deck_view_mode_ = 0;  // 0 无，1 整个牌组，2 抽牌堆，3 弃牌堆
+    sf::FloatRect                 deckViewReturnButton_;
 };
 
 } // namespace tce

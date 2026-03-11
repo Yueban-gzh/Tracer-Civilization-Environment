@@ -3,6 +3,7 @@
  */
 #include "BattleEngine/BattleUI.hpp"
 #include "BattleEngine/BattleEngine.hpp"
+#include "DataLayer/DataLayer.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
@@ -150,6 +151,68 @@ namespace tce {
     }
 
     bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
+        // 牌组界面：只处理滚轮与返回按钮
+        if (deck_view_active_) {
+            if (ev.is<sf::Event::MouseWheelScrolled>()) {
+                auto const& wheel = ev.getIf<sf::Event::MouseWheelScrolled>();
+                if (wheel) {
+                    constexpr float CARD_H = 300.f;
+                    constexpr float ROW_CENTER_TO_CENTER = 360.f;
+                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
+                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+                    const float viewH = static_cast<float>(height_) - TOP_BAR_BG_H;  // 可见区域：顶栏下到屏幕底
+                    const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
+                    const float firstRowTop = FIRST_ROW_CENTER_Y - CARD_H * 0.5f;
+                    const float padTop = firstRowTop - contentTop;
+                    const float contentH = padTop + (numRows > 0 ? (numRows * ROW_CENTER_TO_CENTER - (ROW_CENTER_TO_CENTER - CARD_H)) : 0.f);
+                    const float maxScroll = std::max(0.f, contentH - viewH);
+                    const float step = 80.f;
+                    deck_view_scroll_y_ -= wheel->delta * step;
+                    if (maxScroll <= 0.f) deck_view_scroll_y_ = 0.f;
+                    else {
+                        if (deck_view_scroll_y_ < 0.f) deck_view_scroll_y_ = 0.f;
+                        if (deck_view_scroll_y_ > maxScroll) deck_view_scroll_y_ = maxScroll;
+                    }
+                }
+                return false;
+            }
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left && deckViewReturnButton_.contains(mousePos)) {
+                    deck_view_active_ = false;
+                    deck_view_scroll_y_ = 0.f;
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        // 非牌组界面：点击「牌组」=整个牌组、左下角抽牌堆图标=抽牌堆、右下角弃牌堆图标=弃牌堆
+        if (ev.is<sf::Event::MouseButtonPressed>()) {
+            auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+            if (btn && btn->button == sf::Mouse::Button::Left) {
+                const float right = width_ - 28.f;
+                const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;
+                if (mousePos.x >= deckBtnLeft && mousePos.x <= deckBtnLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                    pending_deck_view_mode_ = 1;  // 整个牌组
+                    return false;
+                }
+                const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
+                const float drawPileY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+                if (mousePos.x >= drawPileX && mousePos.x <= drawPileX + PILE_ICON_W && mousePos.y >= drawPileY && mousePos.y <= drawPileY + PILE_ICON_H) {
+                    pending_deck_view_mode_ = 2;  // 抽牌堆
+                    return false;
+                }
+                const float discardX = width_ - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;
+                const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+                if (mousePos.x >= discardX && mousePos.x <= discardX + PILE_ICON_W && mousePos.y >= discardY && mousePos.y <= discardY + PILE_ICON_H) {
+                    pending_deck_view_mode_ = 3;  // 弃牌堆
+                    return false;
+                }
+            }
+        }
+
         if (ev.is<sf::Event::MouseButtonPressed>()) {
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (!btn) return false;
@@ -218,6 +281,44 @@ namespace tce {
         return true;
     }
 
+    void BattleUI::set_deck_view_cards(std::vector<CardInstance> cards) {
+        deck_view_cards_ = std::move(cards);
+    }
+
+    void BattleUI::set_deck_view_active(bool active) {
+        deck_view_active_ = active;
+        if (!active) {
+            deck_view_scroll_y_ = 0.f;
+            return;
+        }
+        // 默认滚动到第二行可见、并露出第三行一部分（3 行及以上时）
+        constexpr float ROW_CENTER_TO_CENTER = 360.f;
+        constexpr float FIRST_ROW_CENTER_Y = 430.f;
+        constexpr float DECK_CARD_H = 300.f;
+        const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+        const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+        const float padTop = firstRowTop - contentTop;
+        const float contentViewH = static_cast<float>(height_) - TOP_BAR_BG_H;  // 可见区域：顶栏下到屏幕底
+        const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
+        const float contentH = padTop + (numRows > 0 ? (numRows * ROW_CENTER_TO_CENTER - (ROW_CENTER_TO_CENTER - DECK_CARD_H)) : 0.f);
+        const float maxScroll = std::max(0.f, contentH - contentViewH);
+        if (numRows >= 3)
+            deck_view_scroll_y_ = std::min(padTop + ROW_CENTER_TO_CENTER, maxScroll);  // 第二行顶对齐视口顶
+        else
+            deck_view_scroll_y_ = 0.f;
+    }
+
+    void BattleUI::showTip(std::wstring text, float seconds) {
+        show_center_tip(std::move(text), seconds);
+    }
+
+    bool BattleUI::pollOpenDeckViewRequest(int& outMode) {
+        if (pending_deck_view_mode_ == 0) return false;
+        outMode = pending_deck_view_mode_;
+        pending_deck_view_mode_ = 0;
+        return true;
+    }
+
     void BattleUI::draw(sf::RenderWindow& window, IBattleUIDataProvider& data) {
         const BattleStateSnapshot& s = data.get_snapshot();
         if (!fontLoaded_) return;
@@ -231,6 +332,14 @@ namespace tce {
 
         drawTopBar(window, s);
         drawRelicsRow(window, s);
+
+        if (deck_view_active_) {
+            drawDeckView(window, s);
+            drawTopRight(window, s);
+            draw_center_tip(window);
+            return;
+        }
+
         drawBattleCenter(window, s);
 
         // 手牌区背景色块
@@ -348,6 +457,148 @@ namespace tce {
             window.draw(icon);
             x += RELICS_ICON_SZ + 18.f;   // 遗物间距稍大
         }
+    }
+
+    // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
+    // 行中心距 360，列中心距 260。可见区域：从遗物栏下到返回按钮上，保证能露出多行
+    void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        constexpr float DECK_CARD_W = 190.f;
+        constexpr float DECK_CARD_H = 300.f;
+        constexpr float COL_CENTER_TO_CENTER = 260.f;  // 单行内相邻牌中心间距
+        constexpr float ROW_CENTER_TO_CENTER = 360.f;  // 行与行牌中心间距
+        constexpr int COLS = 5;
+        const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+        constexpr float returnBtnBottomMargin = 200.f;
+        constexpr float returnBtnH = 50.f;
+        // 可见区域：顶栏下沿到屏幕底部；卡牌仅当 下端超出顶栏上沿 或 上端超出屏幕底部 时不渲染
+        const float viewTop = TOP_BAR_BG_H;
+        const float viewBottom = static_cast<float>(height_);
+        const size_t cardCount = deck_view_cards_.size();
+        const int numRows = (cardCount == 0) ? 0 : (static_cast<int>(cardCount) + COLS - 1) / COLS;
+        constexpr float FIRST_ROW_CENTER_Y = 430.f;  // 第一行牌中心距屏幕顶部 430
+        const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;  // 280
+        const float padTop = firstRowTop - contentTop;
+        const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
+        const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
+        char buf[32];
+
+        for (size_t i = 0; i < cardCount; ++i) {
+            const int row = static_cast<int>(i) / COLS;
+            const int col = static_cast<int>(i) % COLS;
+            const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
+            const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
+            if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
+            const CardInstance& inst = deck_view_cards_[i];
+            const CardData* cd = get_card_by_id(inst.id);
+            const float w = DECK_CARD_W, h = DECK_CARD_H;
+            const float pad = 4.f, innerL = pad, innerT = pad, innerW = w - pad * 2.f;
+            sf::RectangleShape cardBg(sf::Vector2f(w, h));
+            cardBg.setPosition(sf::Vector2f(cardX, cardY));
+            cardBg.setFillColor(sf::Color(55, 50, 48));
+            cardBg.setOutlineColor(sf::Color(180, 50, 45));
+            cardBg.setOutlineThickness(8.f);
+            window.draw(cardBg);
+            const float titleY = cardY + innerT + 24.f;
+            const float titleH = 32.f;
+            sf::RectangleShape titleBar(sf::Vector2f(innerW - 16.f, titleH));
+            titleBar.setPosition(sf::Vector2f(cardX + innerL + 8.f, titleY));
+            titleBar.setFillColor(sf::Color(72, 68, 65));
+            titleBar.setOutlineColor(sf::Color(90, 85, 82));
+            titleBar.setOutlineThickness(1.f);
+            window.draw(titleBar);
+            const float artTop = titleY + titleH + 4.f;
+            const float artH = 98.f;
+            sf::ConvexShape artPanel;
+            artPanel.setPointCount(8);
+            artPanel.setPoint(0, sf::Vector2f(cardX + innerL, artTop));
+            artPanel.setPoint(1, sf::Vector2f(cardX + innerL + innerW, artTop));
+            artPanel.setPoint(2, sf::Vector2f(cardX + innerL + innerW, artTop + artH - 12.f));
+            artPanel.setPoint(3, sf::Vector2f(cardX + innerL + innerW * 0.75f, artTop + artH));
+            artPanel.setPoint(4, sf::Vector2f(cardX + innerL + innerW * 0.5f, artTop + artH - 10.f));
+            artPanel.setPoint(5, sf::Vector2f(cardX + innerL + innerW * 0.25f, artTop + artH));
+            artPanel.setPoint(6, sf::Vector2f(cardX + innerL, artTop + artH - 12.f));
+            artPanel.setPoint(7, sf::Vector2f(cardX + innerL, artTop));
+            artPanel.setFillColor(sf::Color(120, 45, 42));
+            artPanel.setOutlineColor(sf::Color(100, 38, 35));
+            artPanel.setOutlineThickness(1.f);
+            window.draw(artPanel);
+            const float typeY = artTop + artH + 6.f;
+            const float typeH = 26.f;
+            sf::RectangleShape typeBar(sf::Vector2f(innerW - 24.f, typeH));
+            typeBar.setPosition(sf::Vector2f(cardX + innerL + 12.f, typeY));
+            typeBar.setFillColor(sf::Color(72, 68, 65));
+            typeBar.setOutlineColor(sf::Color(90, 85, 82));
+            typeBar.setOutlineThickness(1.f);
+            window.draw(typeBar);
+            const float costR = 22.f;
+            const float costCx = cardX + innerL + costR - 10.f;
+            const float costCy = cardY + innerT + costR - 10.f;
+            sf::CircleShape costCircle(costR);
+            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
+            costCircle.setFillColor(sf::Color(200, 55, 50));
+            costCircle.setOutlineColor(sf::Color(255, 190, 90));
+            costCircle.setOutlineThickness(2.f);
+            window.draw(costCircle);
+            int cost = cd ? cd->cost : 1;
+            std::snprintf(buf, sizeof(buf), "%d", cost);
+            sf::Text costText(font_, buf, 26);
+            costText.setFillColor(sf::Color::White);
+            const sf::FloatRect cb = costText.getLocalBounds();
+            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
+            costText.setPosition(sf::Vector2f(costCx, costCy));
+            window.draw(costText);
+            sf::String cardName;
+            if (cd && !cd->name.empty())
+                cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
+            else
+                cardName = sf::String(inst.id);
+            sf::Text nameText(fontForChinese(), cardName, 20);
+            nameText.setFillColor(sf::Color::White);
+            const sf::FloatRect nb = nameText.getLocalBounds();
+            nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
+            nameText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, titleY + titleH * 0.5f));
+            window.draw(nameText);
+            sf::String typeStr = sf::String(L"?");
+            if (cd) {
+                switch (cd->cardType) {
+                case CardType::Attack: typeStr = sf::String(L"攻击"); break;
+                case CardType::Skill:  typeStr = sf::String(L"技能"); break;
+                case CardType::Power:  typeStr = sf::String(L"能力"); break;
+                case CardType::Status: typeStr = sf::String(L"状态"); break;
+                case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;
+                }
+            }
+            sf::Text typeText(fontForChinese(), typeStr, 16);
+            typeText.setFillColor(sf::Color::White);
+            const sf::FloatRect tb = typeText.getLocalBounds();
+            typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+            typeText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, typeY + typeH * 0.5f));
+            window.draw(typeText);
+            sf::String descStr;
+            if (cd && !cd->description.empty())
+                descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
+            sf::Text descText(fontForChinese(), descStr, 15);
+            descText.setFillColor(sf::Color(240, 238, 235));
+            descText.setPosition(sf::Vector2f(cardX + innerL + 12.f, typeY + typeH + 14.f));
+            window.draw(descText);
+        }
+
+        const float returnW = 180.f, returnH = 50.f;
+        const float returnX = 28.f;  // 左下角，与顶栏边距一致
+        const float returnY = height_ - returnBtnBottomMargin - returnH;  // 距屏幕底部 200
+        deckViewReturnButton_ = sf::FloatRect(sf::Vector2f(returnX, returnY), sf::Vector2f(returnW, returnH));
+        sf::RectangleShape returnBtn(sf::Vector2f(returnW, returnH));
+        returnBtn.setPosition(sf::Vector2f(returnX, returnY));
+        returnBtn.setFillColor(sf::Color(120, 50, 50));
+        returnBtn.setOutlineColor(sf::Color(200, 90, 90));
+        returnBtn.setOutlineThickness(2.f);
+        window.draw(returnBtn);
+        sf::Text returnLabel(fontForChinese(), sf::String(L"返回"), 24);
+        returnLabel.setFillColor(sf::Color::White);
+        const sf::FloatRect rlb = returnLabel.getLocalBounds();
+        returnLabel.setOrigin(sf::Vector2f(rlb.position.x + rlb.size.x * 0.5f, rlb.position.y + rlb.size.y * 0.5f));
+        returnLabel.setPosition(sf::Vector2f(returnX + returnW * 0.5f, returnY + returnH * 0.5f));
+        window.draw(returnLabel);
     }
 
     // 战场中央：玩家区(背景+模型+血条在下+增益减益)、怪物区(背景+意图在上+模型+血条在下)

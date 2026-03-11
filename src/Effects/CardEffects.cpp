@@ -9,38 +9,42 @@ namespace tce {
 
 namespace {
 
-void effect_strike(EffectContext& ctx) {
+// 打击：未升级 6 伤，升级 9 伤
+void effect_strike(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index >= 0) {
-        int base = 6;  // 升级版可改为 9
+        int base = is_upgraded ? 9 : 6;
         int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
         ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
     }
 }
 
-void effect_defend(EffectContext& ctx) {
-    int base = 5;
+// 防御：未升级 5 格挡，升级 8 格挡
+void effect_defend(EffectContext& ctx, bool is_upgraded) {
+    int base = is_upgraded ? 8 : 5;
     int block = ctx.get_effective_block_for_player(base);
     ctx.add_block_to_player(block);
 }
 
-void effect_bash(EffectContext& ctx) {
+// 痛击：未升级 8 伤 + 2 层易伤（持续 2 回合），升级 10 伤 + 3 层易伤（持续 3 回合）；易伤层数即持续时间
+void effect_bash(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index >= 0) {
-        int base = 8;
+        int base = is_upgraded ? 10 : 8;
+        int vuln = is_upgraded ? 3 : 2;  // 层数 = 持续回合
         int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
         ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
-        ctx.apply_status_to_monster(ctx.target_monster_index, "vulnerable", 2, 2);  // 2 层易伤，持续 2 回合
+        ctx.apply_status_to_monster(ctx.target_monster_index, "vulnerable", vuln, vuln);
     }
 }
 
 } // namespace
 
 void register_all_card_effects(CardSystem& card_system) {
-    card_system.register_card_effect("strike", effect_strike);
-    card_system.register_card_effect("strike+", effect_strike);  // 升级版可后续改为 9 伤
-    card_system.register_card_effect("defend", effect_defend);
-    card_system.register_card_effect("defend+", effect_defend);
-    card_system.register_card_effect("bash", effect_bash);
-    card_system.register_card_effect("bash+", effect_bash);
+    card_system.register_card_effect("strike", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("strike+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("defend", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("defend+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("bash", [](EffectContext& c) { effect_bash(c, false); });
+    card_system.register_card_effect("bash+", [](EffectContext& c) { effect_bash(c, true); });
     // 后续在此追加：card_system.register_card_effect("poison_stab", effect_poison_stab); 等
 }
 

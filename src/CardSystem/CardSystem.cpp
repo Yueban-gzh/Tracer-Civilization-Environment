@@ -110,6 +110,18 @@ int CardSystem::get_exhaust_size() const {
     return static_cast<int>(exhaust_pile_.size());
 }
 
+const std::vector<CardInstance>& CardSystem::get_draw_pile() const {
+    return draw_pile_;
+}
+
+const std::vector<CardInstance>& CardSystem::get_discard_pile() const {
+    return discard_pile_;
+}
+
+const std::vector<CardInstance>& CardSystem::get_exhaust_pile() const {
+    return exhaust_pile_;
+}
+
 bool CardSystem::upgrade_card_in_deck(InstanceId instance_id) {
     auto pred = [instance_id](const CardInstance& c) { return c.instanceId == instance_id; };
     for (auto* pile : {&hand_, &draw_pile_, &discard_pile_}) {
