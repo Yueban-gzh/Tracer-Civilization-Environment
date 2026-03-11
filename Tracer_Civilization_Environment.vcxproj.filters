@@ -16,9 +16,6 @@
     <ClCompile Include="src\BattleEngine\BattleUI.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\BattleEngine\BattleUIMock.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -31,40 +28,49 @@
     <ClCompile Include="src\Effects\CardEffects.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\DataLayer\JsonParser.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\Common\Types.hpp">
-      <Filter>头文件\include\Common</Filter>
-    </ClInclude>
-    <ClInclude Include="include\DataLayer\DataLayer.hpp">
-      <Filter>头文件\include\DataLayer</Filter>
-    </ClInclude>
-    <ClInclude Include="include\CardSystem\CardSystem.hpp">
-      <Filter>头文件\include\CardSystem</Filter>
-    </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
-    </ClInclude>
-    <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
+      <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleUI.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
+      <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleUIData.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
-    </ClInclude>
-    <ClInclude Include="include\BattleEngine\BattleUIMock.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
+      <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp">
-      <Filter>头文件\include\BattleEngine</Filter>
+      <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="include\Effects\StatusEffects.hpp">
-      <Filter>头文件\include\Effects</Filter>
+    <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\CardSystem\CardSystem.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Common\Types.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataLayer\DataLayer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataLayer\DataLayer.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataLayer\DataTypes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataLayer\JsonParser.h">
+      <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\Effects\CardEffects.hpp">
-      <Filter>头文件\include\Effects</Filter>
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Effects\StatusEffects.hpp">
+      <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -75,21 +81,6 @@
     <Filter Include="头文件">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="头文件\include\Common">
-      <UniqueIdentifier>{a1b2c3d4-0001-4000-8000-000000000001}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\include\DataLayer">
-      <UniqueIdentifier>{a1b2c3d4-0002-4000-8000-000000000002}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\include\CardSystem">
-      <UniqueIdentifier>{a1b2c3d4-0003-4000-8000-000000000003}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\include\BattleEngine">
-      <UniqueIdentifier>{a1b2c3d4-0004-4000-8000-000000000004}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\include\Effects">
-      <UniqueIdentifier>{a1b2c3d4-0005-4000-8000-000000000005}</UniqueIdentifier>
     </Filter>
     <Filter Include="资源文件">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
