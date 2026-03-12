@@ -545,12 +545,22 @@ void BattleEngine::fill_effect_context(EffectContext& ctx) {
         if (monster_index < 0 || static_cast<size_t>(monster_index) >= monsters_.size()) return 0;
         return get_status_stacks(monsters_[static_cast<size_t>(monster_index)].statuses, id);
     };
+    ctx.get_status_stacks_on_player_ = [this](const StatusId& id) -> int {
+        return get_status_stacks(player_state_.statuses, id);
+    };
     ctx.deal_damage_to_all_monsters_ = [this](int base_damage) {
         if (base_damage <= 0) return;
         for (size_t i = 0; i < monsters_.size(); ++i) {
             if (monsters_[i].currentHp <= 0) continue;
             int dmg = get_effective_damage_dealt_by_player(base_damage, static_cast<int>(i));
             deal_damage_to_monster(static_cast<int>(i), dmg);
+        }
+    };
+    ctx.apply_status_to_all_monsters_ = [this](StatusId id, int stacks, int duration) {
+        if (stacks == 0) return;
+        for (size_t i = 0; i < monsters_.size(); ++i) {
+            if (monsters_[i].currentHp <= 0) continue;
+            apply_status_to_monster(static_cast<int>(i), id, stacks, duration);
         }
     };
     ctx.get_player_block_ = [this]() {

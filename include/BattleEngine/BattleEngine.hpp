@@ -108,6 +108,16 @@ public:
         return get_status_stacks_on_monster_ ? get_status_stacks_on_monster_(monster_index, id) : 0;
     }
 
+    /** 读取玩家身上某状态的层数（如 strength），用于如「重刃」这类按力量多倍加成的卡牌。 */
+    int get_status_stacks_on_player(const StatusId& id) const {
+        return get_status_stacks_on_player_ ? get_status_stacks_on_player_(id) : 0;
+    }
+
+    /** 对所有存活怪物施加同一状态（如「闪电霹雳：所有敌人获得 1 层易伤」）。 */
+    void apply_status_to_all_monsters(StatusId id, int stacks, int duration) const {
+        if (apply_status_to_all_monsters_) apply_status_to_all_monsters_(std::move(id), stacks, duration);
+    }
+
     /** 对所有存活怪物造成伤害（会对每个怪物分别计算易伤等影响）。 */
     void deal_damage_to_all_monsters(int base_damage) const {
         if (deal_damage_to_all_monsters_) deal_damage_to_all_monsters_(base_damage);
@@ -133,6 +143,8 @@ public:
     std::function<void(int)> draw_cards_;
     std::function<void(int)> add_energy_to_player_;
     std::function<int(int, const StatusId&)> get_status_stacks_on_monster_;
+    std::function<int(const StatusId&)> get_status_stacks_on_player_;
+    std::function<void(StatusId, int, int)> apply_status_to_all_monsters_;
     std::function<void(int)> deal_damage_to_all_monsters_;
     std::function<int()> get_player_block_;
 };

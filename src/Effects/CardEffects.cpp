@@ -115,6 +115,39 @@ void effect_pummel(EffectContext& ctx, bool is_upgraded) {
     }
 }
 
+// 御血术：先失去 2 点生命，再造成 15/20 伤害
+void effect_hemokinesis(EffectContext& ctx, bool is_upgraded) {
+    // 先对玩家自身造成 2 点无视格挡伤害
+    ctx.deal_damage_to_player_ignoring_block(2);
+    if (ctx.target_monster_index >= 0) {
+        int base = is_upgraded ? 20 : 15;
+        int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+        ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 重刃：基础 14 伤，力量在本牌上 3/5 倍加成
+void effect_heavy_blade(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index >= 0) {
+        const int base = 14;
+        // EffectContext 内部的公式本身会 +1×strength，这里额外叠加 (multiplier-1)×strength
+        const int str = ctx.get_status_stacks_on_player("strength");
+        const int extra_mult = is_upgraded ? 5 - 1 : 3 - 1;
+        int effective_base = base + str * extra_mult;
+        int dmg = ctx.get_effective_damage_dealt_by_player(effective_base, ctx.target_monster_index);
+        ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 闪电霹雳：对所有敌人造成 4/7 伤害，并给予 1 层易伤
+void effect_thunderclap(EffectContext& ctx, bool is_upgraded) {
+    int base = is_upgraded ? 7 : 4;
+    // 先结算范围伤害（每个怪物单独算易伤/虚弱等）
+    ctx.deal_damage_to_all_monsters(base);
+    // 再对所有存活怪物施加 1 层易伤，持续 1 回合
+    ctx.apply_status_to_all_monsters("vulnerable", 1, 1);
+}
+
 // 重锤：未升级 32 伤，升级 42 伤
 void effect_bludgeon(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index >= 0) {
@@ -174,6 +207,12 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("pommel_strike+", [](EffectContext& c) { effect_pommel_strike(c, true); });
     card_system.register_card_effect("pummel", [](EffectContext& c) { effect_pummel(c, false); });
     card_system.register_card_effect("pummel+", [](EffectContext& c) { effect_pummel(c, true); });
+    card_system.register_card_effect("heavy_blade", [](EffectContext& c) { effect_heavy_blade(c, false); });
+    card_system.register_card_effect("heavy_blade+", [](EffectContext& c) { effect_heavy_blade(c, true); });
+    card_system.register_card_effect("hemokinesis", [](EffectContext& c) { effect_hemokinesis(c, false); });
+    card_system.register_card_effect("hemokinesis+", [](EffectContext& c) { effect_hemokinesis(c, true); });
+    card_system.register_card_effect("thunderclap", [](EffectContext& c) { effect_thunderclap(c, false); });
+    card_system.register_card_effect("thunderclap+", [](EffectContext& c) { effect_thunderclap(c, true); });
     card_system.register_card_effect("bludgeon", [](EffectContext& c) { effect_bludgeon(c, false); });
     card_system.register_card_effect("bludgeon+", [](EffectContext& c) { effect_bludgeon(c, true); });
     card_system.register_card_effect("strike", [](EffectContext& c) { effect_strike(c, false); });
