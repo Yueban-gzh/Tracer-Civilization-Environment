@@ -69,7 +69,9 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <SFML_DIR>D:\C++Project\SFML-3.0.2</SFML_DIR>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -110,15 +112,19 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SFML_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SFML_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -128,23 +134,48 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/source-charset:utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SFML_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SFML_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sfml-graphics.lib;sfml-window.lib;sfml-system.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />
+    <ClCompile Include="src\CardSystem\DeckViewCollection.cpp" />
     <ClCompile Include="src\BattleEngine\BattleEngine.cpp" />
-    <ClCompile Include="src\EventEngine\EventEngine.cpp" />
+    <ClCompile Include="src\BattleEngine\BattleUI.cpp" />
+    <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp" />
+    <ClCompile Include="src\BattleEngine\MonsterBehaviors.cpp" />
+    <ClCompile Include="src\Effects\CardEffects.cpp" />
+    <ClCompile Include="src\Effects\StatusEffects.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
+    <ClInclude Include="include\BattleEngine\BattleUI.hpp" />
+    <ClInclude Include="include\BattleEngine\BattleUIData.hpp" />
+    <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp" />
+    <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp" />
+    <ClInclude Include="include\CardSystem\CardSystem.hpp" />
+    <ClInclude Include="include\CardSystem\DeckViewCollection.hpp" />
+    <ClInclude Include="include\Common\Types.hpp" />
+    <ClInclude Include="include\DataLayer\DataLayer.h" />
+    <ClInclude Include="include\DataLayer\DataLayer.hpp" />
+    <ClInclude Include="include\DataLayer\DataTypes.h" />
+    <ClInclude Include="include\DataLayer\JsonParser.h" />
+    <ClInclude Include="include\Effects\CardEffects.hpp" />
+    <ClInclude Include="include\Effects\StatusEffects.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

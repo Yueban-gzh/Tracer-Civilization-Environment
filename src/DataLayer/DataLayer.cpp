@@ -9,13 +9,14 @@
  * tce::get_card_by_id / get_monster_by_id 供 B/C 与 DataLayer 共用。
  */
 
+#include "../../include/DataLayer/DataLayer.hpp"
 #include "DataLayer/DataLayer.h"
 #include "DataLayer/JsonParser.h"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
-#include <iostream>
-#include <string>
+#include <unordered_map>
+#include <vector>
 
 // -----------------------------------------------------------------------------
 // tce 命名空间：B/C 依赖的接口，存储由 load_cards/load_monsters 填充，此处仅做哈希查找 O(1)
@@ -23,8 +24,18 @@
 // -----------------------------------------------------------------------------
 namespace tce {
 
-static std::unordered_map<CardId, CardData>    s_cards;
-static std::unordered_map<MonsterId, MonsterData> s_monsters;
+// 初始内置一组简单卡牌/怪物数据，便于战斗调试；若主流程调用 load_cards/load_monsters 则会覆盖
+std::unordered_map<CardId, CardData> s_cards{
+    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true } },
+    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true } },
+    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false } },
+    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false } },
+    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true } },
+    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true } },
+};
+std::unordered_map<MonsterId, MonsterData> s_monsters{
+    { "cultist", MonsterData{ "cultist", u8"邪教徒", MonsterType::Normal, 100 } },
+};
 
 const CardData* get_card_by_id(CardId id) {
     auto it = s_cards.find(id);
@@ -76,12 +87,21 @@ static tce::CardType card_type_from_string(const std::string& s) {
     return tce::CardType::Attack;
 }
 static tce::Rarity rarity_from_string(const std::string& s) {
-    std::string v = to_lower(s);
-    if (v == "common")   return tce::Rarity::Common;
-    if (v == "uncommon") return tce::Rarity::Uncommon;
-    if (v == "rare")     return tce::Rarity::Rare;
-    log_error("Unknown rarity=\"" + s + "\", fallback to common");
+    if (s == "common")   return tce::Rarity::Common;
+    if (s == "uncommon") return tce::Rarity::Uncommon;
+    if (s == "rare")     return tce::Rarity::Rare;
+    if (s == "special")  return tce::Rarity::Special;
     return tce::Rarity::Common;
+}
+
+static tce::CardColor color_from_string(const std::string& s) {
+    if (s == "red") return tce::CardColor::Red;
+    if (s == "blue") return tce::CardColor::Blue;
+    if (s == "green") return tce::CardColor::Green;
+    if (s == "purple") return tce::CardColor::Purple;
+    if (s == "colorless") return tce::CardColor::Colorless;
+    if (s == "curse") return tce::CardColor::Curse;
+    return tce::CardColor::Colorless;
 }
 
 std::string DataLayerImpl::resolve_data_path(const std::string& base, const std::string& filename) const {
@@ -117,6 +137,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("name")) cd.name = p->as_string();
         if (const JsonValue* p = v.get_key("cardType")) cd.cardType = card_type_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
+        if (const JsonValue* p = v.get_key("color")) cd.color = color_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("rarity")) cd.rarity = rarity_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("description")) cd.description = p->as_string();
         if (const JsonValue* p = v.get_key("exhaust")) cd.exhaust = p->as_bool();
@@ -124,26 +145,10 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("innate")) cd.innate = p->as_bool();
         if (const JsonValue* p = v.get_key("retain")) cd.retain = p->as_bool();
         if (const JsonValue* p = v.get_key("unplayable")) cd.unplayable = p->as_bool();
-        auto it = tce::s_cards.find(cd.id);
-        if (it != tce::s_cards.end()) {
-            ++duplicated;
-            log_error("load_cards: duplicated card id=\"" + cd.id + "\", keeping the first one");
-            continue;
-        }
-        tce::s_cards[cd.id] = std::move(cd);
-        ++loaded;
+        if (const JsonValue* p = v.get_key("requiresTarget")) cd.requiresTarget = p->as_bool();
+        if (!cd.id.empty()) tce::s_cards[cd.id] = std::move(cd);
     }
-    if (loaded == 0) {
-        log_error("load_cards: no valid records loaded from \"" + path + "\"");
-        return false;
-    }
-    if (skipped_no_id > 0) {
-        log_error("load_cards: skipped " + std::to_string(skipped_no_id) + " records without id");
-    }
-    if (duplicated > 0) {
-        log_error("load_cards: ignored " + std::to_string(duplicated) + " duplicated id records");
-    }
-    return true;
+    return !tce::s_cards.empty();
 }
 
 // 将怪物表每条记录直接插入 tce::s_monsters（唯一存储，供 B 与 DataLayer 共用）
@@ -283,6 +288,7 @@ int DataLayerImpl::rarity_order(tce::Rarity r) {
         case tce::Rarity::Common:   return 0;
         case tce::Rarity::Uncommon: return 1;
         case tce::Rarity::Rare:     return 2;
+        case tce::Rarity::Special:  return 3;
         default: return 0;
     }
 }

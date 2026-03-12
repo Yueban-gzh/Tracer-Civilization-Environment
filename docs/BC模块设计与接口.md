@@ -315,7 +315,8 @@ struct StatusInstance {
     int      stacks; // 层数
     int      duration; // 剩余回合数，-1 表示永久或至战斗结束
 };
-// 玩家与每名怪物各持有一份 std::vector<StatusInstance> 或等价结构
+// 状态挂在实例上：玩家与每个怪物各自带一份 statuses，敌人多个则每怪一份
+// PlayerBattleState.statuses、MonsterInBattle.statuses；施加、回合末 tick、duration 均按实例读写
 ```
 
 **施加与移除**  
@@ -327,14 +328,22 @@ struct StatusInstance {
 
 **参与结算**  
 
-- 伤害、格挡等计算时需考虑当前状态（如力量加伤害、易伤乘伤害、虚弱减攻击伤害）。  
-- 方式一：B 提供 **get_effective_damage(baseDamage, source_is_player, target_monster_index)**，内部根据双方状态计算最终伤害。  
-- 方式二：EffectContext 中提供**当前玩家与目标怪物的状态列表**（只读），效果函数自行按规则计算伤害/格挡后，再调用 B 的 **deal_damage_to_monster** / **deal_damage_to_player** / **add_block_to_player** 等写接口，由 B 统一扣血、加格挡。  
+- 伤害、格挡等计算时需考虑当前状态（如力量加伤害、易伤乘伤害、虚弱减攻击伤害）；**只影响数值**，逻辑由 B 提供的「有效数值」函数统一计算。  
+- B 提供数值函数，并在 EffectContext 中暴露，供卡牌效果先算再传：  
+  - **get_effective_damage_dealt_by_player(base_damage, target_monster_index)**：玩家对目标怪物造成伤害时的有效伤害（力量 +1/层，目标易伤 1.5x，玩家虚弱 0.75x）。活动肌肉不参与公式，回合结束时扣对应层数力量。  
+  - **get_effective_damage_dealt_to_player(base_damage, attacker_monster_index)**：怪物对玩家造成伤害时的有效伤害（怪物力量 +1/层，玩家易伤 1.5x）。  
+  - **get_effective_block_for_player(base_block)**：玩家获得格挡时的有效数值（敏捷 +1/层，脆弱 0.75x）。敏捷下降不参与公式，回合结束时扣对应层数敏捷。  
+- 卡牌效果应先用上述接口得到最终数值，再调用 **deal_damage_to_monster** / **deal_damage_to_player** / **add_block_to_player** 等写接口。  
+- **无视格挡的伤害**：中毒等造成的伤害**不经过格挡**，直接扣血。B 提供 **deal_damage_to_monster_ignoring_block** 等；**中毒**只对敌人生效，在敌人回合**开始时**（敌方行动前）按层数对每个怪物造成无视格挡伤害。  
 - 具体采用哪种由实现定，文档约定「B 负责持有状态，并在结算时参与计算或向效果方暴露状态供其计算」。
 
 **回合末处理**  
 
 - 在 **end_turn** 中，敌方行动结束后（或回合开始时）对**玩家**与**所有怪物**身上的状态做 **duration 递减**；duration 变为 0 的条目移除。若有「回合开始时」触发的状态，可在下一回合开始时处理。
+- **活动肌肉**：回合结束时，玩家力量减少（活动肌肉层数）；**敏捷下降**：回合结束时，玩家敏捷减少（敏捷下降层数）。二者对应，只改对应增益的层数，不参与当回合伤害/格挡公式。
+- **镣铐**：只对敌人生效；敌人回合**结束时**（敌方行动后），每个怪物回复对应层数**力量**（怪物力量参与其对玩家造成的伤害，+1/层）。
+- **抽牌减少**：仅对玩家；每回合抽牌时，实际抽牌数 = 基础抽牌数 − 抽牌减少层数（不少于 0）。duration 由施加时指定，到期后自动移除。
+- **缠绕**：仅对玩家；回合结束时受到层数点伤害（先扣格挡再扣血）。
 
 **EffectContext 与增益/减益**  
 

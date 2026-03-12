@@ -4,8 +4,10 @@
  * This program runs a simple E->C->B->D integration test.
  */
 
-#include <iostream>
-#include "DataLayer/DataLayer.h"
+#include <SFML/Graphics.hpp>
+#include <optional>
+#include "BattleEngine/BattleUI.hpp"
+#include "BattleEngine/BattleUISnapshotAdapter.hpp"
 #include "BattleEngine/BattleEngine.hpp"
 #include "EventEngine/EventEngine.hpp"
 
