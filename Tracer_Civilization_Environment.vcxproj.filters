@@ -31,6 +31,9 @@
     <ClCompile Include="src\DataLayer\JsonParser.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\EventEngine\EventEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp">
@@ -70,6 +73,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\Effects\StatusEffects.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\EventEngine.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

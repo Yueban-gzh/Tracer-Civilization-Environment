@@ -70,7 +70,8 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <SFML_DIR>D:\C++Project\SFML-3.0.2</SFML_DIR>
+    <!-- SFML 根目录：默认使用项目下的 SFML-3.0.2；若放在别处可改为绝对路径如 D:\SFML-3.0.2 -->
+    <SFML_DIR>$(ProjectDir)SFML-3.0.2</SFML_DIR>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -160,6 +161,7 @@
     <ClCompile Include="src\BattleEngine\MonsterBehaviors.cpp" />
     <ClCompile Include="src\Effects\CardEffects.cpp" />
     <ClCompile Include="src\Effects\StatusEffects.cpp" />
+    <ClCompile Include="src\EventEngine\EventEngine.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
@@ -176,6 +178,7 @@
     <ClInclude Include="include\DataLayer\JsonParser.h" />
     <ClInclude Include="include\Effects\CardEffects.hpp" />
     <ClInclude Include="include\Effects\StatusEffects.hpp" />
+    <ClInclude Include="include\EventEngine\EventEngine.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

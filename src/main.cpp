@@ -4,12 +4,17 @@
  * This program runs a simple E->C->B->D integration test.
  */
 
-#include <SFML/Graphics.hpp>
+#include <iostream>
 #include <optional>
-#include "BattleEngine/BattleUI.hpp"
-#include "BattleEngine/BattleUISnapshotAdapter.hpp"
+#include "DataLayer/DataLayer.h"
 #include "BattleEngine/BattleEngine.hpp"
 #include "EventEngine/EventEngine.hpp"
+
+#ifdef TEST_BATTLE_UI
+#include <SFML/Graphics.hpp>
+#include "BattleEngine/BattleUI.hpp"
+#include "BattleEngine/BattleUISnapshotAdapter.hpp"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -43,7 +48,18 @@ static bool test_data_layer(DataLayer::DataLayerImpl& data) {
         const tce::CardData* p = data.get_card_by_id(id);
         if (p) std::cout << p->name << "(" << tce::to_string(p->rarity) << ") ";
     }
-    std::cout << "\n[E] DataLayer OK\n";
+    std::cout << "\n";
+    // 排行榜排序
+    std::vector<DataLayer::DataLayerImpl::LeaderboardEntry> lb = {
+        {"p1", 100, 1}, {"p2", 200, 2}, {"p3", 150, 3}
+    };
+    lb = data.sort_leaderboard(std::move(lb));
+    if (lb.size() != 3 || lb[0].score != 200 || lb[1].score != 150 || lb[2].score != 100) {
+        std::cout << "[E] sort_leaderboard unexpected\n";
+        return false;
+    }
+    std::cout << "     sort_leaderboard: top=" << lb[0].playerId << " score=" << lb[0].score << "\n";
+    std::cout << "[E] DataLayer OK\n";
     return true;
 }
 
@@ -137,6 +153,34 @@ static bool test_event_engine(DataLayer::DataLayerImpl& data) {
     return true;
 }
 
+#ifdef TEST_BATTLE_UI
+static bool test_battle_ui(DataLayer::DataLayerImpl& data) {
+    tce::CardSystem cs(tce::get_card_by_id);
+    tce::BattleEngine engine(cs, tce::get_monster_by_id, tce::get_card_by_id);
+    tce::PlayerBattleState player;
+    player.playerName = "UI Test";
+    player.character = "default";
+    player.currentHp = player.maxHp = 70;
+    player.energy = player.maxEnergy = 3;
+    player.block = 0;
+    player.gold = 99;
+    std::vector<tce::MonsterId> monster_ids = { "monster_001" };
+    std::vector<tce::CardId> deck = { "card_001", "card_002", "card_007" };
+    engine.start_battle(monster_ids, player, deck, {});
+    tce::BattleStateSnapshot snap = engine.get_battle_state();
+
+    sf::RenderWindow window(sf::VideoMode(800, 600), "Battle UI Test", sf::Style::Titlebar | sf::Style::Close);
+    tce::BattleUI ui(800, 600);
+    tce::SnapshotBattleUIDataProvider provider(&snap);
+    ui.draw(window, provider);
+    window.display();
+    std::cout << "[UI] Battle UI: one frame drawn (window open briefly).\n";
+    window.close();
+    std::cout << "[UI] Battle UI OK\n";
+    return true;
+}
+#endif
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(65001);
@@ -147,6 +191,9 @@ int main() {
     if (!test_card_system()) return 2;
     if (!test_battle_engine(data)) return 3;
     if (!test_event_engine(data)) return 4;
+#ifdef TEST_BATTLE_UI
+    if (!test_battle_ui(data)) return 5;
+#endif
     std::cout << "--- Tracer: Civilization Environment - 全部通过 ---\n";
     return 0;
 }
