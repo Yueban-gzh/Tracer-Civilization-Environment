@@ -13,7 +13,9 @@
 #include "DataLayer/DataLayer.h"
 #include "DataLayer/JsonParser.h"
 #include <algorithm>
+#include <cctype>
 #include <fstream>
+#include <iostream>
 #include <unordered_map>
 #include <vector>
 
@@ -52,13 +54,37 @@ const MonsterData* get_monster_by_id(MonsterId id) {
 
 namespace DataLayer {
 
+// 简单日志工具：仅用于 DataLayer 内部调试，不影响对外接口
+static void log_error(const std::string& msg) {
+    std::cout << "[E][DataLayer] " << msg << "\n";
+}
+
+// 将字符串转为小写，便于大小写不敏感比较
+static std::string to_lower(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
 // cardType 直接按 DataLayer.hpp 枚举名解析，无额外映射
 static tce::CardType card_type_from_string(const std::string& s) {
-    if (s == "Attack") return tce::CardType::Attack;
-    if (s == "Skill")  return tce::CardType::Skill;
-    if (s == "Power")  return tce::CardType::Power;
-    if (s == "Status") return tce::CardType::Status;
-    if (s == "Curse")  return tce::CardType::Curse;
+    // 兼容大小写：同时接受 "Attack"/"attack" 等写法
+    std::string v = s;
+    if (v == "Attack" || v == "Skill" || v == "Power" || v == "Status" || v == "Curse") {
+        if (v == "Attack") return tce::CardType::Attack;
+        if (v == "Skill")  return tce::CardType::Skill;
+        if (v == "Power")  return tce::CardType::Power;
+        if (v == "Status") return tce::CardType::Status;
+        if (v == "Curse")  return tce::CardType::Curse;
+    }
+    v = to_lower(v);
+    if (v == "attack") return tce::CardType::Attack;
+    if (v == "skill")  return tce::CardType::Skill;
+    if (v == "power")  return tce::CardType::Power;
+    if (v == "status") return tce::CardType::Status;
+    if (v == "curse")  return tce::CardType::Curse;
+    log_error("Unknown cardType=\"" + s + "\", fallback to Attack");
     return tce::CardType::Attack;
 }
 static tce::Rarity rarity_from_string(const std::string& s) {
@@ -91,12 +117,24 @@ std::string DataLayerImpl::resolve_data_path(const std::string& base, const std:
 bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
     std::string path = resolve_data_path(path_or_base_dir, "cards.json");
     JsonValue root = parse_json_file(path);
-    if (!root.is_array()) return false;
+    if (!root.is_array()) {
+        log_error("load_cards: file \"" + path + "\" is not a JSON array or failed to parse");
+        return false;
+    }
     tce::s_cards.clear();
+    int loaded = 0;
+    int skipped_no_id = 0;
+    int duplicated = 0;
     for (const JsonValue& v : root.arr) {
         if (!v.is_object()) continue;
         tce::CardData cd;
-        if (const JsonValue* p = v.get_key("id")) cd.id = p->as_string();
+        if (const JsonValue* p = v.get_key("id")) {
+            cd.id = p->as_string();
+        }
+        if (cd.id.empty()) {
+            ++skipped_no_id;
+            continue;
+        }
         if (const JsonValue* p = v.get_key("name")) cd.name = p->as_string();
         if (const JsonValue* p = v.get_key("cardType")) cd.cardType = card_type_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
@@ -118,12 +156,24 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
 bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
     std::string path = resolve_data_path(path_or_base_dir, "monsters.json");
     JsonValue root = parse_json_file(path);
-    if (!root.is_array()) return false;
+    if (!root.is_array()) {
+        log_error("load_monsters: file \"" + path + "\" is not a JSON array or failed to parse");
+        return false;
+    }
     tce::s_monsters.clear();
+    int loaded = 0;
+    int skipped_no_id = 0;
+    int duplicated = 0;
     for (const JsonValue& v : root.arr) {
         if (!v.is_object()) continue;
         tce::MonsterData md;
-        if (const JsonValue* p = v.get_key("id")) md.id = p->as_string();
+        if (const JsonValue* p = v.get_key("id")) {
+            md.id = p->as_string();
+        }
+        if (md.id.empty()) {
+            ++skipped_no_id;
+            continue;
+        }
         if (const JsonValue* p = v.get_key("name")) md.name = p->as_string();
         if (const JsonValue* p = v.get_key("maxHp")) md.maxHp = p->as_int();
         if (const JsonValue* p = v.get_key("isBoss")) {
@@ -134,9 +184,26 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
             else if (t == "boss") md.type = tce::MonsterType::Boss;
             else md.type = tce::MonsterType::Normal;
         }
-        if (!md.id.empty()) tce::s_monsters[md.id] = std::move(md);
+        auto it = tce::s_monsters.find(md.id);
+        if (it != tce::s_monsters.end()) {
+            ++duplicated;
+            log_error("load_monsters: duplicated monster id=\"" + md.id + "\", keeping the first one");
+            continue;
+        }
+        tce::s_monsters[md.id] = std::move(md);
+        ++loaded;
     }
-    return !tce::s_monsters.empty();
+    if (loaded == 0) {
+        log_error("load_monsters: no valid records loaded from \"" + path + "\"");
+        return false;
+    }
+    if (skipped_no_id > 0) {
+        log_error("load_monsters: skipped " + std::to_string(skipped_no_id) + " records without id");
+    }
+    if (duplicated > 0) {
+        log_error("load_monsters: ignored " + std::to_string(duplicated) + " duplicated id records");
+    }
+    return true;
 }
 
 static EventOption parse_option(const JsonValue& v) {
@@ -157,21 +224,50 @@ static EventOption parse_option(const JsonValue& v) {
 bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
     std::string path = resolve_data_path(path_or_base_dir, "events.json");
     JsonValue root = parse_json_file(path);
-    if (!root.is_array()) return false;
+    if (!root.is_array()) {
+        log_error("load_events: file \"" + path + "\" is not a JSON array or failed to parse");
+        return false;
+    }
     events_.clear();
+    int loaded = 0;
+    int skipped_no_id = 0;
+    int duplicated = 0;
     for (const JsonValue& v : root.arr) {
         if (!v.is_object()) continue;
         Event e;
-        if (const JsonValue* p = v.get_key("id")) e.id = p->as_string();
+        if (const JsonValue* p = v.get_key("id")) {
+            e.id = p->as_string();
+        }
+        if (e.id.empty()) {
+            ++skipped_no_id;
+            continue;
+        }
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插
         }
-        if (!e.id.empty()) events_[e.id] = std::move(e);  // 哈希表插入
+        auto it = events_.find(e.id);
+        if (it != events_.end()) {
+            ++duplicated;
+            log_error("load_events: duplicated event id=\"" + e.id + "\", keeping the first one");
+            continue;
+        }
+        events_[e.id] = std::move(e);  // 哈希表插入
+        ++loaded;
     }
-    return !events_.empty();
+    if (loaded == 0) {
+        log_error("load_events: no valid records loaded from \"" + path + "\"");
+        return false;
+    }
+    if (skipped_no_id > 0) {
+        log_error("load_events: skipped " + std::to_string(skipped_no_id) + " records without id");
+    }
+    if (duplicated > 0) {
+        log_error("load_events: ignored " + std::to_string(duplicated) + " duplicated id records");
+    }
+    return true;
 }
 
 const tce::CardData* DataLayerImpl::get_card_by_id(const CardId& id) const {

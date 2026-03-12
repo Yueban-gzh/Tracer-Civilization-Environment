@@ -9,10 +9,10 @@
  */
 
 #include "DataLayer/JsonParser.h"
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
-#include <cctype>
-#include <algorithm>
 
 namespace DataLayer {
 
@@ -49,7 +49,15 @@ static std::string read_file_utf8(const std::string& path) {
     if (!f) return "";
     std::stringstream ss;
     ss << f.rdbuf();
-    return ss.str();
+    std::string content = ss.str();
+    // 处理 UTF-8 BOM（0xEF,0xBB,0xBF），避免影响首个 token 识别
+    if (content.size() >= 3 &&
+        static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB &&
+        static_cast<unsigned char>(content[2]) == 0xBF) {
+        content.erase(0, 3);
+    }
+    return content;
 }
 
 static size_t skip_ws(const std::string& s, size_t i) {

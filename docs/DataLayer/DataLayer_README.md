@@ -8,6 +8,7 @@
 ## 一、职责与位置
 
 - **职责**：加载并缓存卡牌表、怪物表、事件表；按 id 提供 O(1) 查找；提供按稀有度排序（奖励展示）及排行榜排序。
+- **静态数据原则**：E模块仅提供静态数据（id、name、type、maxHp等），不包含动态行为逻辑（如intentPattern、attackDamage、blockAmount、卡牌效果数值等）。动态行为由B/C模块通过ID调用对应的效果函数实现。
 - **依赖**：无；被 BattleEngine(B)、CardSystem(C)、EventEngine(D) 及主流程调用。
 - **课设落点**：哈希表查找、排序算法。
 
@@ -34,10 +35,10 @@
 |------|------|------|------|
 | id | string | 是 | 唯一 id；已升级用另一条 id，如 `"card_001+"` |
 | name | string | 是 | 卡牌名称 |
-| cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒） |
+| cardType | string | 是 | 直接写枚举名：`"Attack"` / `"Skill"` / `"Power"` / `"Status"` / `"Curse"`（对应 攻击/技能/能力/状态/诅咒）；实现侧大小写不敏感（`"attack"` 等也能被解析），推荐仍按枚举名大小写书写 |
 | cost | int | 是 | 消耗墨力（特殊值如 -1 表示 X，由 B/C 约定） |
-| rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"` |
-| description | string | 是 | 展示用描述 |
+| rarity | string | 是 | `"common"` / `"uncommon"` / `"rare"`（JSON中使用小写字符串，解析时映射到 `tce::Rarity` 枚举） |
+| description | string | 是 | 展示用文学描述（不含数值效果，数值由C模块的效果函数实现） |
 | exhaust | bool | 是 | 词条：消耗（打出后进消耗堆） |
 | ethereal | bool | 是 | 词条：虚无（回合末未打出则进消耗堆） |
 | innate | bool | 是 | 词条：固有（首回合必入手牌） |
@@ -53,7 +54,7 @@
   "cardType": "Attack",
   "cost": 1,
   "rarity": "common",
-  "description": "造成8点伤害。使用此牌时，吟诵《秦风·无衣》，与幻境中的同袍之志共鸣，挥出刚劲一击。",
+  "description": "吟诵《秦风·无衣》，与幻境中的同袍之志共鸣，挥出刚劲一击。",
   "exhaust": false,
   "ethereal": false,
   "innate": false,
@@ -65,17 +66,25 @@
 ### 怪物表 `monsters.json`
 
 - **格式**：JSON 数组，每项为一个怪物对象。
-- **字段**：
+- **字段**（E模块仅提供静态数据，意图与行为由B的怪物行为函数决定）：
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | id | string | 是 | 唯一 id，如 `"monster_001"`、`"monster_boss_1"` |
 | name | string | 是 | 怪物名称 |
-| isBoss | bool | 是 | 是否为 Boss |
+| type | string | 是 | `"normal"` / `"elite"` / `"boss"`（JSON中使用小写字符串，解析时映射到 `tce::MonsterType` 枚举） |
 | maxHp | int | 是 | 最大生命值 |
-| intentPattern | string | 否 | 意图顺序，如 `"attack,block"`，由战斗引擎解析 |
-| attackDamage | int | 否 | 攻击伤害 |
-| blockAmount | int | 否 | 格挡值 |
+
+- **示例一条**：
+
+```json
+{
+  "id": "monster_001",
+  "name": "残鼎之灵",
+  "type": "normal",
+  "maxHp": 28
+}
+```
 
 ### 事件表 `events.json`
 
@@ -92,7 +101,7 @@
 - **options 每项**：
   - `text` (string)：选项文案。
   - `next` (string)：有则表示跳转到对应 EventId 的子事件。
-  - `result` (object)：有则表示该选项的结局，由 EventEngine 解析；含 `type`（如 `"gold"` / `"heal"` / `"card_reward"` / `"none"`）和 `value` (int)。
+  - `result` (object)：有则表示该选项的结局，由 EventEngine 解析；含 `type`（如 `"gold"` / `"heal"` / `"card_reward"` / `"none"` / `"relic"` / `"max_hp"` / `"remove_card"`）和 `value` (int)。
 
 - **示例**：一个选项跳转子事件，一个选项直接给结果。
 
@@ -189,7 +198,8 @@ ids = data.sort_cards_by_rarity(ids);
 ## 六、实现要点
 
 - **存储**：卡牌/怪物数据存放在命名空间 `tce` 下的 `s_cards`、`s_monsters`（`std::unordered_map`），由 `load_cards`/`load_monsters` 填充，供 DataLayer 与 B/C 共用；事件表存放在 `DataLayerImpl::events_`。按 id 查找平均 O(1)。
-- **JSON**：自实现简易解析（`JsonParser.cpp`），无第三方库，仅支持当前 data 所用格式。
+- **JSON**：自实现简易解析（`JsonParser.cpp`），无第三方库，仅支持当前 data 所用格式；解析时会自动跳过 UTF-8 BOM，并对 `cardType` / `rarity` 做大小写不敏感匹配（如 `"attack"` / `"rare"` 也能正常解析，遇到未知取值会在控制台输出告警并使用安全默认值）。
+- **加载与校验**：`load_cards` / `load_monsters` / `load_events` 会在加载前清空旧数据，逐条校验：非对象条目会被忽略；缺少 `id` 的记录会被跳过并统计数量；同一 id 多次出现时保留**第一条**并忽略后续，均会在控制台输出 `[E][DataLayer] ...` 形式的调试信息。若某张表没有加载到任何有效记录则返回 `false`。
 - **编码**：文件按 UTF-8 读写；Windows 控制台需在程序开头设置 `SetConsoleOutputCP(65001)` 才能正确显示中文。
 
 ---
