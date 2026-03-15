@@ -89,6 +89,8 @@ public:
     bool upgrade_card_in_deck(InstanceId instance_id);
     /** 执行卡牌效果：按 CardId 查找注册表并调用对应效果函数。 */
     void execute_effect(CardId id, EffectContext& ctx);
+    /** 检查某卡牌是否已注册效果（未注册则打出会消耗能量但无效果）。 */
+    bool has_effect_registered(CardId id) const;
 
     /** 注册卡牌效果：CardId → 效果函数，出牌时由 execute_effect 查表调用 */
     /** 注册某张卡的效果函数（CardId → EffectFn）。 */

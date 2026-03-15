@@ -3,7 +3,7 @@
  */
 #pragma once
 
-#include "BattleEngine.hpp"
+#include "BattleStateSnapshot.hpp"
 #include "BattleUIData.hpp"
 
 namespace tce {
