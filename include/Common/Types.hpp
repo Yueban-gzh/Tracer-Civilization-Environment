@@ -9,21 +9,21 @@
 
 namespace tce {
 
-using CardId    = std::string;
-using MonsterId = std::string;
-using StatusId  = std::string;
-using PotionId  = std::string;
-using RelicId   = std::string;
+    using CardId = std::string;
+    using MonsterId = std::string;
+    using StatusId = std::string;
+    using PotionId = std::string;
+    using RelicId = std::string;
 
-// 牌组内唯一 id，用于区分多张同 CardId 的牌
-using InstanceId = int;
+    // 牌组内唯一 id，用于区分多张同 CardId 的牌
+    using InstanceId = int;
 
-// 玩家姿态
-enum class Stance {
-    Neutral,
-    Calm,
-    Wrath,
-    Divinity,
-};
 
-} // namespace tce
+    // namespace tce
+    enum class Stance {
+        Neutral,
+        Calm,
+        Wrath,
+        Divinity,
+    };
+}
