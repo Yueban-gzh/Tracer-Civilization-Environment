@@ -1,0 +1,41 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build (g++)",
+            "type": "shell",
+            "command": "build.bat",
+            "args": [],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": { "kind": "build", "isDefault": true },
+            "presentation": { "reveal": "silent" },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build Tracer (MSBuild)",
+            "type": "shell",
+            "command": "msbuild",
+            "args": [
+                "Tracer-Civilization-Environment.sln",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64",
+                "/t:Build",
+                "/v:minimal"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": { "reveal": "silent" },
+            "problemMatcher": ["$msCompile"]
+        },
+        {
+            "label": "Run Tracer",
+            "type": "shell",
+            "command": "${workspaceFolder}\\build\\Tracer_Civilization_Environment.exe",
+            "dependsOn": "Build (g++)",
+            "group": "test",
+            "presentation": { "reveal": "always" }
+        }
+    ]
+}

@@ -563,15 +563,29 @@ public:
  class DurationTickModifier : public IBattleModifier {               // 持续回合递减：敌方回合结束 duration-1，移除为 0 的；duration=-1 表示永久不递减
  public:
      void on_turn_end_monsters(BattleState& state, EnemyTurnContext* /*ctx*/) override {
-         for (auto& s : state.player.statuses)
-             if (s.duration > 0) --s.duration;                     // 每回合 -1，仅对 duration>0 的生效
+        for (auto& s : state.player.statuses) {
+            if (s.duration > 0) {                                // 每回合 -1，仅对 duration>0 的生效
+                --s.duration;
+                // 对于虚弱/易伤/脆弱这类「层数 = 持续时间」的减益，层数也同步递减，
+                // 这样 UI 图标右下角显示的层数就等于剩余持续回合数
+                if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+                    --s.stacks;
+                }
+            }
+        }
          state.player.statuses.erase(
              std::remove_if(state.player.statuses.begin(), state.player.statuses.end(),
                  [](const StatusInstance& x) { return x.duration == 0; }),
              state.player.statuses.end());
          for (auto& m : state.monsters) {
-             for (auto& s : m.statuses)
-                 if (s.duration > 0) --s.duration;                  // 每回合 -1
+            for (auto& s : m.statuses) {
+                if (s.duration > 0) {                             // 每回合 -1
+                    --s.duration;
+                    if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+                        --s.stacks;
+                    }
+                }
+            }
              m.statuses.erase(
                  std::remove_if(m.statuses.begin(), m.statuses.end(),
                      [](const StatusInstance& x) { return x.duration == 0; }),

@@ -34,6 +34,8 @@ public:
     bool loadBackground(const std::string& path);
     /** 加载指定战斗的背景图：index 对应战斗序号，path 如 assets/backgrounds/bg_0.png */
     bool loadBackgroundForBattle(int index, const std::string& path);
+    /** 加载意图图标：key 为 Attack/Block/Strategy/Unknown，path 如 assets/intention/Attack.png */
+    bool loadIntentionTexture(const std::string& key, const std::string& path);
     /** 切换当前战斗背景：index 对应战斗序号（0=邪教徒, 1=胖地精, 2=绿虱虫, 3=红虱虫） */
     void setBattleBackground(int index);
 
@@ -142,6 +144,8 @@ private:
     // 背景图（置于最底层）：多张按战斗序号索引，无图时用 clear 色
     std::vector<sf::Texture> backgroundTextures_;
     int                     currentBackgroundIndex_ = 0;
+    // 意图图标（Attack/Block/Strategy/Unknown），无图时用灰色圆球占位
+    std::unordered_map<std::string, sf::Texture> intentionTextures_;
 
     // 牌组界面
     bool                          deck_view_active_ = false;   // 牌组界面是否打开

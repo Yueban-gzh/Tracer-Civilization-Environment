@@ -12,9 +12,11 @@
  #include <iostream>                                        // std::cerr
  #include <random>                                          // std::mt19937
  #include <optional>                                       // std::optional
- #include "BattleEngine/BattleUI.hpp"                       // 战斗 UI
- #include "BattleEngine/BattleUISnapshotAdapter.hpp"       // UI 快照适配器
- #include "BattleEngine/BattleEngine.hpp"                  // 战斗引擎
+#include "BattleEngine/BattleUI.hpp"                       // 战斗 UI
+#include "BattleEngine/BattleUISnapshotAdapter.hpp"       // UI 快照适配器
+#include "BattleEngine/BattleEngine.hpp"                  // 战斗引擎
+#include "Cheat/CheatEngine.hpp"                           // 金手指引擎
+#include "Cheat/CheatPanel.hpp"                            // 金手指面板
  #include "BattleEngine/BattleStateSnapshot.hpp"           // 战斗状态快照
  #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"  // 核心重构快照适配器
  #include "BattleEngine/MonsterBehaviors.hpp"              // 怪物行为
@@ -57,15 +59,27 @@
      player.gold       = 99;                                // 金币
      player.cardsToDrawPerTurn = 5;                         // 每回合抽牌数
  
-    // 牌组：使用 cards.json 中的卡牌（与子同袍、雨雪霏霏等诗词卡 + 打击/防御）
-    card_system.init_master_deck({                         // 初始化永久牌组
-        "card_001",                                        // 与子同袍（Attack）
-        "card_007",                                        // 雨雪霏霏（Skill）
-        "card_002",                                        // 大风起兮（Attack）
-        "defend",                                          // 防御
-        "defend",
-        "body_slam+",                                      // 全身撞击+
-        "pommel_strike"                                    // 剑柄打击
+    // 初始牌组：包含所有已实现效果的卡牌（CardEffects 中注册的非空效果），每种只加入一张
+    card_system.init_master_deck({
+      
+
+
+        // 铁斩波 / 金刚臂 / 顺劈斩 / 飞踢 / 残杀 / 双重打击 / 全身撞击 / 剑柄打击 / 连续拳 / 御血术 / 重刃 / 闪电霹雳 / 重锤
+        "iron_wave", "iron_wave+",
+        "clothesline", "clothesline+",
+        "cleave", "cleave+",
+        "dropkick", "dropkick+",
+        "carnage", "carnage+",
+        "twin_strike", "twin_strike+",
+        "body_slam", "body_slam+",
+        "pommel_strike", "pommel_strike+",
+        "pummel", "pummel+",
+        "hemokinesis", "hemokinesis+",
+        "heavy_blade", "heavy_blade+",
+        "thunderclap", "thunderclap+",
+        "bludgeon", "bludgeon+",
+
+    
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
@@ -84,7 +98,12 @@
      player.potions = {"poison_potion", "block_potion", "strength_potion"};  // 毒药水、格挡药水、力量药水
  
      engine.start_battle(monsters, player, card_system.get_master_deck_card_ids(), relics);  // 开始战斗
- 
+
+    CheatEngine cheat(&engine, &card_system);  // 金手指引擎（独立于主逻辑）
+    CheatPanel cheat_panel(&cheat, static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
+    if (!cheat_panel.loadFont("assets/fonts/Sanji.ttf") && !cheat_panel.loadFont("assets/fonts/default.ttf"))
+        cheat_panel.loadFont("data/font.ttf");
+
      BattleUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));  // 创建战斗 UI
      // 主字体（英文/数字）
      if (!ui.loadFont("assets/fonts/Sanji.ttf"))            // 尝试加载主字体
@@ -170,6 +189,16 @@
     };
     for (const auto& pid : potionIds) tryLoadPotion(pid);
 
+    // 意图图标：assets/intention/Attack.png, Block.png, Strategy.png, Unknown.png
+    auto tryLoadIntention = [&ui](const std::string& key) {
+        return ui.loadIntentionTexture(key, "assets/intention/" + key + ".png")
+            || ui.loadIntentionTexture(key, "./assets/intention/" + key + ".png");
+    };
+    tryLoadIntention("Attack");
+    tryLoadIntention("Block");
+    tryLoadIntention("Strategy");
+    tryLoadIntention("Unknown");
+
     // 背景音乐：放入 assets/music/bgm.ogg 即可播放（支持 ogg/wav/flac）
     sf::Music bgm;
     if (bgm.openFromFile("assets/music/bgm.ogg") || bgm.openFromFile("./assets/music/bgm.ogg")) {
@@ -182,6 +211,8 @@
          while (const std::optional ev = window.pollEvent()) {  // 处理所有待处理事件
              if (ev->is<sf::Event::Closed>())               // 关闭窗口事件
                  window.close();
+             if (cheat_panel.handleEvent(*ev))             // 金手指面板优先（F2/输入/Enter）
+                 continue;
              sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));  // 鼠标坐标转世界坐标
              if (ui.handleEvent(*ev, mousePos))              // 将事件交给 UI 处理
                  engine.end_turn();   // 点击结束回合按钮即调用
@@ -293,6 +324,7 @@
          SnapshotBattleUIDataProvider adapter(&snapshot);  // 快照适配器
          window.clear(sf::Color(28, 26, 32));               // 清屏（深色背景）
         ui.draw(window, adapter);                          // 绘制 UI
+        cheat_panel.draw(window);                          // 金手指面板（F2 打开时）
         window.display();                                  // 显示到窗口
         engine.tick_damage_displays();                     // 递减伤害数字显示时长，移除过期项（3 秒）
 

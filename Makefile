@@ -21,6 +21,8 @@ SRCS = src/main.cpp \
        src/BattleCoreRefactor/RelicModifiers.cpp \
        src/BattleCoreRefactor/StatusModifiers.cpp \
        src/BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.cpp \
+       src/Cheat/CheatEngine.cpp \
+       src/Cheat/CheatPanel.cpp \
        src/Effects/CardEffects.cpp \
        src/EventEngine/EventEngine.cpp
 
@@ -39,6 +41,9 @@ $(TARGET): $(OBJS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# 头文件变更时强制重编（避免 BattleState 等结构体 ABI 不一致）
+$(OBJS): include/BattleCoreRefactor/BattleState.hpp
 
 run: $(TARGET)
 	./$(TARGET)

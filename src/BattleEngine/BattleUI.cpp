@@ -7,6 +7,7 @@
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
 #include <SFML/Graphics.hpp>                       // 图形绘制
 #include <algorithm>                               // std::min/max 等
+#include <map>                                     // std::map（按目标统计伤害序号，用于错位）
 #include <cmath>                                   // std::sqrt/floor
 #include <cstdio>                                  // std::snprintf
 #include <cstdint>                                 // std::uint8_t
@@ -15,54 +16,54 @@
 
 namespace tce {
 
-    namespace {                                    // 文件内匿名命名空间：常量与辅助函数
-        constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72
-        constexpr float TOP_ROW_Y = 20.f;            // 顶栏内容起始 Y
+    namespace {                                    // 文件内匿名命名空间：常量与辅助函数，仅本文件可见
+        constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72 像素
+        constexpr float TOP_ROW_Y = 20.f;            // 顶栏内容起始 Y 坐标
         constexpr float TOP_ROW_H = 32.f;            // 顶栏内容行高
-        constexpr float RELICS_ROW_Y = 72.f;         // 遗物行起始 Y
+        constexpr float RELICS_ROW_Y = 72.f;         // 遗物行起始 Y（紧接顶栏下方）
         constexpr float RELICS_ROW_H = 72.f;         // 遗物行高度
-        constexpr float RELICS_ICON_SZ = 55.f;       // 遗物图标 55×55
-        constexpr float RELICS_ICON_Y_OFFSET = 16.f;  // 遗物往下一点
-        constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例，留出空间给手牌
+        constexpr float RELICS_ICON_SZ = 55.f;       // 遗物图标 55×55 像素
+        constexpr float RELICS_ICON_Y_OFFSET = 16.f;  // 遗物图标下移偏移量
+        constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（屏幕高度 78% 处），留出空间给手牌
         constexpr float HAND_AREA_BG_H = 220.f;     // 手牌区背景高度
-        constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌贴底
+        constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌图标贴底
         constexpr float SIDE_MARGIN = 24.f;          // 左右边距
 
-        constexpr float CARD_W = 190.f;              // 手牌宽度
-        constexpr float CARD_H = 300.f;              // 手牌高度
-        constexpr float CARD_PREVIEW_W = 280.f;  // 悬停预览尺寸
-        constexpr float CARD_PREVIEW_H = 410.f;
-        constexpr float CARD_PREVIEW_BOTTOM_ABOVE = 5.f;  // 预览时卡牌下边距屏幕底
-        constexpr float HAND_CARD_OVER_BUTTONS = 18.f;
-        constexpr float HAND_CARD_DISPLAY_STEP = 145.f; // 展示宽度：只比牌面宽度小一点
-        constexpr float HAND_FAN_SPAN_MAX_DEG = 45.f;   // 总幅度上限，防止牌数很多时弧过平
-        constexpr float HAND_PIVOT_Y_BELOW = 1900.f;    // 轴心在屏幕下方距离（大一些半径够用，10 张牌 200px 展示不超 60°）
-        constexpr float HAND_ARC_TOP_ABOVE_BOTTOM = 220.f;  // 弧顶距屏幕底边 220（卡牌上边不超过）
-        constexpr float ENERGY_CENTER_X_BL = 190.f;
-        constexpr float ENERGY_CENTER_Y_BL = 190.f;
-        constexpr float ENERGY_OUTLINE_THICKNESS = 10.f;  // 边框厚度 10
-        constexpr float ENERGY_R = (120.f - 20.f) * 0.5f; // 填充圆半径，总直径 120
-        constexpr float PILE_ICON_W = 52.f;
-        constexpr float PILE_ICON_H = 72.f;
-        constexpr float PILE_CENTER_OFFSET = 36.f;
-        constexpr float PILE_NUM_CIRCLE_R = 17.f;    // 牌数小圆背景半径（角上）
-        constexpr float END_TURN_W = 180.f;
-        constexpr float END_TURN_H = 70.f;
+        constexpr float CARD_W = 190.f;              // 手牌默认宽度
+        constexpr float CARD_H = 300.f;              // 手牌默认高度
+        constexpr float CARD_PREVIEW_W = 280.f;  // 悬停/选中时预览卡牌宽度
+        constexpr float CARD_PREVIEW_H = 410.f;     // 悬停/选中时预览卡牌高度
+        constexpr float CARD_PREVIEW_BOTTOM_ABOVE = 5.f;  // 预览时卡牌下边距屏幕底 5 像素
+        constexpr float HAND_CARD_OVER_BUTTONS = 18.f;   // 手牌与按钮区域重叠量
+        constexpr float HAND_CARD_DISPLAY_STEP = 145.f; // 相邻手牌中心水平间距（扇形展示）
+        constexpr float HAND_FAN_SPAN_MAX_DEG = 45.f;   // 手牌扇形总角度上限（度），防止牌多时弧过平
+        constexpr float HAND_PIVOT_Y_BELOW = 1900.f;    // 手牌弧心在屏幕下方距离（大半径使 10 张牌不超 60°）
+        constexpr float HAND_ARC_TOP_ABOVE_BOTTOM = 220.f;  // 弧顶距屏幕底边 220 像素（卡牌上边不超过）
+        constexpr float ENERGY_CENTER_X_BL = 190.f;  // 能量圆圆心 x（以左下为原点）
+        constexpr float ENERGY_CENTER_Y_BL = 190.f;  // 能量圆圆心 y（距底边）
+        constexpr float ENERGY_OUTLINE_THICKNESS = 10.f;  // 能量圆边框厚度
+        constexpr float ENERGY_R = (120.f - 20.f) * 0.5f; // 能量圆填充半径（总直径约 120）
+        constexpr float PILE_ICON_W = 52.f;         // 抽牌/弃牌堆图标宽度
+        constexpr float PILE_ICON_H = 72.f;          // 抽牌/弃牌堆图标高度
+        constexpr float PILE_CENTER_OFFSET = 36.f;   // 牌堆图标中心偏移
+        constexpr float PILE_NUM_CIRCLE_R = 17.f;    // 牌数小圆背景半径（角上显示张数）
+        constexpr float END_TURN_W = 180.f;          // 结束回合按钮宽度
+        constexpr float END_TURN_H = 70.f;           // 结束回合按钮高度
         constexpr float END_TURN_CENTER_X_BR = 280.f;  // 以右下为 (0,0) 时按钮中心 x
         constexpr float END_TURN_CENTER_Y_BR = 210.f;  // 以右下为 (0,0) 时按钮中心 y
-        constexpr float HP_BAR_W = 230.f;            // 血条最大长度固定，生命上限不影响
-        constexpr float HP_BAR_H = 10.f;             // 血条变细；下方为效果栏
-        constexpr float INTENT_ORB_R = 14.f;              // 意图图标半径（缩小，悬停显示详情）
-        constexpr float MODEL_PLACEHOLDER_W = 150.f;
-        constexpr float MODEL_PLACEHOLDER_H = 240.f;  // 下边往下 60（原 180+60）
+        constexpr float HP_BAR_W = 230.f;            // 血条最大长度（固定，与生命上限无关）
+        constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
+        constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
+        constexpr float MODEL_PLACEHOLDER_W = 150.f; // 玩家/怪物模型占位矩形宽度
+        constexpr float MODEL_PLACEHOLDER_H = 240.f;  // 玩家/怪物模型占位矩形高度
         constexpr float MODEL_TOP_OFFSET = 90.f;      // 模型上边距中心，固定则上边框位置不变
-        constexpr float MODEL_CENTER_Y_RATIO = 0.58f;
-        constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 60.f;  // 模型+血条+效果栏整体下移
+        constexpr float MODEL_CENTER_Y_RATIO = 0.58f; // 模型中心 Y 占战场高度的比例
+        constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 60.f;  // 模型+血条+效果栏整体下移量
 
-        const sf::Color TOP_BAR_BG_COLOR(42, 38, 48);
-        const sf::Color HAND_AREA_BG_COLOR(35, 33, 42);
+        const sf::Color TOP_BAR_BG_COLOR(42, 38, 48);   // 顶栏背景色（深灰紫）
+        const sf::Color HAND_AREA_BG_COLOR(35, 33, 42); // 手牌区背景色（略深）
 
-        // 遗物名称与效果（悬停提示用）
+        // 遗物名称与效果（悬停提示用）：返回 (名称, 描述) 或 (未知遗物, 空)
         inline std::pair<std::wstring, std::wstring> get_relic_display_info(const std::string& id) {
             static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
                 {"burning_blood", {L"燃烧之血", L"战斗胜利时回复 6 点生命"}},
@@ -95,7 +96,7 @@ namespace tce {
             if (it != m.end()) return it->second;
             return {L"未知遗物", L""};
         }
-        // 药水名称与效果（悬停提示用）
+        // 药水名称与效果（悬停提示用）：返回 (名称, 描述) 或 (未知药水, 空)
         inline std::pair<std::wstring, std::wstring> get_potion_display_info(const std::string& id) {
             static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
                 {"strength_potion", {L"力量药水", L"获得 2 层力量"}},
@@ -114,12 +115,12 @@ namespace tce {
             return {L"未知药水", L""};
         }
 
-        // 当前 Demo 中：打击/重击等攻击牌需要敌人目标，其它（防御/能力等）默认自选玩家目标
-        inline bool card_targets_enemy(const BattleStateSnapshot& s, size_t handIndex) {  // 该手牌是否需要敌人目标
-            if (handIndex >= s.hand.size()) return true;  // 越界默认需要
+        // 判断该手牌是否需要敌人目标：打击/重击等攻击牌需要，防御/能力等默认自选玩家
+        inline bool card_targets_enemy(const BattleStateSnapshot& s, size_t handIndex) {
+            if (handIndex >= s.hand.size()) return true;  // 越界默认需要目标（安全）
             const auto& id = s.hand[handIndex].id;
             const CardData* cd = get_card_by_id(id);
-            // 若数据层已有卡牌信息，则按「需要目标」或「攻击牌」决定
+            // 若数据层已有卡牌信息，则按 requiresTarget 或 cardType==Attack 决定
             if (cd) {
                 if (cd->requiresTarget) return true;
                 if (cd->cardType == CardType::Attack) return true;
@@ -130,7 +131,7 @@ namespace tce {
             return false;
         }
 
-        // 将文本按像素宽度自动换行，并限制在给定高度内；超出行数用省略号截断，避免绘制出卡牌区域
+        // 按像素宽度自动换行，超出行数用省略号截断，避免绘制出卡牌区域
     inline void draw_wrapped_text(  // 按像素宽度自动换行，超出行数用省略号截断
             sf::RenderTarget& target,
             const sf::Font& font,
@@ -144,25 +145,25 @@ namespace tce {
         ) {
         if (maxWidth <= 1.f || maxHeight <= 1.f || text.isEmpty()) return;
 
-        sf::Text measure(font, sf::String(L""), charSize);  // 用于测量宽度
+        sf::Text measure(font, sf::String(L""), charSize);  // 用于测量单行字符宽度
             measure.setFillColor(color);
 
         const float lineH = font.getLineSpacing(charSize);
-        const int maxLines = static_cast<int>(std::floor(maxHeight / lineH));  // 最大行数
+        const int maxLines = static_cast<int>(std::floor(maxHeight / lineH));  // 最大行数（由高度决定）
             if (maxLines <= 0) return;
 
             std::vector<sf::String> lines;
             lines.reserve(static_cast<size_t>(maxLines));
 
             sf::String current;
-            auto flush_line = [&]() {                  // 将当前行写入 lines
+            auto flush_line = [&]() {                  // 将当前行写入 lines 并清空 current
                 lines.push_back(current);
                 current.clear();
             };
 
             for (std::size_t i = 0; i < text.getSize(); ++i) {  // 逐字符处理
                 const char32_t ch = text[i]; // SFML3: operator[] 返回 char32_t（UTF-32）
-                if (ch == U'\r') continue;
+                if (ch == U'\r') continue;   // 忽略回车
                 if (ch == U'\n') {
                     flush_line();
                     if (static_cast<int>(lines.size()) >= maxLines) break;
@@ -174,7 +175,7 @@ namespace tce {
                 measure.setString(candidate);
                 const float w = measure.getLocalBounds().size.x;
 
-                if (!current.isEmpty() && w > maxWidth) {  // 超宽则换行
+                if (!current.isEmpty() && w > maxWidth) {  // 超宽则换行，当前字符加入新行
                     flush_line();
                     if (static_cast<int>(lines.size()) >= maxLines) break;
                     current += ch;
@@ -187,10 +188,10 @@ namespace tce {
             }
             if (lines.empty()) return;
 
-            // 如果文本被截断（还有剩余字符），给最后一行加省略号，并保证不超宽
+            // 若文本被截断（行数已满且还有剩余字符），给最后一行加省略号，并保证不超宽
             std::size_t joinedLen = 0;
             for (const auto& l : lines) joinedLen += l.getSize();
-            if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {  // 被截断则加省略号
+            if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {
                 sf::String& last = lines.back();
                 const sf::String ell = sf::String(L"…");
                 while (true) {
@@ -216,44 +217,44 @@ namespace tce {
         const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR;  // 以右下为原点算中心 y
         const float btnX = btnCenterX - END_TURN_W * 0.5f;  // 按钮左上角 x
         const float btnY = btnCenterY - END_TURN_H * 0.5f;  // 按钮左上角 y
-        endTurnButton_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(END_TURN_W, END_TURN_H));  // 记录矩形供点击检测
+        endTurnButton_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(END_TURN_W, END_TURN_H));  // 记录矩形供 handleEvent 点击检测
     }
 
     bool BattleUI::loadFont(const std::string& path) {
-        fontLoaded_ = font_.openFromFile(path);     // SFML 3: openFromFile
+        fontLoaded_ = font_.openFromFile(path);     // SFML 3: openFromFile，加载西文字体
         return fontLoaded_;
     }
 
     bool BattleUI::loadChineseFont(const std::string& path) {
-        fontChineseLoaded_ = fontChinese_.openFromFile(path);
+        fontChineseLoaded_ = fontChinese_.openFromFile(path);  // 加载中文字体（卡牌名、描述等）
         return fontChineseLoaded_;
     }
 
     bool BattleUI::loadMonsterTexture(const std::string& monster_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;  // 加载失败返回 false
-        monsterTextures_[monster_id] = std::move(tex);  // 按 id 缓存
+        monsterTextures_[monster_id] = std::move(tex);  // 按 monster_id 缓存纹理
         return true;
     }
 
     bool BattleUI::loadRelicTexture(const std::string& relic_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;
-        relicTextures_[relic_id] = std::move(tex);
+        relicTextures_[relic_id] = std::move(tex);  // 按 relic_id 缓存
         return true;
     }
 
     bool BattleUI::loadPotionTexture(const std::string& potion_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;
-        potionTextures_[potion_id] = std::move(tex);
+        potionTextures_[potion_id] = std::move(tex);  // 按 potion_id 缓存
         return true;
     }
 
     bool BattleUI::loadPlayerTexture(const std::string& character_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;
-        playerTextures_[character_id] = std::move(tex);
+        playerTextures_[character_id] = std::move(tex);  // 按角色 id 缓存（如 Ironclad）
         return true;
     }
 
@@ -263,7 +264,7 @@ namespace tce {
         if (backgroundTextures_.empty())
             backgroundTextures_.push_back(std::move(tex));
         else
-            backgroundTextures_[0] = std::move(tex);
+            backgroundTextures_[0] = std::move(tex);  // 替换默认背景
         return true;
     }
 
@@ -272,33 +273,40 @@ namespace tce {
         if (!tex.loadFromFile(path)) return false;
         if (index < 0) return false;
         if (static_cast<size_t>(index) >= backgroundTextures_.size())
-            backgroundTextures_.resize(static_cast<size_t>(index) + 1);
+            backgroundTextures_.resize(static_cast<size_t>(index) + 1);  // 扩展容器
         backgroundTextures_[static_cast<size_t>(index)] = std::move(tex);
         return true;
     }
 
     void BattleUI::setBattleBackground(int index) {
-        currentBackgroundIndex_ = index;
+        currentBackgroundIndex_ = index;  // 切换当前使用的背景图索引
+    }
+
+    bool BattleUI::loadIntentionTexture(const std::string& key, const std::string& path) {
+        sf::Texture tex;
+        if (!tex.loadFromFile(path)) return false;
+        intentionTextures_[key] = std::move(tex);
+        return true;
     }
 
     void BattleUI::setMousePosition(sf::Vector2f pos) {
-        mousePos_ = pos;                            // 每帧更新，供悬停检测用
+        mousePos_ = pos;                            // 每帧由主循环更新，供悬停检测、瞄准箭头等
     }
 
     void BattleUI::show_center_tip(std::wstring text, float seconds) {
-        centerTipText_ = std::move(text);           // 设置提示文本
-        centerTipSeconds_ = seconds;                // 显示时长
-        centerTipClock_.restart();                  // 重置计时器
+        centerTipText_ = std::move(text);           // 设置中央提示文本（如"能量不足"）
+        centerTipSeconds_ = seconds;                // 显示时长（秒）
+        centerTipClock_.restart();                  // 重置计时器，开始计时
     }
 
     bool BattleUI::can_pay_selected_card_cost() const {
-        if (!lastSnapshot_) return true;            // 没有快照时不拦截
+        if (!lastSnapshot_) return true;            // 没有快照时不拦截（允许）
         if (selectedHandIndex_ < 0 || static_cast<size_t>(selectedHandIndex_) >= lastSnapshot_->hand.size())
             return true;                           // 无选中牌时允许
         const auto& id = lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id;
         const CardData* cd = get_card_by_id(id);
         int cost = cd ? cd->cost : 0;
-        return lastSnapshot_->energy >= cost;       // 能量是否足够
+        return lastSnapshot_->energy >= cost;       // 当前能量是否足够支付该牌费用
     }
 
     void BattleUI::draw_center_tip(sf::RenderWindow& window) {
@@ -337,7 +345,7 @@ namespace tce {
     }
 
     bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
-        // 奖励界面：处理卡牌选择、跳过、继续
+        // 奖励界面：处理卡牌选择、跳过、继续；返回 false 表示事件已消费
         if (reward_screen_active_) {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
@@ -366,8 +374,8 @@ namespace tce {
             return false;
         }
 
-        // 牌组界面：只处理滚轮与返回按钮，其它事件忽略
-        if (deck_view_active_) {                 // 牌组界面激活时
+        // 牌组界面：只处理滚轮滚动与返回按钮点击，其它事件忽略
+        if (deck_view_active_) {
             if (ev.is<sf::Event::MouseWheelScrolled>()) {
                 auto const& wheel = ev.getIf<sf::Event::MouseWheelScrolled>();
                 if (wheel) {
@@ -382,7 +390,7 @@ namespace tce {
                     const float contentH = padTop + (numRows > 0 ? (numRows * ROW_CENTER_TO_CENTER - (ROW_CENTER_TO_CENTER - CARD_H)) : 0.f);
                     const float maxScroll = std::max(0.f, contentH - viewH);
                     const float step = 80.f;
-                    deck_view_scroll_y_ -= wheel->delta * step;  // 滚轮控制滚动
+                    deck_view_scroll_y_ -= wheel->delta * step;  // 滚轮 delta 控制垂直滚动
                     if (maxScroll <= 0.f) deck_view_scroll_y_ = 0.f;
                     else {
                         if (deck_view_scroll_y_ < 0.f) deck_view_scroll_y_ = 0.f;
@@ -402,7 +410,7 @@ namespace tce {
             return false;
         }
 
-        // 非牌组界面：点击「牌组」=牌组、左下角抽牌堆图标=抽牌堆、右下角弃牌堆图标=弃牌堆、弃牌堆上方小块=消耗堆
+        // 非牌组界面：点击顶栏「牌组」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应牌组视图
         if (ev.is<sf::Event::MouseButtonPressed>()) {
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (btn && btn->button == sf::Mouse::Button::Left) {
@@ -509,11 +517,11 @@ namespace tce {
 
                 // 点击结束回合按钮
                 if (endTurnButton_.contains(mousePos)) {
-                    return true;                     // 返回 true 表示主循环应调用 engine.end_turn()
+                    return true;                     // 返回 true 表示主循环应调用 engine.end_turn() 结束回合
                 }
             }
 
-            // 右键：取消当前选中的牌/药水或瞄准
+            // 右键：取消当前选中的牌/药水或瞄准状态
             if (btn->button == sf::Mouse::Button::Right) {
                 selectedHandIndex_ = -1;
                 isAimingCard_ = false;
@@ -525,16 +533,16 @@ namespace tce {
         return false;
     }
 
-    bool BattleUI::pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex) {  // 主循环轮询出牌请求
+    bool BattleUI::pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex) {
         if (pendingPlayHandIndex_ < 0) return false;
         outHandIndex = pendingPlayHandIndex_;
-        outTargetMonsterIndex = pendingPlayTargetMonsterIndex_;  // -1 表示玩家自身
+        outTargetMonsterIndex = pendingPlayTargetMonsterIndex_;  // -1 表示玩家自身（自选目标牌）
         pendingPlayHandIndex_ = -1;
         pendingPlayTargetMonsterIndex_ = -1;
         return true;
     }
 
-    bool BattleUI::pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex) {  // 主循环轮询药水使用请求
+    bool BattleUI::pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex) {
         if (pendingPotionSlotIndex_ < 0) return false;
         outSlotIndex = pendingPotionSlotIndex_;
         outTargetMonsterIndex = pendingPotionTargetIndex_;
@@ -543,7 +551,7 @@ namespace tce {
         return true;
     }
 
-    void BattleUI::set_deck_view_cards(std::vector<CardInstance> cards) {  // 设置牌组界面要显示的卡牌列表
+    void BattleUI::set_deck_view_cards(std::vector<CardInstance> cards) {
         deck_view_cards_ = std::move(cards);
     }
 
@@ -570,11 +578,11 @@ namespace tce {
             deck_view_scroll_y_ = 0.f;
     }
 
-    void BattleUI::showTip(std::wstring text, float seconds) {  // 对外接口，委托给 show_center_tip
+    void BattleUI::showTip(std::wstring text, float seconds) {
         show_center_tip(std::move(text), seconds);
     }
 
-    bool BattleUI::pollOpenDeckViewRequest(int& outMode) {  // 主循环轮询打开牌组界面请求，1=牌组 2=抽牌堆 3=弃牌堆 4=消耗堆
+    bool BattleUI::pollOpenDeckViewRequest(int& outMode) {  // outMode: 1=牌组 2=抽牌堆 3=弃牌堆 4=消耗堆
         if (pending_deck_view_mode_ == 0) return false;
         outMode = pending_deck_view_mode_;
         pending_deck_view_mode_ = 0;
@@ -640,11 +648,11 @@ namespace tce {
     }
 
     void BattleUI::draw(sf::RenderWindow& window, IBattleUIDataProvider& data) {
-        const BattleStateSnapshot& s = data.get_snapshot();  // 从适配器取快照
-        if (!fontLoaded_) return;                   // 字体未加载则不绘制
-        lastSnapshot_ = &s;                         // 供 handleEvent 等读取
+        const BattleStateSnapshot& s = data.get_snapshot();  // 从适配器取战斗状态快照
+        if (!fontLoaded_) return;                   // 字体未加载则不绘制（避免崩溃）
+        lastSnapshot_ = &s;                         // 供 handleEvent、can_pay_selected_card_cost 等读取
 
-        // 背景图（最底层）
+        // 背景图（最底层，铺满窗口）
         int idx = currentBackgroundIndex_;
         if (idx < 0) idx = 0;
         if (static_cast<size_t>(idx) >= backgroundTextures_.size() && !backgroundTextures_.empty())
@@ -665,10 +673,10 @@ namespace tce {
         topBg.setFillColor(TOP_BAR_BG_COLOR);
         window.draw(topBg);
 
-        drawTopBar(window, s);                      // 顶栏：名字、HP、金币、药水
-        drawRelicsRow(window, s);                   // 遗物行
+        drawTopBar(window, s);                      // 顶栏：钥匙槽、名字、职业、HP、金币、药水、层数、难度
+        drawRelicsRow(window, s);                   // 遗物行：顶栏下方，最多 12 个遗物图标
 
-        if (deck_view_active_) {                    // 牌组界面打开时只画牌组+返回
+        if (deck_view_active_) {                    // 牌组界面打开时只画牌组网格+返回按钮
             drawDeckView(window, s);
             drawTopRight(window, s);
             drawRelicPotionTooltip(window, s);      // 顶栏遗物/药水仍可悬停查看
@@ -676,7 +684,7 @@ namespace tce {
             return;
         }
 
-        if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利/金币/卡牌/继续
+        if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利标题+金币+遗物/药水+三选一卡牌+跳过/继续
             drawBattleCenter(window, s);             // 底层仍画战场（模糊背景感）
             drawBottomBar(window, s);
             drawTopRight(window, s);
@@ -685,23 +693,23 @@ namespace tce {
             return;
         }
 
-        drawBattleCenter(window, s);                 // 战场：玩家、怪物、意图、状态
+        drawBattleCenter(window, s);                 // 战场中央：玩家区（模型+血条+状态）、怪物区（意图+模型+血条+状态）、伤害数字
 
-        drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏、遗物行）
+        drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏药水槽、遗物行图标）
 
-        // 手牌区背景色块
+        // 手牌区背景色块（底栏上方）
         float handBgY = height_ - HAND_AREA_BG_H;
         sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), HAND_AREA_BG_H));
         handBg.setPosition(sf::Vector2f(0.f, handBgY));
         handBg.setFillColor(HAND_AREA_BG_COLOR);
         window.draw(handBg);
 
-        drawBottomBar(window, s);                   // 底栏：能量、手牌、结束回合、牌堆
-        drawTopRight(window, s);                    // 右上角：地图/牌组/设置、回合数
-        draw_center_tip(window);                    // 中央提示（如"能量不足"）
+        drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
+        drawTopRight(window, s);                    // 右上角：地图/牌组/设置按钮、回合数
+        draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
     }
 
-    // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽、当前层数、当前难度（统一高度、信息间有间隙）
+    // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽（1~5 槽）、层数占位、难度占位
     void BattleUI::drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         const float left = 28.f;              // 左侧起始
         const float rowY = TOP_ROW_Y + 8.f;   // 统一基线高度
@@ -759,10 +767,10 @@ namespace tce {
         const float potionH = 40.f;   // 固定槽高
         const float potionGap = 14.f; // 槽间距
         const float potionStartX = x;
-        potionSlotRects_.clear();     // 清空后重新填充，供点击检测
+        potionSlotRects_.clear();     // 清空后重新填充，供 handleEvent 点击检测与 drawRelicPotionTooltip 悬停
         for (int i = 0; i < potionSlotCount; ++i) {
             const float slotX = potionStartX + i * (potionW + potionGap);
-            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(slotX, rowY - 4.f), sf::Vector2f(potionW, potionH)));  // 记录点击区域
+            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(slotX, rowY - 4.f), sf::Vector2f(potionW, potionH)));
             sf::RectangleShape slot(sf::Vector2f(potionW, potionH));
             slot.setPosition(sf::Vector2f(slotX, rowY - 4.f));
             slot.setFillColor(sf::Color(0, 0, 0, 0));
@@ -813,8 +821,8 @@ namespace tce {
         float x = 28.f;                         // 左侧起始
         const float y = RELICS_ROW_Y + RELICS_ICON_Y_OFFSET;  // 下移一点
         relicSlotRects_.clear();
-        for (size_t i = 0; i < s.relics.size() && i < 12u; ++i) {  // 最多 12 个遗物
-            relicSlotRects_.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(RELICS_ICON_SZ, RELICS_ICON_SZ)));
+        for (size_t i = 0; i < s.relics.size() && i < 12u; ++i) {  // 最多显示 12 个遗物
+            relicSlotRects_.push_back(sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(RELICS_ICON_SZ, RELICS_ICON_SZ)));  // 供悬停检测
             const std::string& rid = s.relics[i];
             auto it = relicTextures_.find(rid);
             if (it != relicTextures_.end()) {    // 有遗物图标则绘制
@@ -841,7 +849,7 @@ namespace tce {
         const unsigned fontSize = 20;
         const float maxTooltipW = 320.f;
 
-        // 优先检测遗物（遗物行在左上）
+        // 优先检测遗物（遗物行在左上，先于药水）
         for (size_t i = 0; i < relicSlotRects_.size() && i < s.relics.size(); ++i) {
             if (!relicSlotRects_[i].contains(mousePos_)) continue;
             auto [name, desc] = get_relic_display_info(s.relics[i]);
@@ -869,10 +877,10 @@ namespace tce {
             window.draw(bg);
             tip.setPosition(sf::Vector2f(boxLeft + paddingX - tb.position.x, boxTop + paddingY - tb.position.y));
             window.draw(tip);
-            return;  // 只显示一个
+            return;  // 只显示一个提示框，避免重叠
         }
 
-        // 再检测药水（顶栏）
+        // 再检测药水（顶栏药水槽）
         for (size_t i = 0; i < potionSlotRects_.size() && i < s.potions.size(); ++i) {
             if (!potionSlotRects_[i].contains(mousePos_)) continue;
             auto [name, desc] = get_potion_display_info(s.potions[i]);
@@ -914,7 +922,7 @@ namespace tce {
         constexpr float CONTINUE_BTN_W = 200.f;
         constexpr float CONTINUE_BTN_H = 56.f;
 
-        // 遮罩从遗物行下方开始，保留顶栏和遗物行可见
+        // 半透明遮罩从遗物行下方开始，保留顶栏和遗物行可见
         constexpr float OVERLAY_TOP = RELICS_ROW_Y + RELICS_ROW_H;
         const float overlayH = static_cast<float>(height_) - OVERLAY_TOP;
         sf::RectangleShape overlay(sf::Vector2f(static_cast<float>(width_), overlayH));
@@ -930,7 +938,7 @@ namespace tce {
         window.draw(title);
 
         float rewardRowY = 200.f;
-        if (reward_gold_ > 0) {                             // 40% 概率获得时才显示金币
+        if (reward_gold_ > 0) {                             // 有金币奖励时显示（40% 概率）
             char buf[64];
             std::snprintf(buf, sizeof(buf), "+%d 金币", reward_gold_);
             sf::Text goldText(fontForChinese(), sf::String::fromUtf8(buf, buf + std::strlen(buf)), 32);
@@ -940,7 +948,7 @@ namespace tce {
             rewardRowY += 50.f;
         }
 
-        // 遗物与药水奖励（显示在金币下方，各 40% 概率）
+        // 遗物与药水奖励（显示在金币下方，各 40% 概率，互不冲突）
         rewardRowY = (reward_gold_ > 0) ? 250.f : 200.f;
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
             constexpr float REWARD_ICON_SZ = 48.f;
@@ -1058,7 +1066,6 @@ namespace tce {
     }
 
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
-    // 行中心距 360，列中心距 260。可见区域：从遗物栏下到返回按钮上，保证能露出多行
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         constexpr float DECK_CARD_W = 190.f;           // 牌组界面卡牌宽
         constexpr float DECK_CARD_H = 300.f;          // 牌组界面卡牌高
@@ -1085,7 +1092,7 @@ namespace tce {
             const int col = static_cast<int>(i) % COLS;
             const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
             const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;  // 减去滚动偏移
-            if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;  // 视口外不绘制
+            if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;  // 视口外不绘制（裁剪优化）
             const CardInstance& inst = deck_view_cards_[i];
             const CardData* cd = get_card_by_id(inst.id);
             const float w = DECK_CARD_W, h = DECK_CARD_H;
@@ -1215,9 +1222,9 @@ namespace tce {
         char buf[32];
 
         // ---------- 玩家区：模型占位 -> 血条在模型下方 -> 增益减益在血条下方 ----------
+        // playerModelRect_ 用于自选目标牌高亮与点击命中检测
         float playerCenterX = playerLeft + playerW * 0.5f;  // 玩家区中心 x
         float modelTop = modelCenterY - MODEL_TOP_OFFSET;    // 模型上边，固定不变
-        // 记录玩家模型矩形用于高亮与命中检测（如自选目标牌）
         playerModelRect_ = sf::FloatRect(
             sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop),
             sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H)
@@ -1377,7 +1384,8 @@ namespace tce {
             }
         }
 
-        // ---------- 怪物区：1-3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
+        // ---------- 怪物区：1~3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
+        // monsterModelRects_、monsterIntentRects_ 供出牌瞄准与点击检测
         constexpr float MONSTER_GAP = 30.f;
         float mModelTop = modelCenterY - MODEL_TOP_OFFSET;
         const size_t nMonsters = s.monsters.size();
@@ -1396,18 +1404,31 @@ namespace tce {
             float intentY = mModelTop - INTENT_ORB_R * 2.f - 6.f;
             const float intentLeft = monsterCenterX - INTENT_ORB_R;
             const float intentTop = intentY - INTENT_ORB_R;
-            sf::FloatRect intentRect(sf::Vector2f(intentLeft, intentTop), sf::Vector2f(INTENT_ORB_R * 2.f, INTENT_ORB_R * 2.f));
+            const float intentSz = INTENT_ORB_R * 2.f;
+            sf::FloatRect intentRect(sf::Vector2f(intentLeft, intentTop), sf::Vector2f(intentSz, intentSz));
             monsterIntentRects_.push_back(intentRect);
-            sf::Color orbFill(80, 120, 200);
-            if (m.currentIntent.kind == MonsterIntentKind::Attack) orbFill = sf::Color(180, 80, 80);
-            else if (m.currentIntent.kind == MonsterIntentKind::Buff) orbFill = sf::Color(80, 160, 100);
-            else if (m.currentIntent.kind == MonsterIntentKind::Debuff) orbFill = sf::Color(140, 100, 160);
-            sf::CircleShape intentOrb(INTENT_ORB_R);
-            intentOrb.setPosition(sf::Vector2f(intentLeft, intentTop));
-            intentOrb.setFillColor(orbFill);
-            intentOrb.setOutlineColor(sf::Color(120, 160, 255));
-            intentOrb.setOutlineThickness(1.f);
-            window.draw(intentOrb);
+            // 意图图标：优先用图片，无图则灰色圆球占位
+            const char* intentKey = "Unknown";
+            if (m.currentIntent.kind == MonsterIntentKind::Attack) intentKey = "Attack";
+            else if (m.currentIntent.kind == MonsterIntentKind::Block) intentKey = "Block";
+            else if (m.currentIntent.kind == MonsterIntentKind::Buff) intentKey = "Strategy";
+            auto itTex = intentionTextures_.find(intentKey);
+            if (itTex != intentionTextures_.end()) {
+                sf::Sprite intentSprite(itTex->second);
+                const sf::FloatRect tr = intentSprite.getLocalBounds();
+                const float sx = (tr.size.x > 0.f) ? (intentSz / tr.size.x) : 1.f;
+                const float sy = (tr.size.y > 0.f) ? (intentSz / tr.size.y) : 1.f;
+                intentSprite.setScale(sf::Vector2f(sx, sy));
+                intentSprite.setPosition(sf::Vector2f(intentLeft, intentTop));
+                window.draw(intentSprite);
+            } else {
+                sf::CircleShape intentOrb(INTENT_ORB_R);
+                intentOrb.setPosition(sf::Vector2f(intentLeft, intentTop));
+                intentOrb.setFillColor(sf::Color(100, 100, 110));
+                intentOrb.setOutlineColor(sf::Color(140, 140, 150));
+                intentOrb.setOutlineThickness(1.f);
+                window.draw(intentOrb);
+            }
             if (intentRect.contains(mousePos_)) {
                 sf::String intentStr;
                 switch (m.currentIntent.kind) {
@@ -1821,32 +1842,47 @@ namespace tce {
             }
         }
 
-        // 受击伤害数字：玩家左侧、怪物右侧（多怪时按怪物下标定位）
-        const float damageNumSize = 36.f;
-        const float playerDamageX = playerCenterX - MODEL_PLACEHOLDER_W * 0.5f - 50.f;
-        const float damageY = modelCenterY - 20.f;
-        for (const auto& ev : s.pendingDamageDisplays) {
-            char buf[16];
-            std::snprintf(buf, sizeof(buf), "%d", ev.amount);
-            sf::Text dmgText(font_, buf, static_cast<unsigned>(damageNumSize));
-            dmgText.setStyle(sf::Text::Bold);
-            dmgText.setFillColor(sf::Color(255, 100, 80));
-            dmgText.setOutlineThickness(3.f);
-            dmgText.setOutlineColor(sf::Color(80, 20, 20));
-            const sf::FloatRect db = dmgText.getLocalBounds();
-            dmgText.setOrigin(sf::Vector2f(db.position.x + db.size.x * 0.5f, db.position.y + db.size.y * 0.5f));
-            if (ev.is_player) {
-                dmgText.setPosition(sf::Vector2f(playerDamageX, damageY));
-                window.draw(dmgText);
-            } else if (ev.monster_index >= 0 && static_cast<size_t>(ev.monster_index) < monsterCenterXs.size()) {
-                const float mx = monsterCenterXs[static_cast<size_t>(ev.monster_index)] + MODEL_PLACEHOLDER_W * 0.5f + 20.f;
-                dmgText.setPosition(sf::Vector2f(mx, damageY));
-                window.draw(dmgText);
-            }
+        // 受击伤害数字：玩家左侧、怪物右侧；多怪时按 monster_index 定位；约 3 秒后清除
+        // 同一目标多个伤害按方位错位：玩家受伤在左侧，后续往左下方叠；怪物受伤在右侧，后续往右下方叠
+        // 错开出现：用 frames_remaining 推断“入队时长”，第 i 个需等待 i*12 帧后才显示（纯 UI 逻辑，不改结构体）
+        constexpr int DAMAGE_DISPLAY_DURATION = 180;  // 与 BattleEngine 一致
+        constexpr int STAGGER_FRAMES = 12;            // 同目标相邻数字间隔约 0.2 秒
+        const float damageNumSize = 36.f;  // 伤害数字的字号（字体大小）
+        const float playerDamageX = playerCenterX - MODEL_PLACEHOLDER_W * 0.5f - 50.f;  // 玩家受伤数字显示在玩家模型左侧一点
+        const float damageY = modelCenterY - 20.f;  // 伤害数字的垂直位置（接近模型中心略偏上）
+        const float offsetStepX = 16.f, offsetStepY = 12.f;  // 每个后续伤害的错位步长（玩家左、怪物右；都略向下）
+        std::map<std::pair<bool, int>, int> targetIndex;  // 按目标统计当前是第几个（用于错位与延迟）
+        for (const auto& ev : s.pendingDamageDisplays) {  // 遍历当前所有待显示的伤害事件
+        const auto key = std::make_pair(ev.is_player, ev.monster_index);
+        const int idx = targetIndex[key]++;  // 该目标下第几个（0,1,2...）
+        const int age = DAMAGE_DISPLAY_DURATION - ev.frames_remaining;  // 入队已过帧数
+        if (age < idx * STAGGER_FRAMES) continue;  // 未到显示时机，跳过（错开出现）
+        float dx = 0.f, dy = 0.f;
+        if (idx > 0) {  // 第 2 个及以后：玩家往左下方叠，怪物往右下方叠
+            if (ev.is_player) { dx = -idx * offsetStepX; dy = idx * offsetStepY; }
+            else { dx = idx * offsetStepX; dy = idx * offsetStepY; }
+        }
+        char buf[16];  // 存放数值字符串的缓冲区
+        std::snprintf(buf, sizeof(buf), "%d", ev.amount);  // 把伤害数值格式化为字符串
+        sf::Text dmgText(font_, buf, static_cast<unsigned>(damageNumSize));  // 创建 SFML 文本对象显示伤害数字
+        dmgText.setStyle(sf::Text::Bold);  // 使用粗体，让数字更醒目
+        dmgText.setFillColor(sf::Color(255, 100, 80));  // 数字填充颜色：亮红橙色
+        dmgText.setOutlineThickness(3.f);  // 数字描边厚度：3 像素
+        dmgText.setOutlineColor(sf::Color(80, 20, 20));  // 数字描边颜色：深红棕色，增强对比度
+        const sf::FloatRect db = dmgText.getLocalBounds();  // 获取文本本地边界，用于计算中心点
+        dmgText.setOrigin(sf::Vector2f(db.position.x + db.size.x * 0.5f, db.position.y + db.size.y * 0.5f));  // 将原点设置为文本中心，便于居中放置
+        if (ev.is_player) {  // 如果是玩家受伤事件
+            dmgText.setPosition(sf::Vector2f(playerDamageX + dx, damageY + dy));  // 在玩家左侧，多数字往左下方叠
+            window.draw(dmgText);  // 绘制玩家受伤数字
+        } else if (ev.monster_index >= 0 && static_cast<size_t>(ev.monster_index) < monsterCenterXs.size()) {  // 否则是怪物受伤，且索引有效
+            const float mx = monsterCenterXs[static_cast<size_t>(ev.monster_index)] + MODEL_PLACEHOLDER_W * 0.5f + 20.f;  // 以对应怪物模型右侧为基准的 X 坐标
+            dmgText.setPosition(sf::Vector2f(mx + dx, damageY + dy));  // 把数字放在这个怪物右侧，多数字往右下方叠
+            window.draw(dmgText);  // 绘制怪物受伤数字
         }
     }
+}
 
-    // 底栏：抽牌堆左下角(放大) | 能量在其右上方(放大) | 手牌 | 结束回合在弃牌左上方(放大) | 弃牌堆右下角(放大)，卡牌放大
+    // 底栏布局：抽牌堆左下 | 能量圆其右上方 | 手牌扇形居中 | 结束回合 | 弃牌堆右下 | 消耗堆在弃牌上方
     void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         const float barY = height_ * BOTTOM_BAR_Y_RATIO;  // 底栏起始 Y（未直接使用）
         char buf[24];
@@ -1896,7 +1932,7 @@ namespace tce {
         energyText.setPosition(sf::Vector2f(energyCenterX, energyCenterY));
         window.draw(energyText);
 
-        // 手牌：弧心在屏幕中心，弧顶距底边 220；总角度由「展示宽度」反推，使相邻牌心水平间距约 HAND_CARD_DISPLAY_STEP
+        // 手牌：弧心在屏幕中心下方，弧顶距底边 220；总角度由展示宽度反推，相邻牌心间距约 145
         const size_t handCount = s.hand.size();
         constexpr float DEG2RAD = 3.14159265f / 180.f;
         const float pivotX = static_cast<float>(width_) * 0.5f;  // 弧心 x（屏幕中心）
@@ -1910,17 +1946,17 @@ namespace tce {
         const float angleStepDeg = (handCount > 1) ? (handFanSpanDeg / static_cast<float>(handCount - 1)) : 0.f;
         const float angleStepRad = angleStepDeg * DEG2RAD;
 
-        auto getCardPos = [&](size_t idx, bool addHoverLift, float& out_cx, float& out_cy, float& out_angleDeg) {  // 计算第 idx 张牌中心与角度
+        auto getCardPos = [&](size_t idx, bool addHoverLift, float& out_cx, float& out_cy, float& out_angleDeg) {
             const float angleDeg = handCount > 1 ? (static_cast<float>(idx) - (handCount - 1) * 0.5f) * angleStepDeg : 0.f;  // 居中分布
             const float rad = angleDeg * DEG2RAD;
             out_cx = pivotX + arcRadius * std::sin(rad);
             out_cy = pivotY - arcRadius * std::cos(rad);
-            if (addHoverLift) out_cy -= 28.f;       // 悬停时上浮
+            if (addHoverLift) out_cy -= 28.f;       // 悬停时上浮 28 像素
             out_angleDeg = angleDeg;
             };
 
-        int hoverIndex = -1;                        // 当前悬停的手牌下标
-        // 若当前没有选中牌，则正常根据鼠标位置计算 hover；选中后 hover 不再影响展示
+        int hoverIndex = -1;                        // 当前悬停的手牌下标（-1 表示无）
+        // 若当前没有选中牌，则根据鼠标位置计算 hover；选中后 hover 不再影响展示
         if (selectedHandIndex_ < 0) {
             for (int i = static_cast<int>(handCount) - 1; i >= 0; --i) {
                 float cx_i, cy_i, angleDeg;
@@ -1958,7 +1994,7 @@ namespace tce {
             }
         }
 
-        auto drawOneCard = [&](size_t idx, bool isHover, bool isSelected) {  // 绘制单张手牌
+        auto drawOneCard = [&](size_t idx, bool isHover, bool isSelected) {
             float cx_i, cy_i, angleDeg;
             getCardPos(idx, isHover, cx_i, cy_i, angleDeg);
             float w, h;
@@ -2157,9 +2193,9 @@ namespace tce {
             drawOneCard(static_cast<size_t>(hoverIndex), true, false);
         }
 
-        bool aimingAtMonster = false;               // 鼠标是否在怪物上（决定箭头颜色）
+        bool aimingAtMonster = false;               // 鼠标是否在怪物上（决定箭头颜色：红=可攻击，蓝=不可）
 
-        // 若正处于瞄准状态，且当前牌需要敌人目标，则从选中牌中心到鼠标位置绘制一条弧形箭头
+        // 瞄准状态且需要敌人目标：从选中牌中心到鼠标绘制弧形箭头；跟随阶段不显示
         if (selectedHandIndex_ >= 0 && isAimingCard_ && selectedCardTargetsEnemy_) {
             // 跟随阶段不显示箭头（仍在原位矩形内）
             if (selectedCardIsFollowing_) {
@@ -2258,7 +2294,7 @@ namespace tce {
         // 弃牌堆：往右 4px，往上 4px
         const float discardX = width_ - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;  // 右下角
         const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
-        // 消耗堆：弃牌堆上方的小图标（为空也显示，便于点击查看）
+        // 消耗堆：弃牌堆上方小图标（为空也显示，便于点击查看消耗牌）
         {
             sf::RectangleShape exhaustIcon(sf::Vector2f(PILE_ICON_W - 6.f, 48.f));
             exhaustIcon.setPosition(sf::Vector2f(discardX + 3.f, discardY - 56.f));
@@ -2300,7 +2336,7 @@ namespace tce {
         discardNum.setPosition(sf::Vector2f(discardNumCx, discardNumCy));
         window.draw(discardNum);
 
-        // 结束回合：以右下为 (0,0) 时中心 (280, 210)，大小 180×70
+        // 结束回合按钮：以右下为原点时中心 (280, 210)，大小 180×70
         sf::RectangleShape btn(endTurnButton_.size);
         btn.setPosition(endTurnButton_.position);
         btn.setFillColor(sf::Color(140, 140, 150));
@@ -2317,7 +2353,7 @@ namespace tce {
         window.draw(btnText);
     }
 
-    // 右上角：地图、牌组、设置按钮 + 回合数（顶栏下方）
+    // 右上角：地图、牌组、设置三个按钮 + 回合数（顶栏下方居中）
     void BattleUI::drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         const float btnW = 58.f;
         const float btnH = 48.f;
@@ -2327,7 +2363,7 @@ namespace tce {
 
         float x = right - (btnW * 3.f + gap * 2.f);  // 三个按钮总宽，从右往左排
 
-        auto drawBtn = [&](const std::wstring& label) {  // 绘制单个按钮
+        auto drawBtn = [&](const std::wstring& label) {
             sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
             btn.setPosition(sf::Vector2f(x, rowY));
             btn.setFillColor(sf::Color(70, 65, 75));
@@ -2356,7 +2392,7 @@ namespace tce {
         const sf::FloatRect tb = turnText.getLocalBounds();
         turnText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
         turnText.setPosition(sf::Vector2f(turnCenterX, turnRowY));
-        window.draw(turnText);                      // 回合数（如 "回合 3"）
+        window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
     }
 
 } // namespace tce

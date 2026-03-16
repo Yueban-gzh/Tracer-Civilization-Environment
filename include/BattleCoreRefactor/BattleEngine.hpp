@@ -99,6 +99,26 @@ public:
     bool use_potion(int slot_index, int target_monster_index = -1);
     void step_turn_phase();
 
+    // --- 金手指接口（CheatEngine 直接修改状态）---
+    void cheat_set_player_hp(int hp);
+    void cheat_set_player_max_hp(int hp);
+    void cheat_set_player_block(int b);
+    void cheat_set_player_energy(int e);
+    void cheat_set_player_gold(int g);
+    void cheat_set_player_status(StatusId id, int stacks, int duration);
+    void cheat_remove_player_status(StatusId id);
+    void cheat_set_monster_hp(int idx, int hp);
+    void cheat_set_monster_max_hp(int idx, int hp);
+    void cheat_set_monster_status(int idx, StatusId id, int stacks, int duration);
+    void cheat_remove_monster_status(int idx, StatusId id);
+    void cheat_kill_monster(int idx);
+    void cheat_add_relic(RelicId id);
+    void cheat_remove_relic(RelicId id);
+    void cheat_add_potion(PotionId id);
+    void cheat_remove_potion(int slot);
+    void cheat_add_hand(CardId id);
+    void cheat_remove_hand(CardId id);
+
     static int  get_status_stacks(const std::vector<StatusInstance>& list, const StatusId& id);
     static void reduce_status_stacks(std::vector<StatusInstance>& list, const StatusId& id, int amount);
 
