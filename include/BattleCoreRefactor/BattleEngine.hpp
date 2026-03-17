@@ -38,6 +38,7 @@ public:
     int get_effective_damage_dealt_by_player(int base_damage, int target_monster_index) const;
     int get_effective_block_for_player(int base_block) const;
     void generate_to_discard_pile(CardId id);
+    void generate_to_draw_pile(CardId id);
     void draw_cards(int n);
     void add_energy_to_player(int amount);
     int get_status_stacks_on_monster(int monster_index, const StatusId& id) const;
@@ -128,6 +129,7 @@ public:
     int get_effective_damage_dealt_by_player_impl(int base_damage, int target_monster_index) const;
     int get_effective_block_for_player_impl(int base_block) const;
     void generate_to_discard_pile_impl(CardId id);
+    void generate_to_draw_pile_impl(CardId id);
     void draw_cards_impl(int n);
     void add_energy_to_player_impl(int amount);
     int get_status_stacks_on_monster_impl(int monster_index, const StatusId& id) const;

@@ -120,13 +120,9 @@ namespace tce {
             if (handIndex >= s.hand.size()) return true;  // 越界默认需要目标（安全）
             const auto& id = s.hand[handIndex].id;
             const CardData* cd = get_card_by_id(id);
-            // 若数据层已有卡牌信息，则按 requiresTarget 或 cardType==Attack 决定
-            if (cd) {
-                if (cd->requiresTarget) return true;
-                if (cd->cardType == CardType::Attack) return true;
-                return false;
-            }
-            // 数据层尚未填充具体卡牌数据时，对部分已知攻击牌（如打击/重击）按攻击牌处理
+            // 仅按 requiresTarget 决定：群伤（顺劈斩/闪电霹雳/匕首雨等）为 false，不需选目标
+            if (cd) return cd->requiresTarget;
+            // 数据层尚未填充时，对部分已知需目标牌按需目标处理
             if (id == "strike" || id == "bash") return true;
             return false;
         }

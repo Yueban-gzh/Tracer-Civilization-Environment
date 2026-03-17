@@ -73,27 +73,33 @@ static void runMapUITest(sf::RenderWindow& window);
      player.gold       = 99;                                // 金币
      player.cardsToDrawPerTurn = 5;                         // 每回合抽牌数
  
-    // 初始牌组：包含所有已实现效果的卡牌（CardEffects 中注册的非空效果），每种只加入一张
+    // 初始牌组：包含已实现效果、便于测试的若干卡牌（每种一张基础版 + 一张升级版）
     card_system.init_master_deck({
       
-
-
-        // 铁斩波 / 金刚臂 / 顺劈斩 / 飞踢 / 残杀 / 双重打击 / 全身撞击 / 剑柄打击 / 连续拳 / 御血术 / 重刃 / 闪电霹雳 / 重锤
-        "iron_wave", "iron_wave+",
-        "clothesline", "clothesline+",
-        "cleave", "cleave+",
-        "dropkick", "dropkick+",
-        "carnage", "carnage+",
-        "twin_strike", "twin_strike+",
-        "body_slam", "body_slam+",
-        "pommel_strike", "pommel_strike+",
-        "pummel", "pummel+",
-        "hemokinesis", "hemokinesis+",
-        "heavy_blade", "heavy_blade+",
-        "thunderclap", "thunderclap+",
-        "bludgeon", "bludgeon+",
-
-    
+        "neutralize", "neutralize+",
+            // 绿色：防御
+            "defend_green", "defend_green+",
+        // 绿色/蓝色：打击 & 蓝防御（基础牌）
+        "strike_green", "strike_green+",
+        "strike_blue", "strike_blue+",
+        "defend_blue", "defend_blue+",
+       
+        "dash", "dash+",
+        "predator", "predator+",
+        "flying_knee", "flying_knee+",
+        "impervious", "impervious+",
+        "intimidate", "intimidate+",
+        "seeing_red", "seeing_red+",
+        "bloodletting", "bloodletting+",
+        "leg_sweep", "leg_sweep+",
+        "terror", "terror+",
+        "shockwave", "shockwave+",
+        "ghostly_armor", "ghostly_armor+",
+        "entrench", "entrench+",
+        "offering", "offering+",
+        "riddle_with_holes", "riddle_with_holes+",
+        "wild_strike", "wild_strike+",
+        "reckless_charge", "reckless_charge+",
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
@@ -344,8 +350,11 @@ static void runMapUITest(sf::RenderWindow& window);
              }
          }
 
-         // 先根据当前阶段获取快照并绘制 UI，再推进到下一个阶段
-         BattleState state = engine.get_battle_state();     // 获取当前战斗状态
+         // 先推进回合阶段（含玩家回合开始时的能量/抽牌），再取快照绘制，使能量与 UI 当帧一致
+         if (!ui.is_deck_view_active() && !ui.is_reward_screen_active())
+             engine.step_turn_phase();                      // 推进回合阶段（下回合加能量在此生效后快照才取到）
+
+         BattleState state = engine.get_battle_state();     // 获取当前战斗状态（已含本回合加能量、下回合加能量后的值）
          BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &card_system);  // 转为 UI 快照
          SnapshotBattleUIDataProvider adapter(&snapshot);  // 快照适配器
          window.clear(sf::Color(28, 26, 32));               // 清屏（深色背景）
@@ -353,10 +362,6 @@ static void runMapUITest(sf::RenderWindow& window);
         cheat_panel.draw(window);                          // 金手指面板（F2 打开时）
         window.display();                                  // 显示到窗口
         engine.tick_damage_displays();                     // 递减伤害数字显示时长，移除过期项（3 秒）
-
-        // 牌组界面或奖励界面打开时不推进回合；否则每帧推进一次回合阶段
-         if (!ui.is_deck_view_active() && !ui.is_reward_screen_active())
-             engine.step_turn_phase();                      // 推进回合阶段（抽牌/敌方行动等）
      }
  }
 
