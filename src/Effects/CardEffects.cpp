@@ -221,6 +221,57 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("defend+", [](EffectContext& c) { effect_defend(c, true); });
     card_system.register_card_effect("bash", [](EffectContext& c) { effect_bash(c, false); });
     card_system.register_card_effect("bash+", [](EffectContext& c) { effect_bash(c, true); });
+    // cards.json 诗词卡：与子同袍/大风起兮等 Attack 用打击效果，雨雪霏霏等 Skill 用防御效果
+    card_system.register_card_effect("card_001", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_001+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_002", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_002+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_003", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_003+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_004", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_004+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_005", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_005+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_006", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_006+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_007", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_007+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_008", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_008+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_009", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_009+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_010", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_010+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_011", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_011+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_012", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_012+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_013", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_013+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_014", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_014+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_016", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_016+", [](EffectContext& c) { effect_defend(c, true); });
+    card_system.register_card_effect("card_017", [](EffectContext& c) { effect_strike(c, false); });
+    card_system.register_card_effect("card_017+", [](EffectContext& c) { effect_strike(c, true); });
+    card_system.register_card_effect("card_018", [](EffectContext& c) { effect_defend(c, false); });
+    card_system.register_card_effect("card_018+", [](EffectContext& c) { effect_defend(c, true); });
+    // Power 卡（card_015, card_019-card_024）：可打出，暂无持久效果实现
+    auto effect_power_noop = [](EffectContext&) {};
+    card_system.register_card_effect("card_015", effect_power_noop);
+    card_system.register_card_effect("card_015+", effect_power_noop);
+    card_system.register_card_effect("card_019", effect_power_noop);
+    card_system.register_card_effect("card_019+", effect_power_noop);
+    card_system.register_card_effect("card_020", effect_power_noop);
+    card_system.register_card_effect("card_020+", effect_power_noop);
+    card_system.register_card_effect("card_021", effect_power_noop);
+    card_system.register_card_effect("card_021+", effect_power_noop);
+    card_system.register_card_effect("card_022", effect_power_noop);
+    card_system.register_card_effect("card_022+", effect_power_noop);
+    card_system.register_card_effect("card_023", effect_power_noop);
+    card_system.register_card_effect("card_023+", effect_power_noop);
+    card_system.register_card_effect("card_024", effect_power_noop);
+    card_system.register_card_effect("card_024+", effect_power_noop);
     // 后续在此追加：card_system.register_card_effect("poison_stab", effect_poison_stab); 等
 }
 
