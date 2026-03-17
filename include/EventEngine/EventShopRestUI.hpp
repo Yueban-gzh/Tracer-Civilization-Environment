@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+namespace DataLayer { struct Event; }
+
 namespace tce {
 
 class EventShopRestUI {
@@ -29,6 +31,12 @@ public:
     void setEventDataFromUtf8(const std::string& title, const std::string& description,
                               const std::vector<std::string>& optionTexts,
                               const std::string& imagePath = "");
+
+    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，主流程在 get_event_result 后调用，用户点确定后 pollEventOption 返回 0 */
+    void setEventResultFromUtf8(const std::string& resultSummary);
+
+    /** 从 DataLayer::Event 填充事件展示（主流程用 EventEngine::get_current_event() 取得后传入） */
+    void setEventDataFromEvent(const DataLayer::Event* event);
 
     bool handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos);
     void setMousePosition(sf::Vector2f pos);
@@ -63,6 +71,12 @@ private:
 
     EventShopRestScreen screen_ = EventShopRestScreen::None;
     EventDisplayData eventData_;
+    sf::Texture eventBgTexture_;
+    bool eventBgLoaded_ = false;
+    sf::Texture eventBannerTexture_;
+    bool eventBannerLoaded_ = false;
+    sf::Texture eventPanelFrameTexture_;
+    bool eventPanelFrameLoaded_ = false;
     sf::Texture eventIllustTexture_;
     std::string eventIllustPath_;
     bool eventIllustLoaded_ = false;
@@ -77,6 +91,9 @@ private:
     std::vector<sf::FloatRect> shopRemoveRects_; // 与 deckForRemove 下标对应
     sf::FloatRect restHealButton_;
     std::vector<sf::FloatRect> restUpgradeRects_;
+
+    int eventOptionPressedIndex_ = -1;  // 当前按下的事件选项下标（用于按下态绘制）
+    int selectedEventOption_ = 0;        // 键盘焦点选项下标
 
     // 待消费的选择（轮询一次即清空）
     int pendingEventOption_ = -1;

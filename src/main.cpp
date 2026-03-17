@@ -29,6 +29,7 @@
 #include "DataLayer/DataLayer.hpp"
 #include "DataLayer/DataLayer.h"
 #include "Effects/CardEffects.hpp"
+#include "EventEngine/EventEngine.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUIData.hpp"
 #include "MapEngine/MapEngine.hpp"
@@ -360,21 +361,59 @@ static void runMapUITest(sf::RenderWindow& window);
      }
  }
 
- // ---------- 事件/商店/休息 UI 测试 ----------
+ // 将事件结果转为展示文案（用于结果页）
+ static std::string eventResultToSummary(const tce::EventEngine::EventResult& res) {
+     if (res.type == "gold") return "获得了 " + std::to_string(res.value) + " 金币。";
+     if (res.type == "heal") return "恢复了 " + std::to_string(res.value) + " 点生命。";
+     if (res.type == "card_reward") return "获得了一张新卡牌（选牌由主流程处理）。";
+     if (res.type == "none") return "无事发生。";
+     return "事件结束。";
+ }
+
+ // ---------- 事件/商店/休息 UI 测试（真实事件数据：DataLayer + EventEngine）----------
  static void runEventShopRestUITest(sf::RenderWindow& window) {
      using namespace tce;
-     tce::EventShopRestUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
+     DataLayer::DataLayerImpl data;
+     if (!data.load_events("")) {
+         std::cerr << "[EventShopRest] events.json 加载失败，将使用占位事件。\n";
+     }
+     EventEngine engine(
+         [&data](EventEngine::EventId id) { return data.get_event_by_id(id); },
+         [](CardId) {},
+         [](InstanceId) { return false; },
+         [](InstanceId) { return false; }
+     );
+     constexpr const char* ROOT_EVENT_ID = "event_001";
+     if (data.get_event_by_id(ROOT_EVENT_ID))
+         engine.start_event(ROOT_EVENT_ID);
+     else
+         std::cerr << "[EventShopRest] 未找到根事件 \"" << ROOT_EVENT_ID << "\"，请确保 data/events.json 存在且含该 id。\n";
+
+     EventShopRestUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
      if (!ui.loadFont("assets/fonts/Sanji.ttf") && !ui.loadFont("assets/fonts/default.ttf"))
          ui.loadFont("data/font.ttf");
-     if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc"))
-         ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf");
+     if (!ui.loadChineseFont("assets/fonts/simkai.ttf"))
+     if (!ui.loadChineseFont("assets/fonts/Sanji.ttf"))
+         if (!ui.loadChineseFont("C:/Windows/Fonts/simkai.ttf"))
+             if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc"))
+                 if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf"))
+                     ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
 
-     // 默认先显示事件界面
      ui.setScreen(EventShopRestScreen::Event);
-     ui.setEventDataFromUtf8("测试事件", "这是一段事件描述，用于验证事件 UI 是否正常显示。", { "选项 A", "选项 B", "离开" }, "assets/images/events/event_001.png");
-
-     int screenIndex = 0;  // 0=Event, 1=Shop, 2=Rest
+     if (!engine.get_current_event())
+         ui.setEventDataFromUtf8("（未加载事件）", "请确保 data/events.json 存在且含 event_001。", { "离开" }, "");
+     bool showingResult = false;
+     int screenIndex = 0;
+     const EventEngine::Event* lastDisplayedEvent = nullptr;  // 仅当“当前事件”变化时刷新 UI，避免每帧 clear 选项矩形导致点击无效
      while (window.isOpen()) {
+         const EventEngine::Event* current = engine.get_current_event();
+         if (current && !showingResult && current != lastDisplayedEvent) {
+             ui.setEventDataFromEvent(current);
+             lastDisplayedEvent = current;
+         }
+         if (showingResult) lastDisplayedEvent = nullptr;
+         if (screenIndex == 0 && !current && !showingResult) lastDisplayedEvent = nullptr;
+
          while (const std::optional ev = window.pollEvent()) {
              if (ev->is<sf::Event::Closed>()) { window.close(); return; }
              if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
@@ -382,7 +421,8 @@ static void runMapUITest(sf::RenderWindow& window);
                  if (key->scancode == sf::Keyboard::Scancode::Num1 || key->scancode == sf::Keyboard::Scancode::Numpad1) {
                      screenIndex = 0;
                      ui.setScreen(EventShopRestScreen::Event);
-                     ui.setEventDataFromUtf8("测试事件", "事件界面测试。", { "选项1", "选项2" }, "");
+                     showingResult = false;
+                     if (data.get_event_by_id(ROOT_EVENT_ID)) engine.start_event(ROOT_EVENT_ID);
                  }
                  if (key->scancode == sf::Keyboard::Scancode::Num2 || key->scancode == sf::Keyboard::Scancode::Numpad2) {
                      screenIndex = 1;
@@ -409,7 +449,18 @@ static void runMapUITest(sf::RenderWindow& window);
          ui.setMousePosition(mousePos);
 
          int outIndex = -1;
-         if (ui.pollEventOption(outIndex)) std::cout << "[EventShopRestUI] 选择事件选项: " << outIndex << std::endl;
+         if (ui.pollEventOption(outIndex)) {
+             if (showingResult) {
+                 if (outIndex == 0) showingResult = false;
+             } else if (engine.get_current_event() && engine.choose_option(outIndex)) {
+                 EventEngine::EventResult res;
+                 if (engine.get_event_result(res)) {
+                     engine.apply_event_result(res, [](int v) { std::cout << "[事件] 获得金币: " << v << "\n"; }, [](int v) { std::cout << "[事件] 恢复生命: " << v << "\n"; });
+                     ui.setEventResultFromUtf8(eventResultToSummary(res));
+                     showingResult = true;
+                 }
+             }
+         }
          CardId outCardId;
          if (ui.pollShopBuyCard(outCardId)) std::cout << "[EventShopRestUI] 购买卡牌: " << outCardId << std::endl;
          InstanceId outInstId;
