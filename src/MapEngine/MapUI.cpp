@@ -1,6 +1,6 @@
-﻿// src/MapEngine/MapUI.cpp
-#include "../../include/MapEngine/MapUI.hpp"
-#include "../Common/NodeTypes.hpp"
+// src/MapEngine/MapUI.cpp
+#include "MapEngine/MapUI.hpp"
+#include "Common/NodeTypes.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -221,10 +221,11 @@ namespace MapEngine {
             auto fromNode = m_mapEngine->get_node_by_id(edge.from);
             auto toNode = m_mapEngine->get_node_by_id(edge.to);
 
-            sf::Vertex line[] = {
-                sf::Vertex(sf::Vector2f(fromNode.position.x, fromNode.position.y), colorEdge),
-                sf::Vertex(sf::Vector2f(toNode.position.x, toNode.position.y), colorEdge)
-            };
+            sf::Vertex line[2];
+            line[0].position = sf::Vector2f(fromNode.position.x, fromNode.position.y);
+            line[0].color = colorEdge;
+            line[1].position = sf::Vector2f(toNode.position.x, toNode.position.y);
+            line[1].color = colorEdge;
 
             m_window->draw(line, 2, sf::PrimitiveType::Lines);
         }

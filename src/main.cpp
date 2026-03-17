@@ -2,29 +2,43 @@
  * 《溯源者：文明环境》课设 - 程序入口
  * 模块：MapEngine(A)、BattleEngine(B)、CardSystem(C)、EventEngine(D)、DataLayer(E)
  *
- * 当前：战斗调试 - 接引擎与 Snapshot，点击结束回合即调用 engine.end_turn()
+ * 主菜单：1/F1=战斗  2/F2=事件/商店/休息 UI  3/F3=地图  Esc=退出
+ * 用于测试所有 UI 与重要功能是否正常运行。
  */
 
- #include <SFML/Graphics.hpp>                              // SFML 图形库
- #include <SFML/Audio.hpp>                                 // 背景音乐
- #include <cctype>                                          // std::toupper, std::tolower
- #include <ctime>                                           // std::time
- #include <iostream>                                        // std::cerr
- #include <random>                                          // std::mt19937
- #include <optional>                                       // std::optional
-#include "BattleEngine/BattleUI.hpp"                       // 战斗 UI
-#include "BattleEngine/BattleUISnapshotAdapter.hpp"       // UI 快照适配器
-#include "BattleEngine/BattleEngine.hpp"                  // 战斗引擎
-#include "Cheat/CheatEngine.hpp"                           // 金手指引擎
-#include "Cheat/CheatPanel.hpp"                            // 金手指面板
- #include "BattleEngine/BattleStateSnapshot.hpp"           // 战斗状态快照
- #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"  // 核心重构快照适配器
- #include "BattleEngine/MonsterBehaviors.hpp"              // 怪物行为
- #include "CardSystem/CardSystem.hpp"                       // 卡牌系统
- #include "CardSystem/DeckViewCollection.hpp"              // 牌组视图
- #include "DataLayer/DataLayer.hpp"                         // 数据层
- #include "DataLayer/DataLayer.h"                           // 数据层 C 接口
- #include "Effects/CardEffects.hpp"                         // 卡牌效果注册
+#include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
+#include <cctype>
+#include <ctime>
+#include <filesystem>
+#include <iostream>
+#include <random>
+#include <optional>
+#include <string>
+
+#include "BattleEngine/BattleUI.hpp"
+#include "BattleEngine/BattleUISnapshotAdapter.hpp"
+#include "BattleEngine/BattleEngine.hpp"
+#include "BattleEngine/BattleStateSnapshot.hpp"
+#include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
+#include "BattleEngine/MonsterBehaviors.hpp"
+#include "CardSystem/CardSystem.hpp"
+#include "CardSystem/DeckViewCollection.hpp"
+#include "Cheat/CheatEngine.hpp"
+#include "Cheat/CheatPanel.hpp"
+#include "DataLayer/DataLayer.hpp"
+#include "DataLayer/DataLayer.h"
+#include "Effects/CardEffects.hpp"
+#include "EventEngine/EventShopRestUI.hpp"
+#include "EventEngine/EventShopRestUIData.hpp"
+#include "MapEngine/MapEngine.hpp"
+#include "MapEngine/MapUI.hpp"
+#include "MapEngine/MapConfig.hpp"
+#include "Common/NodeTypes.hpp"
+
+static void runBattleUI(sf::RenderWindow& window);
+static void runEventShopRestUITest(sf::RenderWindow& window);
+static void runMapUITest(sf::RenderWindow& window);
  
  static void runBattleUI(sf::RenderWindow& window) {       // 运行战斗 UI 主循环
      using namespace tce;                                   // 使用 tce 命名空间
@@ -115,17 +129,28 @@
             if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf"))  // 黑体
                 ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");   // 宋体
 
-    // 背景图：每场战斗一张，bg_0.png~bg_3.png 对应邪教徒/胖地精/绿虱虫/红虱虫，无则用 bg.png
-    auto tryLoadBg = [&ui](int i, const std::string& ext) {
+    // 背景图：只有文件存在才尝试加载，避免控制台刷屏
+    auto exists = [](const std::string& p) {
+        return std::filesystem::exists(std::filesystem::u8path(p));
+    };
+    auto tryLoadBg = [&ui, &exists](int i, const std::string& ext) {
         std::string name = "bg_" + std::to_string(i) + ext;
-        return ui.loadBackgroundForBattle(i, "assets/backgrounds/" + name)
-            || ui.loadBackgroundForBattle(i, "./assets/backgrounds/" + name);
+        std::string p1 = "assets/backgrounds/" + name;
+        std::string p2 = "./assets/backgrounds/" + name;
+        if (exists(p1)) return ui.loadBackgroundForBattle(i, p1);
+        if (exists(p2)) return ui.loadBackgroundForBattle(i, p2);
+        return false;
     };
     for (int i = 0; i < 4; ++i) {
         tryLoadBg(i, ".png") || tryLoadBg(i, ".jpg");
     }
-    if (!ui.loadBackground("assets/backgrounds/bg.png") && !ui.loadBackground("./assets/backgrounds/bg.png"))
-        ui.loadBackground("assets/backgrounds/bg.jpg") || ui.loadBackground("./assets/backgrounds/bg.jpg");
+    // 默认背景：优先 bg.png，其次 bg.jpg
+    if ((exists("assets/backgrounds/bg.png") && ui.loadBackground("assets/backgrounds/bg.png"))
+        || (exists("./assets/backgrounds/bg.png") && ui.loadBackground("./assets/backgrounds/bg.png"))
+        || (exists("assets/backgrounds/bg.jpg") && ui.loadBackground("assets/backgrounds/bg.jpg"))
+        || (exists("./assets/backgrounds/bg.jpg") && ui.loadBackground("./assets/backgrounds/bg.jpg"))) {
+        // loaded
+    }
     ui.setBattleBackground(0);  // 首场战斗（邪教徒）
 
     // 怪物图片：放入 assets/monsters/{怪物id}.png 即可显示，支持 Title_Case.png（如 Fat_Gremlin.png）
@@ -201,7 +226,8 @@
 
     // 背景音乐：放入 assets/music/bgm.ogg 即可播放（支持 ogg/wav/flac）
     sf::Music bgm;
-    if (bgm.openFromFile("assets/music/bgm.ogg") || bgm.openFromFile("./assets/music/bgm.ogg")) {
+    if ((exists("assets/music/bgm.ogg") && bgm.openFromFile("assets/music/bgm.ogg"))
+        || (exists("./assets/music/bgm.ogg") && bgm.openFromFile("./assets/music/bgm.ogg"))) {
         bgm.setLooping(true);
         bgm.setVolume(60.f);
         bgm.play();
@@ -333,12 +359,179 @@
              engine.step_turn_phase();                      // 推进回合阶段（抽牌/敌方行动等）
      }
  }
- 
- int main() {                                               // 程序入口
-     const unsigned int winW = 1920, winH = 1080;          // 窗口宽高
-     sf::RenderWindow window(sf::VideoMode({winW, winH}), "Battle Debug - Tracer Civilization");  // 创建窗口
-     window.setFramerateLimit(60);                          // 限制 60fps，使伤害数字 180 帧 = 3 秒
 
-     runBattleUI(window);                                  // 运行战斗 UI
+ // ---------- 事件/商店/休息 UI 测试 ----------
+ static void runEventShopRestUITest(sf::RenderWindow& window) {
+     using namespace tce;
+     tce::EventShopRestUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
+     if (!ui.loadFont("assets/fonts/Sanji.ttf") && !ui.loadFont("assets/fonts/default.ttf"))
+         ui.loadFont("data/font.ttf");
+     if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc"))
+         ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf");
+
+     // 默认先显示事件界面
+     ui.setScreen(EventShopRestScreen::Event);
+     ui.setEventDataFromUtf8("测试事件", "这是一段事件描述，用于验证事件 UI 是否正常显示。", { "选项 A", "选项 B", "离开" }, "assets/images/events/event_001.png");
+
+     int screenIndex = 0;  // 0=Event, 1=Shop, 2=Rest
+     while (window.isOpen()) {
+         while (const std::optional ev = window.pollEvent()) {
+             if (ev->is<sf::Event::Closed>()) { window.close(); return; }
+             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                 if (key->scancode == sf::Keyboard::Scancode::Escape) return;
+                 if (key->scancode == sf::Keyboard::Scancode::Num1 || key->scancode == sf::Keyboard::Scancode::Numpad1) {
+                     screenIndex = 0;
+                     ui.setScreen(EventShopRestScreen::Event);
+                     ui.setEventDataFromUtf8("测试事件", "事件界面测试。", { "选项1", "选项2" }, "");
+                 }
+                 if (key->scancode == sf::Keyboard::Scancode::Num2 || key->scancode == sf::Keyboard::Scancode::Numpad2) {
+                     screenIndex = 1;
+                     ui.setScreen(EventShopRestScreen::Shop);
+                     ShopDisplayData shop;
+                     shop.playerGold = 99;
+                     shop.forSale = { { "iron_wave", L"铁斩波", 50 }, { "cleave", L"顺劈斩", 60 } };
+                     shop.deckForRemove = { { 1, L"打击" }, { 2, L"防御" } };
+                     ui.setShopData(shop);
+                 }
+                 if (key->scancode == sf::Keyboard::Scancode::Num3 || key->scancode == sf::Keyboard::Scancode::Numpad3) {
+                     screenIndex = 2;
+                     ui.setScreen(EventShopRestScreen::Rest);
+                     RestDisplayData rest;
+                     rest.healAmount = 20;
+                     rest.deckForUpgrade = { { 1, L"打击" }, { 2, L"铁斩波" } };
+                     ui.setRestData(rest);
+                 }
+             }
+             sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+             ui.handleEvent(*ev, mousePos);
+         }
+         sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+         ui.setMousePosition(mousePos);
+
+         int outIndex = -1;
+         if (ui.pollEventOption(outIndex)) std::cout << "[EventShopRestUI] 选择事件选项: " << outIndex << std::endl;
+         CardId outCardId;
+         if (ui.pollShopBuyCard(outCardId)) std::cout << "[EventShopRestUI] 购买卡牌: " << outCardId << std::endl;
+         InstanceId outInstId;
+         if (ui.pollShopRemoveCard(outInstId)) std::cout << "[EventShopRestUI] 删除牌实例: " << outInstId << std::endl;
+         if (ui.pollRestHeal()) std::cout << "[EventShopRestUI] 选择休息回血" << std::endl;
+         if (ui.pollRestUpgradeCard(outInstId)) std::cout << "[EventShopRestUI] 升级牌实例: " << outInstId << std::endl;
+
+         window.clear(sf::Color(40, 38, 45));
+         ui.draw(window);
+         window.display();
+     }
+ }
+
+ // ---------- 地图 UI 测试 ----------
+ static void runMapUITest(sf::RenderWindow& window) {
+     MapEngine::MapConfigManager configManager;
+     MapEngine::MapEngine engine;
+     engine.setContentIdGenerator([](NodeType type, int layer, int index) -> std::string {
+         const char* t[] = { "enemy", "elite", "event", "rest", "merchant", "treasure", "boss" };
+         int i = static_cast<int>(type);
+         return std::string(i >= 0 && i < 7 ? t[i] : "node") + "_" + std::to_string(layer) + "_" + std::to_string(index);
+     });
+     engine.setNodeEnterCallback([](const MapEngine::MapNode& node) {
+         std::cout << "[MapUI] 进入节点: " << node.id << " 类型:" << static_cast<int>(node.type) << " content_id:" << node.content_id << std::endl;
+     });
+
+     if (!configManager.getCurrentConfig()) { std::cerr << "无地图配置" << std::endl; return; }
+     engine.init_fixed_map(*configManager.getCurrentConfig());
+
+     MapEngine::MapUI ui;
+     if (!ui.initialize(&window)) { std::cerr << "地图 UI 初始化失败" << std::endl; return; }
+     ui.loadLegendTexture("assets/images/menu.png");
+     ui.setLegendPosition(1800.f, 900.f);
+     ui.loadBackgroundTexture("assets/images/background.png");
+     ui.setMap(&engine);
+     ui.setCurrentLayer(0);
+
+     while (window.isOpen()) {
+         while (const std::optional ev = window.pollEvent()) {
+             if (ev->is<sf::Event::Closed>()) { window.close(); return; }
+             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                 if (key->scancode == sf::Keyboard::Scancode::Escape) return;
+                 if (key->scancode == sf::Keyboard::Scancode::Left) {
+                     configManager.prevMap();
+                     engine.init_fixed_map(*configManager.getCurrentConfig());
+                 }
+                 if (key->scancode == sf::Keyboard::Scancode::Right) {
+                     configManager.nextMap();
+                     engine.init_fixed_map(*configManager.getCurrentConfig());
+                 }
+             }
+             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                 if (mouse->button == sf::Mouse::Button::Left) {
+                     sf::Vector2i pos = mouse->position;
+                     std::string nodeId = ui.handleClick(pos.x, pos.y);
+                     if (!nodeId.empty()) {
+                         MapEngine::MapNode node = engine.get_node_by_id(nodeId);
+                         if (!engine.hasCurrentNode() && node.layer == 0) {
+                             engine.set_current_node(nodeId);
+                             engine.update_reachable_nodes();
+                         } else if (node.is_reachable) {
+                             engine.set_current_node(nodeId);
+                             engine.update_reachable_nodes();
+                         }
+                     }
+                 }
+             }
+         }
+         window.clear(sf::Color(255, 255, 255));
+         ui.draw();
+         window.display();
+     }
+ }
+
+ int main() {
+     const unsigned int winW = 1920, winH = 1080;
+     sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 全功能测试");
+     window.setFramerateLimit(60);
+
+     sf::Font menuFont;
+     if (!menuFont.openFromFile("C:/Windows/Fonts/msyh.ttc"))
+         menuFont.openFromFile("C:/Windows/Fonts/simhei.ttf");
+     sf::Text menuText(menuFont);
+     menuText.setCharacterSize(28);
+     menuText.setFillColor(sf::Color::White);
+     menuText.setPosition({ 80.f, 80.f });
+
+     while (window.isOpen()) {
+         while (const std::optional ev = window.pollEvent()) {
+             if (ev->is<sf::Event::Closed>()) { window.close(); return 0; }
+             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                 if (key->scancode == sf::Keyboard::Scancode::Escape) { window.close(); return 0; }
+                 if (key->scancode == sf::Keyboard::Scancode::Num1 || key->scancode == sf::Keyboard::Scancode::Numpad1 ||
+                     key->scancode == sf::Keyboard::Scancode::F1) {
+                     runBattleUI(window);
+                     if (!window.isOpen()) return 0;
+                     continue;
+                 }
+                 if (key->scancode == sf::Keyboard::Scancode::Num2 || key->scancode == sf::Keyboard::Scancode::Numpad2 ||
+                     key->scancode == sf::Keyboard::Scancode::F2) {
+                     runEventShopRestUITest(window);
+                     if (!window.isOpen()) return 0;
+                     continue;
+                 }
+                 if (key->scancode == sf::Keyboard::Scancode::Num3 || key->scancode == sf::Keyboard::Scancode::Numpad3 ||
+                     key->scancode == sf::Keyboard::Scancode::F3) {
+                     runMapUITest(window);
+                     if (!window.isOpen()) return 0;
+                     continue;
+                 }
+             }
+         }
+         menuText.setString(
+             L"【全功能测试】\n\n"
+             L"  1 / F1  战斗 UI（含金手指 F2）\n"
+             L"  2 / F2  事件 / 商店 / 休息 UI\n"
+             L"  3 / F3  地图 UI\n\n"
+             L"  Esc  退出"
+         );
+         window.clear(sf::Color(32, 30, 36));
+         window.draw(menuText);
+         window.display();
+     }
      return 0;
  }

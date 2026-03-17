@@ -34,6 +34,7 @@ struct Event {
     std::string id;
     std::string title;
     std::string description;
+    std::string image;  // 可选，插图路径，如 "assets/images/events/event_001.png"
     std::vector<EventOption> options;  // 顺序表：选项顺序与 JSON 中一致，按下标访问
 };
 

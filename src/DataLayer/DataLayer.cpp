@@ -272,6 +272,7 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
         }
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
+        if (const JsonValue* p = v.get_key("image")) e.image = p->as_string();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插

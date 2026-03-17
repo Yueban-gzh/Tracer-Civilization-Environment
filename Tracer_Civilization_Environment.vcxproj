@@ -29,26 +29,26 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -70,8 +70,8 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <!-- SFML 根目录：默认使用项目下的 SFML-3.0.2；若放在别处可改为绝对路径如 D:\SFML-3.0.2 -->
-    <SFML_DIR>$(ProjectDir)SFML-3.0.2-windows-vc17-64-bit\SFML-3.0.2</SFML_DIR>
+    <!-- SFML 根目录：使用从 SFML-3.0.2-prebuilt.zip 解压的完整目录（含 lib 与 bin） -->
+    <SFML_DIR>$(ProjectDir)SFML-3.0.2</SFML_DIR>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -169,6 +169,11 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.cpp" />
     <ClCompile Include="src\Effects\CardEffects.cpp" />
     <ClCompile Include="src\EventEngine\EventEngine.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI.cpp" />
+    <ClCompile Include="src\Cheat\CheatEngine.cpp" />
+    <ClCompile Include="src\Cheat\CheatPanel.cpp" />
+    <ClCompile Include="src\MapEngine\MapEngine.cpp" />
+    <ClCompile Include="src\MapEngine\MapUI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
@@ -196,6 +201,14 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\Effects\CardEffects.hpp" />
     <ClInclude Include="include\Effects\StatusEffects.hpp" />
     <ClInclude Include="include\EventEngine\EventEngine.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUIData.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUI.hpp" />
+    <ClInclude Include="include\Cheat\CheatEngine.hpp" />
+    <ClInclude Include="include\Cheat\CheatPanel.hpp" />
+    <ClInclude Include="include\MapEngine\MapEngine.hpp" />
+    <ClInclude Include="include\MapEngine\MapUI.hpp" />
+    <ClInclude Include="include\MapEngine\MapConfig.hpp" />
+    <ClInclude Include="include\Common\NodeTypes.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
