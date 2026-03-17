@@ -80,6 +80,14 @@ private:
     sf::Texture eventIllustTexture_;
     std::string eventIllustPath_;
     bool eventIllustLoaded_ = false;
+    sf::Texture restBgTexture_;
+    bool restBgLoaded_ = false;
+    sf::Texture restHealIconTexture_;
+    bool restHealIconLoaded_ = false;
+    sf::Texture restSmithIconTexture_;
+    bool restSmithIconLoaded_ = false;
+    sf::Texture restScrollTexture_;   // 休息界面下方卷轴装饰（原云朵，路径仍为 cloud.png）
+    bool restScrollLoaded_ = false;
     ShopDisplayData shopData_;
     RestDisplayData restData_;
 
@@ -90,7 +98,10 @@ private:
     std::vector<sf::FloatRect> shopBuyRects_;   // 与 forSale 下标对应
     std::vector<sf::FloatRect> shopRemoveRects_; // 与 deckForRemove 下标对应
     sf::FloatRect restHealButton_;
+    sf::FloatRect restUpgradeChoiceButton_;  // 「升级」大按钮（进入选牌前）
+    sf::FloatRect restBackButton_;           // 升级列表中「返回」
     std::vector<sf::FloatRect> restUpgradeRects_;
+    bool restShowUpgradeList_ = false;       // true = 已选「升级」，显示选牌列表
 
     int eventOptionPressedIndex_ = -1;  // 当前按下的事件选项下标（用于按下态绘制）
     int selectedEventOption_ = 0;        // 键盘焦点选项下标

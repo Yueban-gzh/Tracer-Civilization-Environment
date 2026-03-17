@@ -170,6 +170,9 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\Effects\CardEffects.cpp" />
     <ClCompile Include="src\EventEngine\EventEngine.cpp" />
     <ClCompile Include="src\EventEngine\EventShopRestUI.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Event.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Shop.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Rest.cpp" />
     <ClCompile Include="src\Cheat\CheatEngine.cpp" />
     <ClCompile Include="src\Cheat\CheatPanel.cpp" />
     <ClCompile Include="src\MapEngine\MapEngine.cpp" />
@@ -203,6 +206,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\EventEngine\EventEngine.hpp" />
     <ClInclude Include="include\EventEngine\EventShopRestUIData.hpp" />
     <ClInclude Include="include\EventEngine\EventShopRestUI.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUICommon.hpp" />
     <ClInclude Include="include\Cheat\CheatEngine.hpp" />
     <ClInclude Include="include\Cheat\CheatPanel.hpp" />
     <ClInclude Include="include\MapEngine\MapEngine.hpp" />
