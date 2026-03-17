@@ -16,6 +16,88 @@
 #include "DataLayer/DataLayer.h"
 #include "Effects/CardEffects.hpp"
 #include "Effects/StatusEffects.hpp"
+#include "EventEngine/EventShopRestUI.hpp"
+
+/** 演示事件/商店/休息 UI：按 1=事件 2=商店 3=休息 切换界面，Esc 退出 */
+static void runNodeUIDemo(sf::RenderWindow& window) {
+    using namespace tce;
+    const unsigned w = static_cast<unsigned>(window.getSize().x);
+    const unsigned h = static_cast<unsigned>(window.getSize().y);
+
+    EventShopRestUI nodeUI(w, h);
+    // 字体与 BattleUI 一致：主字体优先 Sanji，中文也优先 Sanji，再系统字体
+    if (!nodeUI.loadFont("assets/fonts/Sanji.ttf"))
+        if (!nodeUI.loadFont("assets/fonts/default.ttf"))
+            nodeUI.loadFont("data/font.ttf");
+    if (!nodeUI.loadChineseFont("assets/fonts/Sanji.ttf"))
+        if (!nodeUI.loadChineseFont("C:/Windows/Fonts/msyh.ttc"))
+            if (!nodeUI.loadChineseFont("C:/Windows/Fonts/simhei.ttf"))
+                nodeUI.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+
+    // 默认先显示事件界面（示例：拾遗卷，插图见 assets/images/events/event_001.png）
+    nodeUI.setScreen(EventShopRestScreen::Event);
+    nodeUI.setEventDataFromUtf8(
+        "拾遗卷",
+        "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+        {"小心拂去尘埃，尝试解读", "将残卷收好，留待日后", "置之不理，继续前行"},
+        "assets/images/events/event_001.png"
+    );
+
+    while (window.isOpen()) {
+        while (const std::optional ev = window.pollEvent()) {
+            if (ev->is<sf::Event::Closed>())
+                window.close();
+            if (ev->is<sf::Event::KeyPressed>()) {
+                auto const* key = ev->getIf<sf::Event::KeyPressed>();
+                if (key) {
+                    if (key->code == sf::Keyboard::Key::Escape)
+                        window.close();
+                    else if (key->code == sf::Keyboard::Key::Num1) {
+                        nodeUI.setScreen(EventShopRestScreen::Event);
+                        nodeUI.setEventDataFromUtf8(
+                            "拾遗卷",
+                            "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+                            {"小心拂去尘埃，尝试解读", "将残卷收好，留待日后", "置之不理，继续前行"},
+                            "assets/images/events/event_001.png"
+                        );
+                    }
+                    else if (key->code == sf::Keyboard::Key::Num2) {
+                        nodeUI.setScreen(EventShopRestScreen::Shop);
+                        ShopDisplayData shop;
+                        shop.playerGold = 150;
+                        shop.forSale = {
+                            { "strike", L"打击", 50 },
+                            { "defend", L"防御", 50 },
+                            { "bash", L"重击", 75 },
+                        };
+                        shop.deckForRemove = {
+                            { 1, L"打击" }, { 2, L"防御" }, { 3, L"防御" },
+                        };
+                        nodeUI.setShopData(shop);
+                    }
+                    else if (key->code == sf::Keyboard::Key::Num3) {
+                        nodeUI.setScreen(EventShopRestScreen::Rest);
+                        RestDisplayData rest;
+                        rest.healAmount = 15;
+                        rest.deckForUpgrade = {
+                            { 1, L"打击" }, { 2, L"防御" }, { 3, L"重击" },
+                        };
+                        nodeUI.setRestData(rest);
+                    }
+                }
+            }
+            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+            nodeUI.handleEvent(*ev, mousePos);
+        }
+        if (!window.isOpen()) break;
+
+        nodeUI.setMousePosition(window.mapPixelToCoords(sf::Mouse::getPosition(window)));
+
+        window.clear(sf::Color(28, 26, 32));
+        nodeUI.draw(window);
+        window.display();
+    }
+}
 
 static void runBattleUI(sf::RenderWindow& window) {
     using namespace tce;
@@ -124,9 +206,10 @@ static void runBattleUI(sf::RenderWindow& window) {
 
 int main() {
     const unsigned int winW = 1920, winH = 1080;
-    sf::RenderWindow window(sf::VideoMode({winW, winH}), "Battle Debug - Tracer Civilization");
+    sf::RenderWindow window(sf::VideoMode({winW, winH}), "Tracer Civilization - 1=Event 2=Shop 3=Rest Esc=Exit");
 
-    runBattleUI(window);
+    // 先跑节点 UI 演示，看事件/商店/休息界面效果；要改回战斗调试请改为 runBattleUI(window)
+    runNodeUIDemo(window);
     return 0;
 }
 

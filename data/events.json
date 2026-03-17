@@ -3,6 +3,7 @@
     "id": "event_001",
     "title": "拾遗卷",
     "description": "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+    "image": "assets/images/events/event_001.png",
     "options": [
       { "text": "小心拂去尘埃，尝试解读", "next": "event_001a" },
       { "text": "将残卷收好，留待日后", "result": { "type": "gold", "value": 15 } },

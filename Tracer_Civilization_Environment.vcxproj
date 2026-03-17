@@ -162,6 +162,7 @@
     <ClCompile Include="src\Effects\CardEffects.cpp" />
     <ClCompile Include="src\Effects\StatusEffects.cpp" />
     <ClCompile Include="src\EventEngine\EventEngine.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
@@ -179,6 +180,8 @@
     <ClInclude Include="include\Effects\CardEffects.hpp" />
     <ClInclude Include="include\Effects\StatusEffects.hpp" />
     <ClInclude Include="include\EventEngine\EventEngine.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUIData.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUI.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
