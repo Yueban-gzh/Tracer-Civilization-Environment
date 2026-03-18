@@ -4,8 +4,19 @@
 #include "../../include/Cheat/CheatPanel.hpp"
 #include "../../include/Cheat/CheatEngine.hpp"
 #include <SFML/Window/Keyboard.hpp>
+#include <algorithm>
+#include <vector>
 
 namespace tce {
+
+// 与 CheatEngine::execute_line 中的命令一致，用于 Tab 补全
+static const char* const CHEAT_COMMANDS[] = {
+    "player_hp", "player_max_hp", "player_block", "player_energy", "player_gold",
+    "player_status", "player_status_remove",
+    "monster_hp", "monster_max_hp", "monster_status", "monster_status_remove", "monster_kill",
+    "add_relic", "remove_relic", "add_potion", "remove_potion", "add_hand", "remove_hand"
+};
+static const size_t CHEAT_COMMANDS_COUNT = sizeof(CHEAT_COMMANDS) / sizeof(CHEAT_COMMANDS[0]);
 
 CheatPanel::CheatPanel(CheatEngine* cheat, unsigned windowWidth, unsigned windowHeight)
     : cheat_(cheat), width_(windowWidth), height_(windowHeight) {}
@@ -13,6 +24,52 @@ CheatPanel::CheatPanel(CheatEngine* cheat, unsigned windowWidth, unsigned window
 bool CheatPanel::loadFont(const std::string& path) {
     fontLoaded_ = font_.openFromFile(path);
     return fontLoaded_;
+}
+
+void CheatPanel::completeInput() {
+    std::string in = inputText_;
+    // 取第一个词作为前缀（到空格或结尾）
+    size_t i = 0;
+    while (i < in.size() && in[i] == ' ') ++i;
+    size_t start = i;
+    while (i < in.size() && in[i] != ' ') ++i;
+    std::string prefix = in.substr(start, i - start);
+    std::string rest = (i < in.size()) ? in.substr(i) : std::string();
+
+    if (prefix.empty()) return;
+
+    // 已处于循环补全状态且当前首词是上次补全结果：按 Tab 切换到下一项（MC 指令风格）
+    if (!lastTabMatches_.empty() && prefix == lastTabCurrent_) {
+        lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
+        lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
+        inputText_ = lastTabCurrent_ + (rest.empty() ? " " : rest);
+        return;
+    }
+
+    std::vector<std::string> matches;
+    for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
+        std::string cmd(CHEAT_COMMANDS[c]);
+        if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
+            matches.push_back(cmd);
+    }
+
+    if (matches.empty()) {
+        lastTabMatches_.clear();
+        lastTabCurrent_.clear();
+        return;
+    }
+
+    if (matches.size() == 1) {
+        inputText_ = matches[0] + (rest.empty() ? " " : rest);
+        lastTabMatches_.clear();
+        lastTabCurrent_.clear();
+        return;
+    }
+    // 多个匹配：补全为第一项，并记录列表供连续 Tab 切换
+    lastTabMatches_ = matches;
+    lastTabIndex_ = 0;
+    lastTabCurrent_ = matches[0];
+    inputText_ = lastTabCurrent_ + (rest.empty() ? " " : rest);
 }
 
 void CheatPanel::executeCurrent() {
@@ -63,12 +120,20 @@ bool CheatPanel::handleEvent(const sf::Event& ev) {
         }
         if (kp->code == sf::Keyboard::Key::Backspace) {
             if (!inputText_.empty()) inputText_.pop_back();
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
+            return true;
+        }
+        if (kp->code == sf::Keyboard::Key::Tab) {
+            completeInput();
             return true;
         }
         // KeyPressed 映射字符（Windows 上 TextEntered 常不触发）
         char c = keyToChar(kp->code, kp->shift);
         if (c != '\0') {
             inputText_ += c;
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
             return true;
         }
         return true;  // 其他按键也消费，避免触发游戏操作
@@ -100,7 +165,7 @@ void CheatPanel::draw(sf::RenderWindow& window) {
     bg.setOutlineThickness(2.f);
     window.draw(bg);
 
-    sf::Text label(font_, "Cheat | F2 close | Enter exec", 15);
+    sf::Text label(font_, "Cheat | F2 close | Enter exec | Tab complete", 15);
     label.setFillColor(sf::Color(200, 180, 160));
     label.setPosition(sf::Vector2f(left + pad, top + 4.f));
     window.draw(label);
@@ -117,6 +182,25 @@ void CheatPanel::draw(sf::RenderWindow& window) {
     inputText.setFillColor(sf::Color(255, 240, 220));
     inputText.setPosition(sf::Vector2f(left + pad + 4.f, top + 30.f));
     window.draw(inputText);
+
+    // 光标：在文本末尾绘制竖线，每 0.6s 闪烁（打开面板时已重置时钟）
+    float textOriginX = left + pad + 4.f;
+    float cursorX = textOriginX;
+    float cursorY = top + 28.f;
+    if (!display.empty()) {
+        sf::Vector2f pos = inputText.findCharacterPos(display.size());
+        // SFML 的 findCharacterPos 返回渲染后的全局坐标，直接使用
+        cursorX = pos.x;
+        cursorY = pos.y;
+    }
+    float blink = cursorBlinkClock_.getElapsedTime().asSeconds();
+    bool showCaret = (static_cast<int>(blink / 0.6f) % 2 == 0);
+    if (showCaret) {
+        sf::RectangleShape caret(sf::Vector2f(3.f, 20.f));
+        caret.setPosition(sf::Vector2f(cursorX + 3.f, cursorY));
+        caret.setFillColor(sf::Color(200, 190, 175));
+        window.draw(caret);
+    }
 
     float y = top + 62.f;
     if (!resultText_.empty()) {
