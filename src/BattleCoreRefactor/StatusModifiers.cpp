@@ -564,10 +564,10 @@ public:
  public:
      void on_turn_end_monsters(BattleState& state, EnemyTurnContext* /*ctx*/) override {
         for (auto& s : state.player.statuses) {
+            if (s.id == "draw_up" || s.id == "energy_up") continue;  // 下回合多抽/多能量：在玩家回合开始时被消耗，不在此按 duration 过期
             if (s.duration > 0) {                                // 每回合 -1，仅对 duration>0 的生效
                 --s.duration;
                 // 对于虚弱/易伤/脆弱这类「层数 = 持续时间」的减益，层数也同步递减，
-                // 这样 UI 图标右下角显示的层数就等于剩余持续回合数
                 if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
                     --s.stacks;
                 }
@@ -575,7 +575,10 @@ public:
         }
          state.player.statuses.erase(
              std::remove_if(state.player.statuses.begin(), state.player.statuses.end(),
-                 [](const StatusInstance& x) { return x.duration == 0; }),
+                 [](const StatusInstance& x) {
+                     if (x.id == "draw_up" || x.id == "energy_up") return false;  // 仅由对应 modifier 消耗后移除
+                     return x.duration == 0;
+                 }),
              state.player.statuses.end());
          for (auto& m : state.monsters) {
             for (auto& s : m.statuses) {

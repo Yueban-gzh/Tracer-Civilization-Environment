@@ -100,6 +100,19 @@ static void runMapUITest(sf::RenderWindow& window);
         "riddle_with_holes", "riddle_with_holes+",
         "wild_strike", "wild_strike+",
         "reckless_charge", "reckless_charge+",
+        "immolate", "immolate+",
+        "backstab", "backstab+",
+        "die_die_die", "die_die_die+",
+        "bane", "bane+",
+        "adrenaline", "adrenaline+",
+        "outmaneuver", "outmaneuver+",
+        "catalyst", "catalyst+",
+        "crippling_poison", "crippling_poison+",
+        "inflame", "inflame+", "battle_trance", "battle_trance+",
+        "sweeping_beam", "sweeping_beam+", "leap", "leap+",
+        "metallicize", "metallicize+", "charge_battery", "charge_battery+",
+        "boot_sequence", "boot_sequence+", "footwork", "footwork+",
+        "skim", "skim+", "steam_power", "steam_power+",
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
