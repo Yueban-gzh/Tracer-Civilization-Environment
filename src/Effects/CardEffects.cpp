@@ -550,6 +550,103 @@ void effect_steam_power(EffectContext& ctx, bool is_upgraded) {
     ctx.generate_to_discard_pile("card_026");
 }
 
+// 光束射线：造成 3/4 点伤害，给予目标 1/2 层易伤
+void effect_beam_cell(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 4 : 3, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    int vuln = is_upgraded ? 2 : 1;
+    ctx.apply_status_to_monster(ctx.target_monster_index, "vulnerable", vuln, vuln);
+}
+
+// 核心电涌：造成 11/15 点伤害，获得 1 层人工制品，消耗
+void effect_core_surge(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index >= 0) {
+        int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 15 : 11, ctx.target_monster_index);
+        ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+    ctx.apply_status_to_player("artifact", 1, -1);
+}
+
+// 内核加速：获得 2/3 能量，将一张虚空放入弃牌堆
+void effect_turbo(EffectContext& ctx, bool is_upgraded) {
+    ctx.add_energy_to_player(is_upgraded ? 3 : 2);
+    ctx.generate_to_discard_pile("void");
+}
+
+// 闪躲翻滚：获得 4/6 格挡，下回合获得等量格挡（block_up 在回合开始时加格挡并消耗）
+void effect_dodge_and_roll(EffectContext& ctx, bool is_upgraded) {
+    int n = is_upgraded ? 6 : 4;
+    int block = ctx.get_effective_block_for_player(n);
+    ctx.add_block_to_player(block);
+    ctx.apply_status_to_player("block_up", n, -1);
+}
+
+// 碎片整理：获得 1/2 点集中（永久）
+void effect_defragment(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("focus", is_upgraded ? 2 : 1, -1);
+}
+
+// 硬撑：获得 15/20 格挡，将 2 张伤口加入手牌（手牌满则入弃牌堆）
+void effect_power_through(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 20 : 15);
+    ctx.add_block_to_player(block);
+    ctx.generate_to_hand("card_025");
+    ctx.generate_to_hand("card_025");
+}
+
+// 自动护盾：若没有格挡则获得 11/15 格挡
+void effect_auto_shields(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.get_player_block() != 0) return;
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 15 : 11);
+    ctx.add_block_to_player(block);
+}
+
+// 弹回：造成 9/12 点伤害（暂不实现“下一张牌放抽牌堆顶”）
+void effect_rebound(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int base = is_upgraded ? 12 : 9;
+    int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+}
+
+// 小刀：造成 4/6 点伤害，消耗
+void effect_shiv(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int base = is_upgraded ? 6 : 4;
+    int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+}
+
+// 斗篷与匕首：获得 6 点格挡，增加 1/2 张小刀到手牌
+void effect_cloak_and_dagger(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(6);
+    ctx.add_block_to_player(block);
+    ctx.generate_to_hand("shiv");
+    if (is_upgraded) ctx.generate_to_hand("shiv");
+}
+
+// 刀刃之舞：增加 3/4 张小刀到手牌
+void effect_blade_dance(EffectContext& ctx, bool is_upgraded) {
+    int n = is_upgraded ? 4 : 3;
+    for (int i = 0; i < n; ++i) ctx.generate_to_hand("shiv");
+}
+
+// 双倍能量：将当前能量翻倍，消耗
+void effect_double_energy(EffectContext& ctx, bool /*is_upgraded*/) {
+    int e = ctx.get_player_energy();
+    if (e > 0) ctx.add_energy_to_player(e);
+}
+
+// 堆栈：获得与弃牌堆张数相等的格挡，升级版 +3
+void effect_stack(EffectContext& ctx, bool is_upgraded) {
+    int n = ctx.get_discard_pile_size() + (is_upgraded ? 3 : 0);
+    if (n > 0) {
+        int block = ctx.get_effective_block_for_player(n);
+        ctx.add_block_to_player(block);
+    }
+}
+
 } // namespace
 
 void register_all_card_effects(CardSystem& card_system) {
@@ -692,6 +789,32 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("skim+", [](EffectContext& c) { effect_skim(c, true); });
     card_system.register_card_effect("steam_power", [](EffectContext& c) { effect_steam_power(c, false); });
     card_system.register_card_effect("steam_power+", [](EffectContext& c) { effect_steam_power(c, true); });
+    card_system.register_card_effect("beam_cell", [](EffectContext& c) { effect_beam_cell(c, false); });
+    card_system.register_card_effect("beam_cell+", [](EffectContext& c) { effect_beam_cell(c, true); });
+    card_system.register_card_effect("core_surge", [](EffectContext& c) { effect_core_surge(c, false); });
+    card_system.register_card_effect("core_surge+", [](EffectContext& c) { effect_core_surge(c, true); });
+    card_system.register_card_effect("turbo", [](EffectContext& c) { effect_turbo(c, false); });
+    card_system.register_card_effect("turbo+", [](EffectContext& c) { effect_turbo(c, true); });
+    card_system.register_card_effect("dodge_and_roll", [](EffectContext& c) { effect_dodge_and_roll(c, false); });
+    card_system.register_card_effect("dodge_and_roll+", [](EffectContext& c) { effect_dodge_and_roll(c, true); });
+    card_system.register_card_effect("defragment", [](EffectContext& c) { effect_defragment(c, false); });
+    card_system.register_card_effect("defragment+", [](EffectContext& c) { effect_defragment(c, true); });
+    card_system.register_card_effect("power_through", [](EffectContext& c) { effect_power_through(c, false); });
+    card_system.register_card_effect("power_through+", [](EffectContext& c) { effect_power_through(c, true); });
+    card_system.register_card_effect("auto_shields", [](EffectContext& c) { effect_auto_shields(c, false); });
+    card_system.register_card_effect("auto_shields+", [](EffectContext& c) { effect_auto_shields(c, true); });
+    card_system.register_card_effect("rebound", [](EffectContext& c) { effect_rebound(c, false); });
+    card_system.register_card_effect("rebound+", [](EffectContext& c) { effect_rebound(c, true); });
+    card_system.register_card_effect("shiv", [](EffectContext& c) { effect_shiv(c, false); });
+    card_system.register_card_effect("shiv+", [](EffectContext& c) { effect_shiv(c, true); });
+    card_system.register_card_effect("cloak_and_dagger", [](EffectContext& c) { effect_cloak_and_dagger(c, false); });
+    card_system.register_card_effect("cloak_and_dagger+", [](EffectContext& c) { effect_cloak_and_dagger(c, true); });
+    card_system.register_card_effect("blade_dance", [](EffectContext& c) { effect_blade_dance(c, false); });
+    card_system.register_card_effect("blade_dance+", [](EffectContext& c) { effect_blade_dance(c, true); });
+    card_system.register_card_effect("double_energy", [](EffectContext& c) { effect_double_energy(c, false); });
+    card_system.register_card_effect("double_energy+", [](EffectContext& c) { effect_double_energy(c, true); });
+    card_system.register_card_effect("stack", [](EffectContext& c) { effect_stack(c, false); });
+    card_system.register_card_effect("stack+", [](EffectContext& c) { effect_stack(c, true); });
     // cards.json 诗词卡：与子同袍/大风起兮等 Attack 用打击效果，雨雪霏霏等 Skill 用防御效果
     card_system.register_card_effect("card_001", [](EffectContext& c) { effect_strike(c, false); });
     card_system.register_card_effect("card_001+", [](EffectContext& c) { effect_strike(c, true); });
