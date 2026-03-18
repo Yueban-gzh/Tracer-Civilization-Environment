@@ -39,10 +39,12 @@ private:
     sf::Font font_;
     bool fontLoaded_ = false;
     sf::Clock cursorBlinkClock_;
-    /** Tab 循环补全：上次匹配列表与当前选中的命令，用于连续 Tab 切换 */
+    /** Tab 循环补全：上次匹配列表与当前选中的命令/参数，用于连续 Tab 切换 */
     std::vector<std::string> lastTabMatches_;
     std::string lastTabCurrent_;
     size_t lastTabIndex_ = 0;
+    /** 本次补全替换的起始位置（0=补全命令首词，>0=补全参数即最后一词） */
+    size_t lastReplaceStart_ = 0;
 
     void executeCurrent();
     /** Tab 补全：根据当前输入的第一个词补全命令 */

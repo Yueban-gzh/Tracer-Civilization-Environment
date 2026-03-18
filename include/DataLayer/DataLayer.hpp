@@ -10,7 +10,8 @@
 
  #include "../Common/Types.hpp"                   // CardId、MonsterId 等基础类型
  #include <string>                               // std::string
- 
+ #include <vector>                               // std::vector
+
  namespace tce {
  
  enum class CardType { Attack, Skill, Power, Status, Curse };  // 卡牌类型
@@ -47,6 +48,8 @@
  // E 对外接口：按 id 获取数据，未就绪时可由 Mock 实现
  const CardData*    get_card_by_id(CardId id);   // 按卡牌 ID 获取卡牌数据
  const MonsterData* get_monster_by_id(MonsterId id);  // 按怪物 ID 获取怪物数据
+ /** 返回当前已加载的全部卡牌 ID（用于金手指补全等） */
+ std::vector<CardId> get_all_card_ids();
  
  inline const char* to_string(Rarity r) {        // 稀有度转字符串
      switch (r) {

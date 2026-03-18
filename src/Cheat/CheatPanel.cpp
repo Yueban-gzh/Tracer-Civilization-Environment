@@ -5,6 +5,7 @@
 #include "../../include/Cheat/CheatEngine.hpp"
 #include <SFML/Window/Keyboard.hpp>
 #include <algorithm>
+#include <sstream>
 #include <vector>
 
 namespace tce {
@@ -26,50 +27,121 @@ bool CheatPanel::loadFont(const std::string& path) {
     return fontLoaded_;
 }
 
+// 按空格拆分为词，并返回最后一个词的起始下标
+static void tokenizeAndLastWordStart(const std::string& in, std::vector<std::string>& words, size_t& lastWordStart) {
+    words.clear();
+    lastWordStart = 0;
+    size_t i = 0;
+    while (i < in.size()) {
+        while (i < in.size() && in[i] == ' ') ++i;
+        if (i >= in.size()) break;
+        size_t start = i;
+        while (i < in.size() && in[i] != ' ') ++i;
+        words.push_back(in.substr(start, i - start));
+        lastWordStart = start;
+    }
+}
+
+// 判断是否为完整命令名（与 CHEAT_COMMANDS 完全匹配）
+static bool isFullCommand(const std::string& cmd) {
+    for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c)
+        if (cmd == CHEAT_COMMANDS[c]) return true;
+    return false;
+}
+
 void CheatPanel::completeInput() {
     std::string in = inputText_;
-    // 取第一个词作为前缀（到空格或结尾）
-    size_t i = 0;
-    while (i < in.size() && in[i] == ' ') ++i;
-    size_t start = i;
-    while (i < in.size() && in[i] != ' ') ++i;
-    std::string prefix = in.substr(start, i - start);
-    std::string rest = (i < in.size()) ? in.substr(i) : std::string();
+    std::vector<std::string> words;
+    size_t lastWordStart = 0;
+    tokenizeAndLastWordStart(in, words, lastWordStart);
 
-    if (prefix.empty()) return;
+    if (words.empty()) return;
 
-    // 已处于循环补全状态且当前首词是上次补全结果：按 Tab 切换到下一项（MC 指令风格）
-    if (!lastTabMatches_.empty() && prefix == lastTabCurrent_) {
-        lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
-        lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
-        inputText_ = lastTabCurrent_ + (rest.empty() ? " " : rest);
+    std::string prefix = words.front();
+    size_t firstWordStart = in.find_first_not_of(' ');
+    if (firstWordStart == std::string::npos) firstWordStart = 0;
+    size_t firstWordEnd = firstWordStart + prefix.size();
+    std::string restAfterFirst = (firstWordEnd < in.size()) ? in.substr(firstWordEnd) : std::string();
+    while (!restAfterFirst.empty() && restAfterFirst[0] == ' ') restAfterFirst = restAfterFirst.substr(1);
+
+    // 已处于循环补全：当前被补全的词等于上次选中则切换到下一项
+    if (!lastTabMatches_.empty()) {
+        if (lastReplaceStart_ == 0 && prefix == lastTabCurrent_) {
+            lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
+            lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
+            inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+            return;
+        }
+        if (lastReplaceStart_ > 0) {
+            std::string lastWord = in.substr(lastReplaceStart_);
+            if (lastWord == lastTabCurrent_) {
+                lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
+                lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
+                inputText_ = in.substr(0, lastReplaceStart_) + lastTabCurrent_ + " ";
+                return;
+            }
+        }
+    }
+
+    // 仅一个词：按命令补全
+    if (words.size() == 1) {
+        std::vector<std::string> matches;
+        for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
+            std::string cmd(CHEAT_COMMANDS[c]);
+            if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
+                matches.push_back(cmd);
+        }
+        if (matches.empty()) { lastTabMatches_.clear(); lastTabCurrent_.clear(); return; }
+        if (matches.size() == 1) {
+            inputText_ = matches[0] + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
+            return;
+        }
+        lastTabMatches_ = matches;
+        lastTabIndex_ = 0;
+        lastTabCurrent_ = matches[0];
+        lastReplaceStart_ = 0;
+        inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
         return;
     }
 
-    std::vector<std::string> matches;
-    for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
-        std::string cmd(CHEAT_COMMANDS[c]);
-        if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
-            matches.push_back(cmd);
+    // 多词：首词为完整命令时，对最后一个词做参数（卡牌/状态 ID）补全
+    if (!cheat_ || !isFullCommand(words[0])) {
+        // 首词不是完整命令，仍按命令补全首词
+        std::vector<std::string> matches;
+        for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
+            std::string cmd(CHEAT_COMMANDS[c]);
+            if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
+                matches.push_back(cmd);
+        }
+        if (!matches.empty()) {
+            lastTabMatches_ = matches;
+            lastTabIndex_ = 0;
+            lastTabCurrent_ = matches[0];
+            lastReplaceStart_ = 0;
+            inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+        }
+        return;
     }
 
-    if (matches.empty()) {
+    int argIndex = static_cast<int>(words.size()) - 1;
+    std::string argPrefix = words.back();
+    std::vector<std::string> idCandidates = cheat_->get_completion_candidates(words[0], argIndex, argPrefix);
+
+    if (idCandidates.empty()) return;
+
+    if (idCandidates.size() == 1) {
+        inputText_ = in.substr(0, lastWordStart) + idCandidates[0] + " ";
         lastTabMatches_.clear();
         lastTabCurrent_.clear();
         return;
     }
-
-    if (matches.size() == 1) {
-        inputText_ = matches[0] + (rest.empty() ? " " : rest);
-        lastTabMatches_.clear();
-        lastTabCurrent_.clear();
-        return;
-    }
-    // 多个匹配：补全为第一项，并记录列表供连续 Tab 切换
-    lastTabMatches_ = matches;
+    lastTabMatches_ = idCandidates;
     lastTabIndex_ = 0;
-    lastTabCurrent_ = matches[0];
-    inputText_ = lastTabCurrent_ + (rest.empty() ? " " : rest);
+    lastTabCurrent_ = idCandidates[0];
+    lastReplaceStart_ = lastWordStart;
+    inputText_ = in.substr(0, lastWordStart) + idCandidates[0] + " ";
 }
 
 void CheatPanel::executeCurrent() {
@@ -79,7 +151,15 @@ void CheatPanel::executeCurrent() {
         resultText_ = "OK: " + inputText_;
         inputText_.clear();
     } else if (r == 0) {
-        resultText_ = "FAIL: " + inputText_;
+        std::string cmd;
+        std::istringstream iss(inputText_);
+        if (iss >> cmd) {
+            std::string usage = cheat_->get_command_usage(cmd);
+            resultText_ = "FAIL: " + inputText_;
+            if (!usage.empty()) resultText_ += "\nUsage: " + usage;
+        } else {
+            resultText_ = "FAIL: " + inputText_;
+        }
     } else {
         resultText_ = "(skipped)";
     }
