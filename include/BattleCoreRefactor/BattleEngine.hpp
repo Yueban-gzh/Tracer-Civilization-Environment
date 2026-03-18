@@ -52,6 +52,8 @@ public:
     int get_player_energy() const;
     /** 弃牌堆张数（用于如堆栈等效果） */
     int get_discard_pile_size() const;
+    /** 抽牌堆张数（用于如汇集等效果） */
+    int get_draw_pile_size() const;
 
 private:
     friend class BattleEngine;
@@ -149,6 +151,7 @@ public:
     int get_player_block_impl() const;
     int get_player_energy_impl() const;
     int get_discard_pile_size_impl() const;
+    int get_draw_pile_size_impl() const;
 
 private:
     BattleState           state_;

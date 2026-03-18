@@ -80,6 +80,8 @@ static void runMapUITest(sf::RenderWindow& window);
         "auto_shields", "auto_shields+", "rebound", "rebound+", "shiv", "shiv+",
         "cloak_and_dagger", "cloak_and_dagger+", "blade_dance", "blade_dance+",
         "double_energy", "double_energy+", "stack", "stack+",
+        "aggregate", "aggregate+",
+        "limit_break", "limit_break+",
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));

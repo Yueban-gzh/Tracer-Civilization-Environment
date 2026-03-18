@@ -633,6 +633,9 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  int EffectContext::get_discard_pile_size() const {                    // 弃牌堆张数
      return engine_ ? engine_->get_discard_pile_size_impl() : 0;
  }
+ int EffectContext::get_draw_pile_size() const {                       // 抽牌堆张数
+     return engine_ ? engine_->get_draw_pile_size_impl() : 0;
+ }
 
  // --- BattleEngine 内部实现 ---
  void BattleEngine::add_block_to_player_impl(int amount) {               // 给玩家加格挡
@@ -741,6 +744,9 @@ void BattleEngine::set_monster_status_stacks_impl(int monster_index, StatusId id
  }
  int BattleEngine::get_discard_pile_size_impl() const {                 // 弃牌堆张数
      return card_system_ ? card_system_->get_discard_size() : 0;
+ }
+ int BattleEngine::get_draw_pile_size_impl() const {                    // 抽牌堆张数
+     return card_system_ ? card_system_->get_deck_size() : 0;
  }
 
  // --- 金手指接口 ---

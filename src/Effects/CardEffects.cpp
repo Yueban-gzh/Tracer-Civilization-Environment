@@ -647,6 +647,20 @@ void effect_stack(EffectContext& ctx, bool is_upgraded) {
     }
 }
 
+// 汇集：抽牌堆每 4/3 张牌获得 1 能量
+void effect_aggregate(EffectContext& ctx, bool is_upgraded) {
+    int draw_size = ctx.get_draw_pile_size();
+    int divisor = is_upgraded ? 3 : 4;
+    int energy = (divisor > 0) ? (draw_size / divisor) : 0;
+    if (energy > 0) ctx.add_energy_to_player(energy);
+}
+
+// 突破极限：将当前力量翻倍（再施加等量力量，永久）
+void effect_limit_break(EffectContext& ctx, bool /*is_upgraded*/) {
+    int s = ctx.get_status_stacks_on_player("strength");
+    if (s > 0) ctx.apply_status_to_player("strength", s, -1);
+}
+
 } // namespace
 
 void register_all_card_effects(CardSystem& card_system) {
@@ -815,6 +829,10 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("double_energy+", [](EffectContext& c) { effect_double_energy(c, true); });
     card_system.register_card_effect("stack", [](EffectContext& c) { effect_stack(c, false); });
     card_system.register_card_effect("stack+", [](EffectContext& c) { effect_stack(c, true); });
+    card_system.register_card_effect("aggregate", [](EffectContext& c) { effect_aggregate(c, false); });
+    card_system.register_card_effect("aggregate+", [](EffectContext& c) { effect_aggregate(c, true); });
+    card_system.register_card_effect("limit_break", [](EffectContext& c) { effect_limit_break(c, false); });
+    card_system.register_card_effect("limit_break+", [](EffectContext& c) { effect_limit_break(c, true); });
     // cards.json 诗词卡：与子同袍/大风起兮等 Attack 用打击效果，雨雪霏霏等 Skill 用防御效果
     card_system.register_card_effect("card_001", [](EffectContext& c) { effect_strike(c, false); });
     card_system.register_card_effect("card_001+", [](EffectContext& c) { effect_strike(c, true); });

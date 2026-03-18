@@ -249,5 +249,11 @@
   {"id":"double_energy","name":"双倍能量","cardType":"Skill","cost":1,"color":"blue","rarity":"uncommon","description":"将你的能量翻倍。消耗。","exhaust":true,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
   {"id":"double_energy+","name":"双倍能量+","cardType":"Skill","cost":0,"color":"blue","rarity":"uncommon","description":"将你的能量翻倍。消耗。","exhaust":true,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
   {"id":"stack","name":"堆栈","cardType":"Skill","cost":1,"color":"blue","rarity":"common","description":"获得与你当前弃牌堆中牌数相等的格挡值。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
-  {"id":"stack+","name":"堆栈+","cardType":"Skill","cost":1,"color":"blue","rarity":"common","description":"获得你当前弃牌堆中牌数+3的格挡值。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false}
+  {"id":"stack+","name":"堆栈+","cardType":"Skill","cost":1,"color":"blue","rarity":"common","description":"获得你当前弃牌堆中牌数+3的格挡值。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+
+  {"id":"aggregate","name":"汇集","cardType":"Skill","cost":1,"color":"blue","rarity":"uncommon","description":"你的抽牌堆中每有4张牌，获得1点[B]。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+  {"id":"aggregate+","name":"汇集+","cardType":"Skill","cost":1,"color":"blue","rarity":"uncommon","description":"你的抽牌堆中每有3张牌，获得1点[B]。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+
+  {"id":"limit_break","name":"突破极限","cardType":"Skill","cost":1,"color":"red","rarity":"rare","description":"将你的力量翻倍。消耗。","exhaust":true,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+  {"id":"limit_break+","name":"突破极限+","cardType":"Skill","cost":1,"color":"red","rarity":"rare","description":"将你的力量翻倍。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false}
 ]
