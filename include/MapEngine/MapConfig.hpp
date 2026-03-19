@@ -9,7 +9,7 @@
 
 namespace MapEngine {
 
-    // ��ͼ���û���
+    // 地图配置基类
     class MapConfig {
     public:
         virtual ~MapConfig() = default;
@@ -21,7 +21,7 @@ namespace MapEngine {
         virtual int getLayerCount() const = 0;
     };
 
-    // ��ͼ1����׼��ͼ - 6��
+    // 地图1：标准地图 - 6层
     class MapConfig1 : public MapConfig {
     public:
         int getLayerCount() const override { return 6; }
@@ -29,94 +29,94 @@ namespace MapEngine {
         std::vector<std::vector<NodeType>> getLayerTypes() const override {
             std::vector<std::vector<NodeType>> layers;
 
-            // ��0�� - 3���ڵ�
+            // 第0层 - 3个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Event,
                 NodeType::Enemy
                 });
 
-            // ��1�� - 4���ڵ�
+            // 第1层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Event,
-                NodeType::Elite,    // ������Ӣ�ڵ�
+                NodeType::Elite,    // 新增精英节点
                 NodeType::Rest
                 });
 
-            // ��2�� - 4���ڵ�
+            // 第2层 - 4个节点
             layers.push_back({
                 NodeType::Event,
-                NodeType::Elite,     // ������Ӣ�ڵ�
+                NodeType::Elite,     // 新增精英节点
                 NodeType::Merchant,
                 NodeType::Rest
                 });
 
-            // ��3�� - 4���ڵ�
+            // 第3层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Event,
-                NodeType::Treasure,  // �������ؽڵ�
+                NodeType::Treasure,  // 新增宝藏节点
                 NodeType::Rest
                 });
 
-            // ��4�� - 3���ڵ�
+            // 第4层 - 3个节点
             layers.push_back({
                 NodeType::Merchant,
-                NodeType::Elite,      // ������Ӣ�ڵ�
-                NodeType::Treasure    // �������ؽڵ�
+                NodeType::Elite,      // 新增精英节点
+                NodeType::Treasure    // 新增宝藏节点
                 });
 
-            // ��5�� - Boss
+            // 第5层 - Boss
             layers.push_back({ NodeType::Boss });
 
             return layers;
         }
 
-        // MapConfig1 �������޸�
+        // MapConfig1 的完整修改
         std::vector<std::vector<Vector2>> getNodePositions() const override {
             std::vector<std::vector<Vector2>> positions;
 
-            // ��0�� - ԭ��900���ң���Ϊ1000
+            // 第0层 - 原来900左右，改为1000
             positions.push_back({
-                Vector2(450, 1100),  // Y: 900 -> 1000
-                Vector2(950, 1070),   // Y: 870 -> 970
-                Vector2(1550, 1130)   // Y: 880 -> 980
+                Vector2{450.f, 1100.f},  // Y: 900 -> 1000
+                Vector2{950.f, 1070.f},  // Y: 870 -> 970
+                Vector2{1550.f, 1130.f}  // Y: 880 -> 980
                 });
 
-            // ��1�� - ԭ��750���ң���Ϊ850
+            // 第1层 - 原来750左右，改为850
             positions.push_back({
-                Vector2(250, 950),   // Y: 750 -> 850
-                Vector2(700, 900),   // Y: 730 -> 830
-                Vector2(1150, 940),  // Y: 740 -> 840
-                Vector2(1600, 920)   // Y: 720 -> 820
+                Vector2{250.f, 950.f},   // Y: 750 -> 850
+                Vector2{700.f, 900.f},   // Y: 730 -> 830
+                Vector2{1150.f, 940.f},  // Y: 740 -> 840
+                Vector2{1600.f, 920.f}   // Y: 720 -> 820
                 });
 
-            // ��2�� - ԭ��600���ң���Ϊ700
+            // 第2层 - 原来600左右，改为700
             positions.push_back({
-                Vector2(300, 700),   // Y: 600 -> 700
-                Vector2(750, 730),   // Y: 580 -> 680
-                Vector2(1200, 690),  // Y: 590 -> 690
-                Vector2(1500, 700)   // Y: 570 -> 670
+                Vector2{300.f, 700.f},   // Y: 600 -> 700
+                Vector2{750.f, 730.f},   // Y: 580 -> 680
+                Vector2{1200.f, 690.f},  // Y: 590 -> 690
+                Vector2{1500.f, 700.f}   // Y: 570 -> 670
                 });
 
-            // ��3�� - ԭ��450���ң���Ϊ550
+            // 第3层 - 原来450左右，改为550
             positions.push_back({
-                Vector2(350, 550),   // Y: 450 -> 550
-                Vector2(800, 530),   // Y: 430 -> 530
-                Vector2(1250, 540),  // Y: 440 -> 540
-                Vector2(1700, 520)   // Y: 420 -> 520
+                Vector2{350.f, 550.f},   // Y: 450 -> 550
+                Vector2{800.f, 530.f},   // Y: 430 -> 530
+                Vector2{1250.f, 540.f},  // Y: 440 -> 540
+                Vector2{1700.f, 520.f}   // Y: 420 -> 520
                 });
 
-            // ��4�� - ԭ��300���ң���Ϊ400
+            // 第4层 - 原来300左右，改为400
             positions.push_back({
-                Vector2(450, 400),   // Y: 300 -> 400
-                Vector2(960, 380),   // Y: 280 -> 380
-                Vector2(1550, 390)   // Y: 290 -> 390
+                Vector2{450.f, 400.f},   // Y: 300 -> 400
+                Vector2{960.f, 380.f},   // Y: 280 -> 380
+                Vector2{1550.f, 390.f}   // Y: 290 -> 390
                 });
 
-            // ��5�� - Boss - ԭ��150����Ϊ250
-            positions.push_back({ Vector2(960, 150) });  // Y: 150 -> 250
+            // 第5层 - Boss - 原来150，改为250
+            positions.push_back({ Vector2{960.f, 150.f} });  // Y: 150 -> 250
 
             return positions;
         }
@@ -124,7 +124,7 @@ namespace MapEngine {
         std::vector<std::vector<std::pair<int, int>>> getConnections() const override {
             std::vector<std::vector<std::pair<int, int>>> connections;
 
-            // ��0��(3) -> ��1��(4)
+            // 第0层(3) -> 第1层(4)
             std::vector<std::pair<int, int>> layer0to1;
             layer0to1.push_back(std::make_pair(0, 0));
             layer0to1.push_back(std::make_pair(0, 1));
@@ -134,7 +134,7 @@ namespace MapEngine {
             layer0to1.push_back(std::make_pair(2, 3));
             connections.push_back(layer0to1);
 
-            // ��1��(4) -> ��2��(4)
+            // 第1层(4) -> 第2层(4)
             std::vector<std::pair<int, int>> layer1to2;
             layer1to2.push_back(std::make_pair(0, 0));
             layer1to2.push_back(std::make_pair(0, 1));
@@ -145,7 +145,7 @@ namespace MapEngine {
             layer1to2.push_back(std::make_pair(3, 3));
             connections.push_back(layer1to2);
 
-            // ��2��(4) -> ��3��(4)
+            // 第2层(4) -> 第3层(4)
             std::vector<std::pair<int, int>> layer2to3;
             layer2to3.push_back(std::make_pair(0, 0));
             layer2to3.push_back(std::make_pair(1, 0));
@@ -156,7 +156,7 @@ namespace MapEngine {
             layer2to3.push_back(std::make_pair(3, 3));
             connections.push_back(layer2to3);
 
-            // ��3��(4) -> ��4��(3)
+            // 第3层(4) -> 第4层(3)
             std::vector<std::pair<int, int>> layer3to4;
             layer3to4.push_back(std::make_pair(0, 0));
             layer3to4.push_back(std::make_pair(1, 0));
@@ -166,7 +166,7 @@ namespace MapEngine {
             layer3to4.push_back(std::make_pair(3, 2));
             connections.push_back(layer3to4);
 
-            // ��4��(3) -> ��5��(1)
+            // 第4层(3) -> 第5层(1)
             std::vector<std::pair<int, int>> layer4to5;
             layer4to5.push_back(std::make_pair(0, 0));
             layer4to5.push_back(std::make_pair(1, 0));
@@ -177,10 +177,10 @@ namespace MapEngine {
         }
 
         std::string getName() const override { return "标准地图"; }
-        std::string getDescription() const override { return "6 层地图，节点类型分布均衡"; }
+        std::string getDescription() const override { return "6层地图，包含所有节点类型"; }
     };
 
-    // ��ͼ2��ɭ������ - 5��
+    // 地图2：森林主题 - 5层
     class MapConfig2 : public MapConfig {
     public:
         int getLayerCount() const override { return 5; }
@@ -188,78 +188,78 @@ namespace MapEngine {
         std::vector<std::vector<NodeType>> getLayerTypes() const override {
             std::vector<std::vector<NodeType>> layers;
 
-            // ��0�� - 3���ڵ�
+            // 第0层 - 3个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Event,
                 NodeType::Enemy
                 });
 
-            // ��1�� - 4���ڵ�
+            // 第1层 - 4个节点
             layers.push_back({
                 NodeType::Event,
-                NodeType::Elite,     // ��Ӣ�ڵ�
+                NodeType::Elite,     // 精英节点
                 NodeType::Rest,
-                NodeType::Treasure    // ���ؽڵ�
+                NodeType::Treasure    // 宝藏节点
                 });
 
-            // ��2�� - 4���ڵ�
+            // 第2层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Merchant,
-                NodeType::Elite,      // ��Ӣ�ڵ�
+                NodeType::Elite,      // 精英节点
                 NodeType::Rest
                 });
 
-            // ��3�� - 3���ڵ�
+            // 第3层 - 3个节点
             layers.push_back({
                 NodeType::Enemy,
-                NodeType::Treasure,   // ���ؽڵ�
-                NodeType::Elite        // ��Ӣ�ڵ�
+                NodeType::Treasure,   // 宝藏节点
+                NodeType::Elite        // 精英节点
                 });
 
-            // ��4�� - Boss
+            // 第4层 - Boss
             layers.push_back({ NodeType::Boss });
 
             return layers;
         }
 
-        // MapConfig2 �������޸�
+        // MapConfig2 的完整修改
         std::vector<std::vector<Vector2>> getNodePositions() const override {
             std::vector<std::vector<Vector2>> positions;
 
-            // ��0�� - 3���ڵ㣬ˮƽ��ɢ
+            // 第0层 - 3个节点，水平分散
             positions.push_back({
-                Vector2(400, 1100),   // ��
-                Vector2(900, 1070),   // ��
-                Vector2(1500, 1100)   // ��
+                Vector2{400.f, 1100.f},   // 左
+                Vector2{900.f, 1070.f},   // 中
+                Vector2{1500.f, 1100.f}   // 右
                 });
 
-            // ��1�� - 4���ڵ�
+            // 第1层 - 4个节点
             positions.push_back({
-                Vector2(200, 850),   // ��1
-                Vector2(650, 850),   // ��2
-                Vector2(1100, 830),  // ��2
-                Vector2(1550, 880)   // ��1
+                Vector2{200.f, 850.f},   // 左1
+                Vector2{650.f, 850.f},   // 左2
+                Vector2{1100.f, 830.f},  // 右2
+                Vector2{1550.f, 880.f}   // 右1
                 });
 
-            // ��2�� - 4���ڵ�
+            // 第2层 - 4个节点
             positions.push_back({
-                Vector2(250, 650),   // ��1
-                Vector2(700, 620),   // ��2
-                Vector2(1150, 630),  // ��2
-                Vector2(1600, 610)   // ��1
+                Vector2{250.f, 650.f},   // 左1
+                Vector2{700.f, 620.f},   // 左2
+                Vector2{1150.f, 630.f},  // 右2
+                Vector2{1600.f, 610.f}   // 右1
                 });
 
-            // ��3�� - 3���ڵ�
+            // 第3层 - 3个节点
             positions.push_back({
-                Vector2(400, 400),   // ��
-                Vector2(950, 450),   // ��
-                Vector2(1500, 420)   // ��
+                Vector2{400.f, 400.f},   // 左
+                Vector2{950.f, 450.f},   // 中
+                Vector2{1500.f, 420.f}   // 右
                 });
 
-            // ��4�� - Boss
-            positions.push_back({ Vector2(960, 170) });
+            // 第4层 - Boss
+            positions.push_back({ Vector2{960.f, 170.f} });
 
             return positions;
         }
@@ -267,7 +267,7 @@ namespace MapEngine {
         std::vector<std::vector<std::pair<int, int>>> getConnections() const override {
             std::vector<std::vector<std::pair<int, int>>> connections;
 
-            // ��0��(3) -> ��1��(4)
+            // 第0层(3) -> 第1层(4)
             std::vector<std::pair<int, int>> layer0to1;
             layer0to1.push_back(std::make_pair(0, 0));
             layer0to1.push_back(std::make_pair(0, 1));
@@ -277,7 +277,7 @@ namespace MapEngine {
             layer0to1.push_back(std::make_pair(2, 3));
             connections.push_back(layer0to1);
 
-            // ��1��(4) -> ��2��(4)
+            // 第1层(4) -> 第2层(4)
             std::vector<std::pair<int, int>> layer1to2;
             layer1to2.push_back(std::make_pair(0, 0));
             layer1to2.push_back(std::make_pair(1, 0));
@@ -288,7 +288,7 @@ namespace MapEngine {
             layer1to2.push_back(std::make_pair(3, 3));
             connections.push_back(layer1to2);
 
-            // ��2��(4) -> ��3��(3)
+            // 第2层(4) -> 第3层(3)
             std::vector<std::pair<int, int>> layer2to3;
             layer2to3.push_back(std::make_pair(0, 0));
             layer2to3.push_back(std::make_pair(1, 0));
@@ -298,7 +298,7 @@ namespace MapEngine {
             layer2to3.push_back(std::make_pair(3, 2));
             connections.push_back(layer2to3);
 
-            // ��3��(3) -> ��4��(1)
+            // 第3层(3) -> 第4层(1)
             std::vector<std::pair<int, int>> layer3to4;
             layer3to4.push_back(std::make_pair(0, 0));
             layer3to4.push_back(std::make_pair(1, 0));
@@ -309,10 +309,10 @@ namespace MapEngine {
         }
 
         std::string getName() const override { return "森林地图"; }
-        std::string getDescription() const override { return "5 层地图，事件与宝藏节点较多"; }
+        std::string getDescription() const override { return "5层地图，事件和宝藏节点较多"; }
     };
 
-    // ��ͼ3��ɳĮ���� - 6��
+    // 地图3：沙漠主题 - 6层
     class MapConfig3 : public MapConfig {
     public:
         int getLayerCount() const override { return 6; }
@@ -320,7 +320,7 @@ namespace MapEngine {
         std::vector<std::vector<NodeType>> getLayerTypes() const override {
             std::vector<std::vector<NodeType>> layers;
 
-            // ��0�� - 4���ڵ�
+            // 第0层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Enemy,
@@ -328,88 +328,88 @@ namespace MapEngine {
                 NodeType::Enemy
                 });
 
-            // ��1�� - 4���ڵ�
+            // 第1层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Rest,
-                NodeType::Elite,     // ��Ӣ�ڵ�
+                NodeType::Elite,     // 精英节点
                 NodeType::Event
                 });
 
-            // ��2�� - 4���ڵ�
+            // 第2层 - 4个节点
             layers.push_back({
                 NodeType::Event,
-                NodeType::Elite,      // ��Ӣ�ڵ�
+                NodeType::Elite,      // 精英节点
                 NodeType::Merchant,
                 NodeType::Enemy
                 });
 
-            // ��3�� - 4���ڵ�
+            // 第3层 - 4个节点
             layers.push_back({
                 NodeType::Enemy,
                 NodeType::Rest,
-                NodeType::Treasure,   // ���ؽڵ�
+                NodeType::Treasure,   // 宝藏节点
                 NodeType::Event
                 });
 
-            // ��4�� - 3���ڵ�
+            // 第4层 - 3个节点
             layers.push_back({
                 NodeType::Merchant,
-                NodeType::Elite,       // ��Ӣ�ڵ�
-                NodeType::Treasure      // ���ؽڵ�
+                NodeType::Elite,       // 精英节点
+                NodeType::Treasure      // 宝藏节点
                 });
 
-            // ��5�� - Boss
+            // 第5层 - Boss
             layers.push_back({ NodeType::Boss });
 
             return layers;
         }
 
-        // MapConfig3 �������޸�
+        // MapConfig3 的完整修改
         std::vector<std::vector<Vector2>> getNodePositions() const override {
             std::vector<std::vector<Vector2>> positions;
 
-            // ��0�� - 4���ڵ㣬���������Ҿ��ȷֲ�
+            // 第0层 - 4个节点，从最左到最右均匀分布
             positions.push_back({
-                Vector2(250, 1200),   // ��1
-                Vector2(650, 1170),   // ��2
-                Vector2(1050, 1160),  // ��2
-                Vector2(1450, 1220)   // ��1
+                Vector2{250.f, 1200.f},   // 左1
+                Vector2{650.f, 1170.f},   // 左2
+                Vector2{1050.f, 1160.f},  // 右2
+                Vector2{1450.f, 1220.f}   // 右1
                 });
 
-            // ��1�� - 4���ڵ�
+            // 第1层 - 4个节点
             positions.push_back({
-                Vector2(300, 950),   // ��1
-                Vector2(700, 930),   // ��2
-                Vector2(1100, 960),  // ��2
-                Vector2(1500, 920)   // ��1
+                Vector2{300.f, 950.f},   // 左1
+                Vector2{700.f, 930.f},   // 左2
+                Vector2{1100.f, 960.f},  // 右2
+                Vector2{1500.f, 920.f}   // 右1
                 });
 
-            // ��2�� - 4���ڵ�
+            // 第2层 - 4个节点
             positions.push_back({
-                Vector2(200, 770),   // ��1
-                Vector2(750, 780),   // ��2
-                Vector2(1150, 790),  // ��2
-                Vector2(1700, 770)   // ��1
+                Vector2{200.f, 770.f},   // 左1
+                Vector2{750.f, 780.f},   // 左2
+                Vector2{1150.f, 790.f},  // 右2
+                Vector2{1700.f, 770.f}   // 右1
                 });
 
-            // ��3�� - 4���ڵ�
+            // 第3层 - 4个节点
             positions.push_back({
-                Vector2(400, 620),   // ��1
-                Vector2(800, 580),   // ��2
-                Vector2(1200, 610),  // ��2
-                Vector2(1600, 550)   // ��1
+                Vector2{400.f, 620.f},   // 左1
+                Vector2{800.f, 580.f},   // 左2
+                Vector2{1200.f, 610.f},  // 右2
+                Vector2{1600.f, 550.f}   // 右1
                 });
 
-            // ��4�� - 3���ڵ�
+            // 第4层 - 3个节点
             positions.push_back({
-                Vector2(450, 400),   // ��
-                Vector2(1000, 400),   // ��
-                Vector2(1550, 380)   // ��
+                Vector2{450.f, 400.f},   // 左
+                Vector2{1000.f, 400.f},  // 中
+                Vector2{1550.f, 380.f}   // 右
                 });
 
-            // ��5�� - Boss
-            positions.push_back({ Vector2(960, 150) });
+            // 第5层 - Boss
+            positions.push_back({ Vector2{960.f, 150.f} });
 
             return positions;
         }
@@ -417,7 +417,7 @@ namespace MapEngine {
         std::vector<std::vector<std::pair<int, int>>> getConnections() const override {
             std::vector<std::vector<std::pair<int, int>>> connections;
 
-            // ��0��(4) -> ��1��(4)
+            // 第0层(4) -> 第1层(4)
             std::vector<std::pair<int, int>> layer0to1;
             layer0to1.push_back(std::make_pair(0, 0));
             layer0to1.push_back(std::make_pair(0, 1));
@@ -428,7 +428,7 @@ namespace MapEngine {
             layer0to1.push_back(std::make_pair(3, 3));
             connections.push_back(layer0to1);
 
-            // ��1��(4) -> ��2��(4)
+            // 第1层(4) -> 第2层(4)
             std::vector<std::pair<int, int>> layer1to2;
             layer1to2.push_back(std::make_pair(0, 0));
             layer1to2.push_back(std::make_pair(0, 1));
@@ -439,7 +439,7 @@ namespace MapEngine {
             layer1to2.push_back(std::make_pair(3, 3));
             connections.push_back(layer1to2);
 
-            // ��2��(4) -> ��3��(4)
+            // 第2层(4) -> 第3层(4)
             std::vector<std::pair<int, int>> layer2to3;
             layer2to3.push_back(std::make_pair(0, 0));
             layer2to3.push_back(std::make_pair(1, 0));
@@ -450,7 +450,7 @@ namespace MapEngine {
             layer2to3.push_back(std::make_pair(3, 3));
             connections.push_back(layer2to3);
 
-            // ��3��(4) -> ��4��(3)
+            // 第3层(4) -> 第4层(3)
             std::vector<std::pair<int, int>> layer3to4;
             layer3to4.push_back(std::make_pair(0, 0));
             layer3to4.push_back(std::make_pair(1, 0));
@@ -460,7 +460,7 @@ namespace MapEngine {
             layer3to4.push_back(std::make_pair(3, 2));
             connections.push_back(layer3to4);
 
-            // ��4��(3) -> ��5��(1)
+            // 第4层(3) -> 第5层(1)
             std::vector<std::pair<int, int>> layer4to5;
             layer4to5.push_back(std::make_pair(0, 0));
             layer4to5.push_back(std::make_pair(1, 0));
@@ -471,10 +471,10 @@ namespace MapEngine {
         }
 
         std::string getName() const override { return "沙漠地图"; }
-        std::string getDescription() const override { return "6 层地图，战斗与精英节点较多"; }
+        std::string getDescription() const override { return "6层地图，战斗和精英节点较多"; }
     };
 
-    // ��ͼ���ù�����
+    // 地图配置管理器
     class MapConfigManager {
     private:
         std::vector<std::unique_ptr<MapConfig>> configs;
@@ -482,9 +482,9 @@ namespace MapEngine {
 
     public:
         MapConfigManager() {
-            configs.push_back(std::make_unique<MapConfig1>());  // ��׼��ͼ - 6��
-            configs.push_back(std::make_unique<MapConfig2>());  // ɭ�ֵ�ͼ - 5��
-            configs.push_back(std::make_unique<MapConfig3>());  // ɳĮ��ͼ - 6��
+            configs.push_back(std::make_unique<MapConfig1>());  // 标准地图 - 6层
+            configs.push_back(std::make_unique<MapConfig2>());  // 森林地图 - 5层
+            configs.push_back(std::make_unique<MapConfig3>());  // 沙漠地图 - 6层
         }
 
         MapConfig* getCurrentConfig() const {
