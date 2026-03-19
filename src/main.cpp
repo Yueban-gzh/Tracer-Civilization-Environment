@@ -35,6 +35,7 @@
 #include "MapEngine/MapEngine.hpp"
 #include "MapEngine/MapUI.hpp"
 #include "MapEngine/MapConfig.hpp"
+#include "GameFlow/GameFlowController.hpp"
 #include "Common/NodeTypes.hpp"
 
 static void runBattleUI(sf::RenderWindow& window);
@@ -524,52 +525,14 @@ static void runMapUITest(sf::RenderWindow& window);
 
  int main() {
      const unsigned int winW = 1920, winH = 1080;
-     sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 全功能测试");
+    sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 主流程");
      window.setFramerateLimit(60);
 
-     sf::Font menuFont;
-     if (!menuFont.openFromFile("C:/Windows/Fonts/msyh.ttc"))
-         menuFont.openFromFile("C:/Windows/Fonts/simhei.ttf");
-     sf::Text menuText(menuFont);
-     menuText.setCharacterSize(28);
-     menuText.setFillColor(sf::Color::White);
-     menuText.setPosition({ 80.f, 80.f });
-
-     while (window.isOpen()) {
-         while (const std::optional ev = window.pollEvent()) {
-             if (ev->is<sf::Event::Closed>()) { window.close(); return 0; }
-             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
-                 if (key->scancode == sf::Keyboard::Scancode::Escape) { window.close(); return 0; }
-                 if (key->scancode == sf::Keyboard::Scancode::Num1 || key->scancode == sf::Keyboard::Scancode::Numpad1 ||
-                     key->scancode == sf::Keyboard::Scancode::F1) {
-                     runBattleUI(window);
-                     if (!window.isOpen()) return 0;
-                     continue;
-                 }
-                 if (key->scancode == sf::Keyboard::Scancode::Num2 || key->scancode == sf::Keyboard::Scancode::Numpad2 ||
-                     key->scancode == sf::Keyboard::Scancode::F2) {
-                     runEventShopRestUITest(window);
-                     if (!window.isOpen()) return 0;
-                     continue;
-                 }
-                 if (key->scancode == sf::Keyboard::Scancode::Num3 || key->scancode == sf::Keyboard::Scancode::Numpad3 ||
-                     key->scancode == sf::Keyboard::Scancode::F3) {
-                     runMapUITest(window);
-                     if (!window.isOpen()) return 0;
-                     continue;
-                 }
-             }
-         }
-         menuText.setString(
-             L"【全功能测试】\n\n"
-             L"  1 / F1  战斗 UI（含金手指 F2）\n"
-             L"  2 / F2  事件 / 商店 / 休息 UI\n"
-             L"  3 / F3  地图 UI\n\n"
-             L"  Esc  退出"
-         );
-         window.clear(sf::Color(32, 30, 36));
-         window.draw(menuText);
-         window.display();
-     }
+    tce::GameFlowController gameFlow(window);
+    if (!gameFlow.initialize()) {
+        std::cerr << "GameFlowController 初始化失败。" << std::endl;
+        return 1;
+    }
+    gameFlow.run();
      return 0;
  }
