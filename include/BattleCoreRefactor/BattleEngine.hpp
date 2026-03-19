@@ -39,6 +39,8 @@ public:
     int get_effective_block_for_player(int base_block) const;
     void generate_to_discard_pile(CardId id);
     void generate_to_draw_pile(CardId id);
+    /** 生成一张临时牌并加入手牌（手牌已满时按 CardSystem 规则落入弃牌堆） */
+    void generate_to_hand(CardId id);
     void draw_cards(int n);
     void add_energy_to_player(int amount);
     int get_status_stacks_on_monster(int monster_index, const StatusId& id) const;
@@ -46,6 +48,12 @@ public:
     void apply_status_to_all_monsters(StatusId id, int stacks, int duration);
     void deal_damage_to_all_monsters(int base_damage);
     int get_player_block() const;
+    /** 当前能量（用于如双倍能量等效果） */
+    int get_player_energy() const;
+    /** 弃牌堆张数（用于如堆栈等效果） */
+    int get_discard_pile_size() const;
+    /** 抽牌堆张数（用于如汇集等效果） */
+    int get_draw_pile_size() const;
 
 private:
     friend class BattleEngine;
@@ -130,6 +138,7 @@ public:
     int get_effective_block_for_player_impl(int base_block) const;
     void generate_to_discard_pile_impl(CardId id);
     void generate_to_draw_pile_impl(CardId id);
+    void generate_to_hand_impl(CardId id);
     void draw_cards_impl(int n);
     void add_energy_to_player_impl(int amount);
     int get_status_stacks_on_monster_impl(int monster_index, const StatusId& id) const;
@@ -140,6 +149,9 @@ public:
     void apply_status_to_all_monsters_impl(StatusId id, int stacks, int duration);
     void deal_damage_to_all_monsters_impl(int base_damage);
     int get_player_block_impl() const;
+    int get_player_energy_impl() const;
+    int get_discard_pile_size_impl() const;
+    int get_draw_pile_size_impl() const;
 
 private:
     BattleState           state_;

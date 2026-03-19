@@ -76,31 +76,13 @@ static void runMapUITest(sf::RenderWindow& window);
  
     // 初始牌组：包含已实现效果、便于测试的若干卡牌（每种一张基础版 + 一张升级版）
     card_system.init_master_deck({
-      
-        "neutralize", "neutralize+",
-            // 绿色：防御
-            "defend_green", "defend_green+",
-        // 绿色/蓝色：打击 & 蓝防御（基础牌）
-        "strike_green", "strike_green+",
-        "strike_blue", "strike_blue+",
-        "defend_blue", "defend_blue+",
-       
-        "dash", "dash+",
-        "predator", "predator+",
-        "flying_knee", "flying_knee+",
-        "impervious", "impervious+",
-        "intimidate", "intimidate+",
-        "seeing_red", "seeing_red+",
-        "bloodletting", "bloodletting+",
-        "leg_sweep", "leg_sweep+",
-        "terror", "terror+",
-        "shockwave", "shockwave+",
-        "ghostly_armor", "ghostly_armor+",
-        "entrench", "entrench+",
-        "offering", "offering+",
-        "riddle_with_holes", "riddle_with_holes+",
-        "wild_strike", "wild_strike+",
-        "reckless_charge", "reckless_charge+",
+        "beam_cell", "beam_cell+", "core_surge", "core_surge+", "turbo", "turbo+",
+        "dodge_and_roll", "dodge_and_roll+", "defragment", "defragment+", "power_through", "power_through+",
+        "auto_shields", "auto_shields+", "rebound", "rebound+", "shiv", "shiv+",
+        "cloak_and_dagger", "cloak_and_dagger+", "blade_dance", "blade_dance+",
+        "double_energy", "double_energy+", "stack", "stack+",
+        "aggregate", "aggregate+",
+        "limit_break", "limit_break+",
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));

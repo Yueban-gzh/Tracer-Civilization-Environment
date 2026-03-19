@@ -50,6 +50,13 @@ const MonsterData* get_monster_by_id(MonsterId id) {
     return nullptr;
 }
 
+std::vector<CardId> get_all_card_ids() {
+    std::vector<CardId> out;
+    out.reserve(s_cards.size());
+    for (const auto& p : s_cards) out.push_back(p.first);
+    return out;
+}
+
 } // namespace tce
 
 namespace DataLayer {

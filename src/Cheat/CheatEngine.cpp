@@ -4,11 +4,20 @@
 #include "../../include/Cheat/CheatEngine.hpp"
 #include "../../include/BattleCoreRefactor/BattleEngine.hpp"
 #include "../../include/CardSystem/CardSystem.hpp"
+#include "../../include/DataLayer/DataLayer.hpp"
 #include <sstream>
 #include <algorithm>
 #include <cctype>
 
 namespace tce {
+
+// 状态效果 ID 列表，供 player_status / monster_status 等命令补全
+static const char* const STATUS_IDS[] = {
+    "weak", "vulnerable", "strength", "poison", "draw_up", "energy_up", "block_up",
+    "metallicize", "dexterity", "artifact", "focus", "strength_down", "frail",
+    "slow", "track_lock", "daze", "void"
+};
+static const size_t STATUS_IDS_COUNT = sizeof(STATUS_IDS) / sizeof(STATUS_IDS[0]);
 
 CheatEngine::CheatEngine(BattleEngine* engine, CardSystem* card_system)
     : engine_(engine), card_system_(card_system) {}
@@ -145,6 +154,60 @@ int CheatEngine::execute_line(const std::string& line) {
         return 1;
     }
     return 0;
+}
+
+std::vector<std::string> CheatEngine::get_completion_candidates(const std::string& command, int arg_index, const std::string& prefix) const {
+    std::vector<std::string> out;
+    if (prefix.empty()) return out;
+
+    if (arg_index == 1) {
+        if (command == "add_hand" || command == "remove_hand") {
+            for (const CardId& id : get_all_card_ids()) {
+                if (id.size() >= prefix.size() && id.compare(0, prefix.size(), prefix) == 0)
+                    out.push_back(id);
+            }
+            return out;
+        }
+        if (command == "player_status" || command == "player_status_remove") {
+            for (size_t i = 0; i < STATUS_IDS_COUNT; ++i) {
+                std::string s(STATUS_IDS[i]);
+                if (s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0)
+                    out.push_back(s);
+            }
+            return out;
+        }
+    }
+    if (arg_index == 2 && (command == "monster_status" || command == "monster_status_remove")) {
+        for (size_t i = 0; i < STATUS_IDS_COUNT; ++i) {
+            std::string s(STATUS_IDS[i]);
+            if (s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0)
+                out.push_back(s);
+        }
+        return out;
+    }
+    return out;
+}
+
+std::string CheatEngine::get_command_usage(const std::string& command) const {
+    if (command == "player_hp") return "player_hp <value>";
+    if (command == "player_max_hp") return "player_max_hp <value>";
+    if (command == "player_block") return "player_block <value>";
+    if (command == "player_energy") return "player_energy <value>";
+    if (command == "player_gold") return "player_gold <value>";
+    if (command == "player_status") return "player_status <status_id> <stacks> <duration>";
+    if (command == "player_status_remove") return "player_status_remove <status_id>";
+    if (command == "monster_hp") return "monster_hp <index> <hp>";
+    if (command == "monster_max_hp") return "monster_max_hp <index> <hp>";
+    if (command == "monster_status") return "monster_status <index> <status_id> <stacks> <duration>";
+    if (command == "monster_status_remove") return "monster_status_remove <index> <status_id>";
+    if (command == "monster_kill") return "monster_kill <index>";
+    if (command == "add_relic") return "add_relic <relic_id>";
+    if (command == "remove_relic") return "remove_relic <relic_id>";
+    if (command == "add_potion") return "add_potion <potion_id>";
+    if (command == "remove_potion") return "remove_potion <slot>";
+    if (command == "add_hand") return "add_hand <card_id>";
+    if (command == "remove_hand") return "remove_hand <card_id>";
+    return "";
 }
 
 } // namespace tce

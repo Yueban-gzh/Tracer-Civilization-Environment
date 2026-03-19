@@ -4,8 +4,20 @@
 #include "../../include/Cheat/CheatPanel.hpp"
 #include "../../include/Cheat/CheatEngine.hpp"
 #include <SFML/Window/Keyboard.hpp>
+#include <algorithm>
+#include <sstream>
+#include <vector>
 
 namespace tce {
+
+// 与 CheatEngine::execute_line 中的命令一致，用于 Tab 补全
+static const char* const CHEAT_COMMANDS[] = {
+    "player_hp", "player_max_hp", "player_block", "player_energy", "player_gold",
+    "player_status", "player_status_remove",
+    "monster_hp", "monster_max_hp", "monster_status", "monster_status_remove", "monster_kill",
+    "add_relic", "remove_relic", "add_potion", "remove_potion", "add_hand", "remove_hand"
+};
+static const size_t CHEAT_COMMANDS_COUNT = sizeof(CHEAT_COMMANDS) / sizeof(CHEAT_COMMANDS[0]);
 
 CheatPanel::CheatPanel(CheatEngine* cheat, unsigned windowWidth, unsigned windowHeight)
     : cheat_(cheat), width_(windowWidth), height_(windowHeight) {}
@@ -15,6 +27,123 @@ bool CheatPanel::loadFont(const std::string& path) {
     return fontLoaded_;
 }
 
+// 按空格拆分为词，并返回最后一个词的起始下标
+static void tokenizeAndLastWordStart(const std::string& in, std::vector<std::string>& words, size_t& lastWordStart) {
+    words.clear();
+    lastWordStart = 0;
+    size_t i = 0;
+    while (i < in.size()) {
+        while (i < in.size() && in[i] == ' ') ++i;
+        if (i >= in.size()) break;
+        size_t start = i;
+        while (i < in.size() && in[i] != ' ') ++i;
+        words.push_back(in.substr(start, i - start));
+        lastWordStart = start;
+    }
+}
+
+// 判断是否为完整命令名（与 CHEAT_COMMANDS 完全匹配）
+static bool isFullCommand(const std::string& cmd) {
+    for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c)
+        if (cmd == CHEAT_COMMANDS[c]) return true;
+    return false;
+}
+
+void CheatPanel::completeInput() {
+    std::string in = inputText_;
+    std::vector<std::string> words;
+    size_t lastWordStart = 0;
+    tokenizeAndLastWordStart(in, words, lastWordStart);
+
+    if (words.empty()) return;
+
+    std::string prefix = words.front();
+    size_t firstWordStart = in.find_first_not_of(' ');
+    if (firstWordStart == std::string::npos) firstWordStart = 0;
+    size_t firstWordEnd = firstWordStart + prefix.size();
+    std::string restAfterFirst = (firstWordEnd < in.size()) ? in.substr(firstWordEnd) : std::string();
+    while (!restAfterFirst.empty() && restAfterFirst[0] == ' ') restAfterFirst = restAfterFirst.substr(1);
+
+    // 已处于循环补全：当前被补全的词等于上次选中则切换到下一项
+    if (!lastTabMatches_.empty()) {
+        if (lastReplaceStart_ == 0 && prefix == lastTabCurrent_) {
+            lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
+            lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
+            inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+            return;
+        }
+        if (lastReplaceStart_ > 0) {
+            std::string lastWord = in.substr(lastReplaceStart_);
+            if (lastWord == lastTabCurrent_) {
+                lastTabIndex_ = (lastTabIndex_ + 1) % lastTabMatches_.size();
+                lastTabCurrent_ = lastTabMatches_[lastTabIndex_];
+                inputText_ = in.substr(0, lastReplaceStart_) + lastTabCurrent_ + " ";
+                return;
+            }
+        }
+    }
+
+    // 仅一个词：按命令补全
+    if (words.size() == 1) {
+        std::vector<std::string> matches;
+        for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
+            std::string cmd(CHEAT_COMMANDS[c]);
+            if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
+                matches.push_back(cmd);
+        }
+        if (matches.empty()) { lastTabMatches_.clear(); lastTabCurrent_.clear(); return; }
+        if (matches.size() == 1) {
+            inputText_ = matches[0] + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
+            return;
+        }
+        lastTabMatches_ = matches;
+        lastTabIndex_ = 0;
+        lastTabCurrent_ = matches[0];
+        lastReplaceStart_ = 0;
+        inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+        return;
+    }
+
+    // 多词：首词为完整命令时，对最后一个词做参数（卡牌/状态 ID）补全
+    if (!cheat_ || !isFullCommand(words[0])) {
+        // 首词不是完整命令，仍按命令补全首词
+        std::vector<std::string> matches;
+        for (size_t c = 0; c < CHEAT_COMMANDS_COUNT; ++c) {
+            std::string cmd(CHEAT_COMMANDS[c]);
+            if (cmd.size() >= prefix.size() && cmd.compare(0, prefix.size(), prefix) == 0)
+                matches.push_back(cmd);
+        }
+        if (!matches.empty()) {
+            lastTabMatches_ = matches;
+            lastTabIndex_ = 0;
+            lastTabCurrent_ = matches[0];
+            lastReplaceStart_ = 0;
+            inputText_ = lastTabCurrent_ + (restAfterFirst.empty() ? " " : " " + restAfterFirst);
+        }
+        return;
+    }
+
+    int argIndex = static_cast<int>(words.size()) - 1;
+    std::string argPrefix = words.back();
+    std::vector<std::string> idCandidates = cheat_->get_completion_candidates(words[0], argIndex, argPrefix);
+
+    if (idCandidates.empty()) return;
+
+    if (idCandidates.size() == 1) {
+        inputText_ = in.substr(0, lastWordStart) + idCandidates[0] + " ";
+        lastTabMatches_.clear();
+        lastTabCurrent_.clear();
+        return;
+    }
+    lastTabMatches_ = idCandidates;
+    lastTabIndex_ = 0;
+    lastTabCurrent_ = idCandidates[0];
+    lastReplaceStart_ = lastWordStart;
+    inputText_ = in.substr(0, lastWordStart) + idCandidates[0] + " ";
+}
+
 void CheatPanel::executeCurrent() {
     if (!cheat_ || inputText_.empty()) return;
     int r = cheat_->execute_line(inputText_);
@@ -22,7 +151,15 @@ void CheatPanel::executeCurrent() {
         resultText_ = "OK: " + inputText_;
         inputText_.clear();
     } else if (r == 0) {
-        resultText_ = "FAIL: " + inputText_;
+        std::string cmd;
+        std::istringstream iss(inputText_);
+        if (iss >> cmd) {
+            std::string usage = cheat_->get_command_usage(cmd);
+            resultText_ = "FAIL: " + inputText_;
+            if (!usage.empty()) resultText_ += "\nUsage: " + usage;
+        } else {
+            resultText_ = "FAIL: " + inputText_;
+        }
     } else {
         resultText_ = "(skipped)";
     }
@@ -63,12 +200,20 @@ bool CheatPanel::handleEvent(const sf::Event& ev) {
         }
         if (kp->code == sf::Keyboard::Key::Backspace) {
             if (!inputText_.empty()) inputText_.pop_back();
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
+            return true;
+        }
+        if (kp->code == sf::Keyboard::Key::Tab) {
+            completeInput();
             return true;
         }
         // KeyPressed 映射字符（Windows 上 TextEntered 常不触发）
         char c = keyToChar(kp->code, kp->shift);
         if (c != '\0') {
             inputText_ += c;
+            lastTabMatches_.clear();
+            lastTabCurrent_.clear();
             return true;
         }
         return true;  // 其他按键也消费，避免触发游戏操作
@@ -100,7 +245,7 @@ void CheatPanel::draw(sf::RenderWindow& window) {
     bg.setOutlineThickness(2.f);
     window.draw(bg);
 
-    sf::Text label(font_, "Cheat | F2 close | Enter exec", 15);
+    sf::Text label(font_, "Cheat | F2 close | Enter exec | Tab complete", 15);
     label.setFillColor(sf::Color(200, 180, 160));
     label.setPosition(sf::Vector2f(left + pad, top + 4.f));
     window.draw(label);
@@ -117,6 +262,25 @@ void CheatPanel::draw(sf::RenderWindow& window) {
     inputText.setFillColor(sf::Color(255, 240, 220));
     inputText.setPosition(sf::Vector2f(left + pad + 4.f, top + 30.f));
     window.draw(inputText);
+
+    // 光标：在文本末尾绘制竖线，每 0.6s 闪烁（打开面板时已重置时钟）
+    float textOriginX = left + pad + 4.f;
+    float cursorX = textOriginX;
+    float cursorY = top + 28.f;
+    if (!display.empty()) {
+        sf::Vector2f pos = inputText.findCharacterPos(display.size());
+        // SFML 的 findCharacterPos 返回渲染后的全局坐标，直接使用
+        cursorX = pos.x;
+        cursorY = pos.y;
+    }
+    float blink = cursorBlinkClock_.getElapsedTime().asSeconds();
+    bool showCaret = (static_cast<int>(blink / 0.6f) % 2 == 0);
+    if (showCaret) {
+        sf::RectangleShape caret(sf::Vector2f(3.f, 20.f));
+        caret.setPosition(sf::Vector2f(cursorX + 3.f, cursorY));
+        caret.setFillColor(sf::Color(200, 190, 175));
+        window.draw(caret);
+    }
 
     float y = top + 62.f;
     if (!resultText_.empty()) {
