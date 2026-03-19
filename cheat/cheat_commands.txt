@@ -1,0 +1,8 @@
+# 金手指命令参考 - 在 F2 面板中输入并执行
+# 每行一条命令，命令格式见 cheat/README.txt
+
+# 示例（在面板中输入后按 Enter）：
+#   player_hp 80
+#   player_energy 3
+#   add_relic vajra
+#   monster_kill 0

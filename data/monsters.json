@@ -1,5 +1,35 @@
 [
   {
+    "id": "cultist",
+    "name": "邪教徒",
+    "type": "normal",
+    "maxHp": 50
+  },
+  {
+    "id": "red_louse",
+    "name": "红色虱虫",
+    "type": "normal",
+    "maxHp": 12
+  },
+  {
+    "id": "green_louse",
+    "name": "绿色虱虫",
+    "type": "normal",
+    "maxHp": 11
+  },
+  {
+    "id": "fat_gremlin",
+    "name": "胖地精",
+    "type": "normal",
+    "maxHp": 14
+  },
+  {
+    "id": "red_slaver",
+    "name": "红色奴隶主",
+    "type": "normal",
+    "maxHp": 46
+  },
+  {
     "id": "monster_001",
     "name": "残鼎之灵",
     "type": "normal",

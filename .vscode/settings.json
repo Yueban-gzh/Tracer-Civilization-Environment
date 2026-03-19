@@ -1,0 +1,13 @@
+{
+    "code-runner.executorMap": {
+        "cpp": "cd /d \"$workspaceFolder\" && build.bat && build\\Tracer_Civilization_Environment.exe"
+    },
+    "code-runner.executorMapByFileExtension": {
+        ".cpp": "cd /d \"$workspaceFolder\" && build.bat && build\\Tracer_Civilization_Environment.exe",
+        ".hpp": "cd /d \"$workspaceFolder\" && build.bat && build\\Tracer_Civilization_Environment.exe",
+        ".h": "cd /d \"$workspaceFolder\" && build.bat && build\\Tracer_Civilization_Environment.exe"
+    },
+    "code-runner.runInTerminal": true,
+    "code-runner.saveFileBeforeRun": true,
+    "code-runner.fileDirectoryAsCwd": true
+}

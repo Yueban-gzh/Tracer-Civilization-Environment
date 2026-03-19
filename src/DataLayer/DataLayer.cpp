@@ -113,12 +113,32 @@ std::string DataLayerImpl::resolve_data_path(const std::string& base, const std:
     return b + "data/" + filename;
 }
 
+// 尝试多个路径加载 JSON 文件（解决从 x64/Debug 或项目根目录运行时的路径差异）
+static JsonValue try_parse_json_file_multi_path(const std::string& filename) {
+    std::string candidates[] = {
+        "data/" + filename,
+        "./data/" + filename,
+        "../data/" + filename,
+        "../../data/" + filename,
+    };
+    for (const auto& path : candidates) {
+        JsonValue root = parse_json_file(path);
+        if (root.is_array() || root.is_object()) return root;
+    }
+    return JsonValue();
+}
+
 // 将 JSON 数组中的每条记录直接插入 tce::s_cards（唯一存储，供 B/C 与 DataLayer 共用）
 bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
-    std::string path = resolve_data_path(path_or_base_dir, "cards.json");
-    JsonValue root = parse_json_file(path);
+    JsonValue root;
+    if (path_or_base_dir.empty()) {
+        root = try_parse_json_file_multi_path("cards.json");
+    } else {
+        std::string path = resolve_data_path(path_or_base_dir, "cards.json");
+        root = parse_json_file(path);
+    }
     if (!root.is_array()) {
-        log_error("load_cards: file \"" + path + "\" is not a JSON array or failed to parse");
+        log_error("load_cards: data/cards.json not found or not a JSON array (tried data/, ./data/, ../data/, ../../data/)");
         return false;
     }
     tce::s_cards.clear();
@@ -154,10 +174,17 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
 
 // 将怪物表每条记录直接插入 tce::s_monsters（唯一存储，供 B 与 DataLayer 共用）
 bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
-    std::string path = resolve_data_path(path_or_base_dir, "monsters.json");
-    JsonValue root = parse_json_file(path);
+    JsonValue root;
+    std::string path;
+    if (path_or_base_dir.empty()) {
+        root = try_parse_json_file_multi_path("monsters.json");
+        path = "data/monsters.json";
+    } else {
+        path = resolve_data_path(path_or_base_dir, "monsters.json");
+        root = parse_json_file(path);
+    }
     if (!root.is_array()) {
-        log_error("load_monsters: file \"" + path + "\" is not a JSON array or failed to parse");
+        log_error("load_monsters: data/monsters.json not found or not a JSON array");
         return false;
     }
     tce::s_monsters.clear();
@@ -176,6 +203,7 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
         }
         if (const JsonValue* p = v.get_key("name")) md.name = p->as_string();
         if (const JsonValue* p = v.get_key("maxHp")) md.maxHp = p->as_int();
+        if (md.maxHp <= 0) md.maxHp = 10;  // 缺失或无效时默认 10，避免除零
         if (const JsonValue* p = v.get_key("isBoss")) {
             md.type = p->as_bool() ? tce::MonsterType::Boss : tce::MonsterType::Normal;
         } else if (const JsonValue* p = v.get_key("type")) {
@@ -244,6 +272,7 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
         }
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
+        if (const JsonValue* p = v.get_key("image")) e.image = p->as_string();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插

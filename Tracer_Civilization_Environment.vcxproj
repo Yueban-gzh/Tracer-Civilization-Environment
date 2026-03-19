@@ -70,7 +70,7 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <!-- SFML 根目录：默认使用项目下的 SFML-3.0.2；若放在别处可改为绝对路径如 D:\SFML-3.0.2 -->
+    <!-- SFML 根目录：使用从 SFML-3.0.2-prebuilt.zip 解压的完整目录（含 lib 与 bin） -->
     <SFML_DIR>$(ProjectDir)SFML-3.0.2</SFML_DIR>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -121,10 +121,12 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SFML_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>sfml-audio-d.lib;sfml-graphics-d.lib;sfml-window-d.lib;sfml-system-d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)</Command>
+      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)
+xcopy /Y /D /E /I "$(ProjectDir)data\*.*" "$(OutDir)data\" 2&gt;nul || echo data copy skipped
+xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo assets copy skipped</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -143,10 +145,12 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SFML_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>sfml-graphics.lib;sfml-window.lib;sfml-system.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>sfml-audio.lib;sfml-graphics.lib;sfml-window.lib;sfml-system.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)</Command>
+      <Command>xcopy /Y /D "$(SFML_DIR)\bin\*.*" "$(OutDir)\" 2&gt;nul || echo SFML bin copy skipped (check SFML_DIR and bin folder)
+xcopy /Y /D /E /I "$(ProjectDir)data\*.*" "$(OutDir)data\" 2&gt;nul || echo data copy skipped
+xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo assets copy skipped</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -159,9 +163,17 @@
     <ClCompile Include="src\BattleEngine\BattleUI.cpp" />
     <ClCompile Include="src\BattleEngine\BattleUISnapshotAdapter.cpp" />
     <ClCompile Include="src\BattleEngine\MonsterBehaviors.cpp" />
+    <ClCompile Include="src\BattleCoreRefactor\PotionEffects.cpp" />
+    <ClCompile Include="src\BattleCoreRefactor\RelicModifiers.cpp" />
+    <ClCompile Include="src\BattleCoreRefactor\StatusModifiers.cpp" />
+    <ClCompile Include="src\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.cpp" />
     <ClCompile Include="src\Effects\CardEffects.cpp" />
-    <ClCompile Include="src\Effects\StatusEffects.cpp" />
     <ClCompile Include="src\EventEngine\EventEngine.cpp" />
+    <ClCompile Include="src\EventEngine\EventShopRestUI.cpp" />
+    <ClCompile Include="src\Cheat\CheatEngine.cpp" />
+    <ClCompile Include="src\Cheat\CheatPanel.cpp" />
+    <ClCompile Include="src\MapEngine\MapEngine.cpp" />
+    <ClCompile Include="src\MapEngine\MapUI.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
@@ -169,6 +181,16 @@
     <ClInclude Include="include\BattleEngine\BattleUIData.hpp" />
     <ClInclude Include="include\BattleEngine\BattleUISnapshotAdapter.hpp" />
     <ClInclude Include="include\BattleEngine\MonsterBehaviors.hpp" />
+    <ClInclude Include="include\BattleEngine\BattleStateSnapshot.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\BattleEngine.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\BattleState.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\BattleModifier.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\Damage.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\Types.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\PotionEffects.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\RelicModifiers.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\StatusModifiers.hpp" />
+    <ClInclude Include="include\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.hpp" />
     <ClInclude Include="include\CardSystem\CardSystem.hpp" />
     <ClInclude Include="include\CardSystem\DeckViewCollection.hpp" />
     <ClInclude Include="include\Common\Types.hpp" />
@@ -179,6 +201,14 @@
     <ClInclude Include="include\Effects\CardEffects.hpp" />
     <ClInclude Include="include\Effects\StatusEffects.hpp" />
     <ClInclude Include="include\EventEngine\EventEngine.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUIData.hpp" />
+    <ClInclude Include="include\EventEngine\EventShopRestUI.hpp" />
+    <ClInclude Include="include\Cheat\CheatEngine.hpp" />
+    <ClInclude Include="include\Cheat\CheatPanel.hpp" />
+    <ClInclude Include="include\MapEngine\MapEngine.hpp" />
+    <ClInclude Include="include\MapEngine\MapUI.hpp" />
+    <ClInclude Include="include\MapEngine\MapConfig.hpp" />
+    <ClInclude Include="include\Common\NodeTypes.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

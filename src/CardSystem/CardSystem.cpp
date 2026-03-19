@@ -235,7 +235,7 @@ bool CardSystem::upgrade_card_in_deck(InstanceId instance_id) {
     for (auto* pile : {&hand_, &draw_pile_, &discard_pile_}) {
         auto it = std::find_if(pile->begin(), pile->end(), pred);
         if (it != pile->end()) {
-            if (it->id.back() != '+')
+            if (!it->id.empty() && it->id.back() != '+')
                 it->id += "+";
             return true;
         }
@@ -253,6 +253,10 @@ void CardSystem::execute_effect(CardId id, EffectContext& ctx) {
     auto it = effect_registry_.find(id);
     if (it != effect_registry_.end())
         it->second(ctx);
+}
+
+bool CardSystem::has_effect_registered(CardId id) const {
+    return effect_registry_.find(id) != effect_registry_.end();
 }
 
 } // namespace tce
