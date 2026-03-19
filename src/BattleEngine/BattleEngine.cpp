@@ -764,7 +764,7 @@ void BattleEngine::set_monster_status_stacks_impl(int monster_index, StatusId id
  }
  void BattleEngine::cheat_set_player_energy(int e) {
      state_.player.energy = (e < 0) ? 0 : e;
-     if (state_.player.energy > state_.player.maxEnergy) state_.player.energy = state_.player.maxEnergy;
+     // 作弊允许当前能量超过最大（如 10/3），便于测试，与 add_energy_to_player_impl 行为一致
  }
  void BattleEngine::cheat_set_player_gold(int g) {
      state_.player.gold = (g < 0) ? 0 : g;
