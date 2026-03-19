@@ -29,7 +29,6 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
 
  class PlayerConfusionModifier : public IBattleModifier {};         // 混乱：抽牌费用随机（桩）
  class PlayerDexterityDownModifier : public IBattleModifier {};     // 敏捷降低（桩）
- class PlayerFocusDownModifier : public IBattleModifier {};
 
  class PlayerFrailModifier : public IBattleModifier {               // 脆弱：在 X 回合内，从卡牌获得的格挡减少 25%
  public:
@@ -152,29 +151,6 @@ public:
          ctx->from_corpse_explosion = false;
      }
  };
- class MonsterMarkModifier : public IBattleModifier {                 // 点穴：点穴/压力点牌对目标造成 mark 层数伤害
- public:
-     void on_card_played(BattleState& state, CardId card_id, int target_monster_index, CardPlayContext* ctx) override {
-         if (card_id != "点穴" && card_id != "pressure_points") return;  // 仅点穴类牌触发
-         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size()) return;
-         if (!ctx || !ctx->deal_damage_to_monster_ignoring_block) return;
-         int stacks = BattleEngine::get_status_stacks(state.monsters[target_monster_index].statuses, "mark");
-         if (stacks <= 0) return;
-         ctx->deal_damage_to_monster_ignoring_block(target_monster_index, stacks);
-     }
- };
- class MonsterTrackLockModifier : public IBattleModifier {           // 轨道锁定：充能球伤害 ×1.5
- public:
-     void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {
-         if (dmg.source_type != DamagePacket::SourceType::Orb) return;  // 仅充能球
-         int idx = dmg.target_monster_index;
-         if (idx < 0 || static_cast<size_t>(idx) >= state.monsters.size()) return;
-         int stacks = BattleEngine::get_status_stacks(state.monsters[idx].statuses, "track_lock");
-         if (stacks <= 0) return;
-         dmg.modified_amount = dmg.modified_amount * 3 / 2;          // 伤害 ×1.5
-     }
- };
- 
  // ========== 负面 - 通用 ==========
  class StrengthDownModifier : public IBattleModifier {               // 力量降低：伤害 - 层数
  public:
@@ -333,7 +309,7 @@ public:
          static const char* const negative[] = {                     // 杀戮尖塔 wiki：人工制品可阻挡的负面效果
              "weak", "vulnerable", "strength_down", "dexterity_down", "poison", "frail",
              "draw_reduction", "fasting", "confusion", "entangle", "choke", "slow",
-             "shackles", "corpse_explosion", "mark", "track_lock", "wraith_form"
+            "shackles", "corpse_explosion", "wraith_form"
          };
          for (const auto* n : negative) if (id == n) return true;
          return false;
@@ -439,20 +415,6 @@ public:
      }
  };
  class PlayerVigorModifier : public IBattleModifier {};               // 活力（桩）
-
- // 集中：所有充能球的效果增加 X 点（等离子球不受影响）
- // 等离子球只提供能量，不造成伤害，故在伤害修正中无需排除
- class PlayerFocusModifier : public IBattleModifier {
-    public:
-        void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {
-            if (dmg.source_type != DamagePacket::SourceType::Orb) return;  // 仅充能球伤害生效
-            if (dmg.modified_amount <= 0) return;                          // 无伤害则跳过
-            int focus = BattleEngine::get_status_stacks(state.player.statuses, "focus");  // 集中层数
-            if (focus <= 0) return;                                        // 无集中层数则跳过
-            dmg.modified_amount += focus;                                  // 充能球伤害 + 集中层数
-        }
-        // TODO：霜冻球格挡、黑暗球 evoke 等需在充能球结算处读取 focus 并加上
-    };
 
  class PlayerBlockUpModifier : public IBattleModifier {               // 格挡+：回合开始加格挡
  public:
@@ -615,7 +577,6 @@ public:
      out.push_back(std::make_shared<PlayerPoisonModifier>());
      out.push_back(std::make_shared<PlayerConfusionModifier>());
      out.push_back(std::make_shared<PlayerDexterityDownModifier>());
-     out.push_back(std::make_shared<PlayerFocusDownModifier>());
      out.push_back(std::make_shared<PlayerFrailModifier>());
      out.push_back(std::make_shared<PlayerCannotDrawModifier>());
      out.push_back(std::make_shared<PlayerFlexModifier>());
@@ -632,7 +593,6 @@ public:
      out.push_back(std::make_shared<PlayerDrawCardModifier>());
      out.push_back(std::make_shared<PlayerEnergyUpModifier>());
      out.push_back(std::make_shared<PlayerVigorModifier>());
-     out.push_back(std::make_shared<PlayerFocusModifier>());
      out.push_back(std::make_shared<PlayerBlockUpModifier>());
      out.push_back(std::make_shared<PlayerMantraModifier>());
      out.push_back(std::make_shared<PlayerAccuracyModifier>());
@@ -714,8 +674,6 @@ public:
      out.push_back(std::make_shared<MonsterShacklesModifier>());
      out.push_back(std::make_shared<MonsterChokeModifier>());
      out.push_back(std::make_shared<MonsterCorpseExplosionModifier>());
-     out.push_back(std::make_shared<MonsterMarkModifier>());
-     out.push_back(std::make_shared<MonsterTrackLockModifier>());
      out.push_back(std::make_shared<StrengthDownModifier>());
      out.push_back(std::make_shared<WeakModifier>());
      out.push_back(std::make_shared<VulnerableModifier>());

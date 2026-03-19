@@ -70,7 +70,6 @@ namespace tce {
                 {"marble_bag", {L"弹珠袋", L"战斗开始时给所有敌人 1 层易伤"}},
                 {"small_blood_vial", {L"小血瓶", L"战斗开始时回复 2 点生命"}},
                 {"copper_scales", {L"铜制鳞片", L"战斗开始时获得 3 点荆棘"}},
-                {"data_disk", {L"数据磁盘", L"战斗开始时获得 1 点集中"}},
                 {"smooth_stone", {L"意外光滑的石头", L"战斗开始时获得 1 点敏捷"}},
                 {"lantern", {L"灯笼", L"每场战斗第一回合获得 1 点能量"}},
                 {"happy_flower", {L"开心小花", L"每 3 回合获得 1 点能量"}},

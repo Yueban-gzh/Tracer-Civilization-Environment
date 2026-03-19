@@ -77,12 +77,9 @@ static void runMapUITest(sf::RenderWindow& window);
  
     // 初始牌组：包含已实现效果、便于测试的若干卡牌（每种一张基础版 + 一张升级版）
     card_system.init_master_deck({
-        "beam_cell", "beam_cell+", "core_surge", "core_surge+", "turbo", "turbo+",
-        "dodge_and_roll", "dodge_and_roll+", "defragment", "defragment+", "power_through", "power_through+",
-        "auto_shields", "auto_shields+", "rebound", "rebound+", "shiv", "shiv+",
+        "dodge_and_roll", "dodge_and_roll+", "power_through", "power_through+",
+        "shiv", "shiv+",
         "cloak_and_dagger", "cloak_and_dagger+", "blade_dance", "blade_dance+",
-        "double_energy", "double_energy+", "stack", "stack+",
-        "aggregate", "aggregate+",
         "limit_break", "limit_break+",
     });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
@@ -181,7 +178,7 @@ static void runMapUITest(sf::RenderWindow& window);
 
     // 遗物图标：放入 assets/relics/{遗物id}.png 即可显示（药水在顶栏，遗物在左上）
     static const std::vector<std::string> relicIds = {
-        "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle", "data_disk",
+        "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle",
         "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull", "snake_skull",
         "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum", "pen_nib", "toy_ornithopter",
         "preparation_pack", "anchor", "art_of_war", "akabeko", "relic_strength_plus"
@@ -196,7 +193,7 @@ static void runMapUITest(sf::RenderWindow& window);
     static const std::vector<std::string> potionIds = {
         "strength_potion", "block_potion", "energy_potion", "poison_potion", "weak_potion", "fear_potion",
         "explosion_potion", "swift_potion", "blood_potion", "fire_potion",
-        "attack_potion", "dexterity_potion", "focus_potion", "speed_potion", "steroid_potion"
+        "attack_potion", "dexterity_potion", "speed_potion", "steroid_potion"
     };
     auto tryLoadPotion = [&ui](const std::string& pid) {
         auto tryPath = [&](const std::string& base) { return ui.loadPotionTexture(pid, base + pid + ".png"); };

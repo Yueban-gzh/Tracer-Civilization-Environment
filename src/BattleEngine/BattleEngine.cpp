@@ -175,7 +175,7 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
 
  RelicId BattleEngine::grant_reward_relic() {
      static const std::vector<RelicId> relic_pool = {
-         "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle", "data_disk", "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull", "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum", "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
+        "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle", "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull", "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum", "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
      };
      const auto& owned = state_.player.relics;
      std::vector<RelicId> available;

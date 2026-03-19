@@ -96,14 +96,6 @@ public:
     }
 };
 
-class DataDiskRelic : public IBattleModifier {  // 数据磁盘：每场战斗开始时获得 1 点集中（非每回合开始）
-public:
-    void on_battle_start(BattleState& state) override {
-        if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
-        add_or_merge_status(state.player.statuses, "focus", 1, -1);  // 获得 1 层集中，本场战斗内有效
-    }
-};
-
 class SmoothStoneRelic : public IBattleModifier {  // 意外光滑的石头：每场战斗开始时，获得 1 点敏捷
 public:
     void on_battle_start(BattleState& state) override {
@@ -290,8 +282,6 @@ create_relic_modifiers(const std::vector<RelicId>& relics) {
             out.push_back(std::make_shared<CopperScalesRelic>());
         } else if (id == "centennial_puzzle") {
             out.push_back(std::make_shared<CentennialPuzzleRelic>());
-        } else if (id == "data_disk") {
-            out.push_back(std::make_shared<DataDiskRelic>());
         } else if (id == "clockwork_boots") {
             out.push_back(std::make_shared<ClockworkBootsRelic>());
         } else if (id == "happy_flower") {
