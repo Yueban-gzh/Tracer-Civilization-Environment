@@ -177,6 +177,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\Cheat\CheatPanel.cpp" />
     <ClCompile Include="src\MapEngine\MapEngine.cpp" />
     <ClCompile Include="src\MapEngine\MapUI.cpp" />
+    <ClCompile Include="src\GameFlow\GameFlowController.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
@@ -213,6 +214,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\MapEngine\MapUI.hpp" />
     <ClInclude Include="include\MapEngine\MapConfig.hpp" />
     <ClInclude Include="include\Common\NodeTypes.hpp" />
+    <ClInclude Include="include\GameFlow\GameFlowController.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
