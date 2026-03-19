@@ -40,25 +40,25 @@ namespace MapEngine {
         sf::RenderWindow* m_window;
         const MapEngine* m_mapEngine;
 
-        // ½ÚµãÍ¼Æ¬
+        // ï¿½Úµï¿½Í¼Æ¬
         std::unordered_map<NodeType, sf::Texture> m_nodeTextures;
         std::unordered_map<NodeType, bool> m_textureLoaded;
 
-        // Í¼ÀýÍ¼Æ¬
+        // Í¼ï¿½ï¿½Í¼Æ¬
         sf::Texture m_legendTexture;
         sf::Sprite m_legendSprite;
         bool m_legendLoaded;
 
-        // ±³¾°Í¼Æ¬ - Ê¹ÓÃÖ¸ÕëÑÓ³Ù¹¹Ôì
+        // ï¿½ï¿½ï¿½ï¿½Í¼Æ¬ - Ê¹ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½Ó³Ù¹ï¿½ï¿½ï¿½
         sf::Texture m_backgroundTexture;
-        sf::Sprite* m_backgroundSprite;  // ¸ÄÎªÖ¸Õë
+        sf::Sprite* m_backgroundSprite;  // ï¿½ï¿½ÎªÖ¸ï¿½ï¿½
         bool m_backgroundLoaded;
 
-        // ½Úµã°ë¾¶
+        // ï¿½Úµï¿½ë¾¶
         const float NODE_RADIUS = 45.0f;
         const float SELECTED_RADIUS = 54.0f;
 
-        // ÑÕÉ«¶¨Òå
+        // ï¿½ï¿½É«ï¿½ï¿½ï¿½ï¿½
         sf::Color colorEnemy;
         sf::Color colorElite;
         sf::Color colorEvent;
