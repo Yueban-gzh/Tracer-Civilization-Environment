@@ -473,7 +473,6 @@ public:
  class ConfidentVictoryModifier : public IBattleModifier {};         // 自信胜利（桩）
  class NirvanaModifier : public IBattleModifier {};                  // 涅槃（桩）
  class PoisonCloudModifier : public IBattleModifier {};               // 毒云（桩）
- class OmegaModifier : public IBattleModifier {};                    // 欧米茄（桩）
  class PhantomModifier : public IBattleModifier {};                  // 幻影（桩）
  class PenNibModifier : public IBattleModifier {};                   // 笔尖（桩）
  class RicochetModifier : public IBattleModifier {};                 // 弹跳（桩）
@@ -642,7 +641,6 @@ public:
      out.push_back(std::make_shared<ConfidentVictoryModifier>());
      out.push_back(std::make_shared<NirvanaModifier>());
      out.push_back(std::make_shared<PoisonCloudModifier>());
-     out.push_back(std::make_shared<OmegaModifier>());
      out.push_back(std::make_shared<PhantomModifier>());
      out.push_back(std::make_shared<PenNibModifier>());
      out.push_back(std::make_shared<RicochetModifier>());
