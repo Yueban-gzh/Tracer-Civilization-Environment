@@ -72,8 +72,8 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
     int cost = cd ? cd->cost : 0;                                      // 费用
     if (state_.player.energy < cost) return false;                     // 能量不足
 
-    // 攻击牌或需目标的牌：必须提供有效目标
-    const bool needs_target = (cd && (cd->cardType == CardType::Attack || cd->requiresTarget));
+    // 仅当 requiresTarget 为 true 时需选目标（群伤牌为 false，不需选目标）
+    const bool needs_target = (cd && cd->requiresTarget);
     if (needs_target) {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state_.monsters.size())
             return false;
@@ -408,7 +408,7 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
      };
  
      modifiers_.on_turn_start_player(state_, &ctx);                      // 广播：玩家回合开始（中毒扣血、抽牌修改等）
-     state_.player.energy = energy;                                    // 应用能量（modifier 可能已修改）
+     state_.player.energy = energy;                                    // 应用能量（modifier 可能已修改，如 4/3）
      if (draw_count < 0) draw_count = 0;                                // 抽牌数不低于 0
      if (card_system_) card_system_->draw_cards(draw_count);            // 抽牌
  }
@@ -600,6 +600,9 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  void EffectContext::generate_to_discard_pile(CardId id) {              // 生成卡牌到弃牌堆
      if (engine_) engine_->generate_to_discard_pile_impl(std::move(id));
  }
+ void EffectContext::generate_to_draw_pile(CardId id) {                 // 生成卡牌到抽牌堆
+     if (engine_) engine_->generate_to_draw_pile_impl(std::move(id));
+ }
  void EffectContext::draw_cards(int n) {                                // 抽牌
      if (engine_) engine_->draw_cards_impl(n);
  }
@@ -648,14 +651,15 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  void BattleEngine::generate_to_discard_pile_impl(CardId id) {          // 生成卡牌到弃牌堆
      if (card_system_) card_system_->generate_to_discard_pile(std::move(id));
  }
+ void BattleEngine::generate_to_draw_pile_impl(CardId id) {              // 生成卡牌到抽牌堆
+     if (card_system_) card_system_->generate_to_draw_pile(std::move(id));
+ }
  void BattleEngine::draw_cards_impl(int n) {                            // 抽牌
      if (card_system_) card_system_->draw_cards(n);
  }
- void BattleEngine::add_energy_to_player_impl(int amount) {              // 给玩家加能量
-     if (amount > 0) {
+ void BattleEngine::add_energy_to_player_impl(int amount) {              // 给玩家加能量（如 3/3+2 → 5/3，当前可超过最大，UI 显示当前/最大）
+     if (amount > 0)
          state_.player.energy += amount;
-         if (state_.player.energy > state_.player.maxEnergy) state_.player.energy = state_.player.maxEnergy;  // 不超过上限
-     }
  }
  int BattleEngine::get_status_stacks_on_monster_impl(int monster_index, const StatusId& id) const {  // 怪物某状态层数
      if (monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return 0;
