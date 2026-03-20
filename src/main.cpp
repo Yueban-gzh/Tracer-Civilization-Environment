@@ -2,7 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
-#include "C:\Users\Lenovo\source\repos\MAP-UI\include\MapEngine\MapEngine.hpp"
+#include "../../include/MapEngine/MapEngine.hpp"
 #include "../include/MapEngine/MapUI.hpp"
 #include "../MapConfig.hpp"
 #include <iostream>
