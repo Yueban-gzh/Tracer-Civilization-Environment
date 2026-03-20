@@ -1,8 +1,8 @@
-﻿// src/main.cpp
+// src/main.cpp
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
-#include "../include/MapEngine/MapEngine.hpp"
+#include "C:\Users\Lenovo\source\repos\MAP-UI\include\MapEngine\MapEngine.hpp"
 #include "../include/MapEngine/MapUI.hpp"
 #include "../MapConfig.hpp"
 #include <iostream>
@@ -61,15 +61,12 @@ int main() {
 
     // 创建UI
     MapEngine::MapUI ui;
-    if (!ui.initialize(&window)) {
-        std::cerr << "UI初始化失败" << std::endl;
-        return -1;
-    }
+    ui.initialize(&window);
 
     // 先加载图例（确保图例正常工作）
     ui.loadLegendTexture("assets/images/menu.png");
-    ui.setLegendPosition(1800.0f, 900.0f);  // 先用明显的位置
-    ui.setLegendScale(1.5f);
+    ui.setLegendPosition(1350.0f, 675.0f);  // 先用明显的位置
+    ui.setLegendScale(1.0f);
 
     // 再加载背景
     ui.loadBackgroundTexture("assets/images/background.png");
