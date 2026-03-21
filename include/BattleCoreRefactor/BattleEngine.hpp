@@ -78,8 +78,10 @@ public:
     int upgrade_all_cards_in_hand();
     /** 升级当前战斗中的全部牌（手/抽/弃/消耗），返回升级张数（如神化）。 */
     int upgrade_all_cards_in_combat();
-    /** 是否存在任意存活怪物，其当前意图为攻击（用于 Spot Weakness）。 */
+    /** 是否存在任意存活怪物，其当前意图为攻击。 */
     bool any_monster_intends_attack() const;
+    /** 当前出牌目标（target_monster_index）是否为存活怪物且意图为攻击（用于看破弱点）。 */
+    bool target_monster_intends_attack() const;
     /** 获得一瓶随机药水（药水槽已满时返回空串）。 */
     PotionId grant_random_potion();
 
@@ -192,6 +194,8 @@ public:
     int upgrade_all_cards_in_hand_impl();
     int upgrade_all_cards_in_combat_impl();
     bool any_monster_intends_attack_impl() const;
+    /** 指定下标的存活怪物当前意图是否为攻击。 */
+    bool monster_intends_attack_impl(int monster_index) const;
 public:
     /** 为下一次卡牌效果注入“手牌选择结果”（实例 id 队列，按顺序消费）。 */
     void set_effect_selected_instance_ids(const std::vector<InstanceId>& ids);

@@ -554,9 +554,10 @@ void effect_second_wind(EffectContext& ctx, bool is_upgraded) {
     ctx.add_block_to_player(block);
 }
 
-// 看破弱点：若有任意存活怪物意图攻击，则获得 3/4 点力量
+// 看破弱点：选择一名敌人；若该敌人意图攻击，则获得 3/4 点力量
 void effect_spot_weakness(EffectContext& ctx, bool is_upgraded) {
-    if (!ctx.any_monster_intends_attack()) return;
+    if (ctx.target_monster_index < 0) return;
+    if (!ctx.target_monster_intends_attack()) return;
     ctx.apply_status_to_player("strength", is_upgraded ? 4 : 3, -1);
 }
 

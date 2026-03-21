@@ -752,6 +752,9 @@ int EffectContext::upgrade_all_cards_in_combat() {                    // 升级�
 bool EffectContext::any_monster_intends_attack() const {
     return engine_ ? engine_->any_monster_intends_attack_impl() : false;
 }
+bool EffectContext::target_monster_intends_attack() const {
+    return engine_ ? engine_->monster_intends_attack_impl(target_monster_index) : false;
+}
 PotionId EffectContext::grant_random_potion() {
     return engine_ ? engine_->grant_reward_potion() : PotionId{};
 }
@@ -970,6 +973,12 @@ bool BattleEngine::any_monster_intends_attack_impl() const {
         if (m.currentIntent.kind == MonsterIntentKind::Attack) return true;
     }
     return false;
+}
+bool BattleEngine::monster_intends_attack_impl(int monster_index) const {
+    if (monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return false;
+    const auto& m = state_.monsters[static_cast<size_t>(monster_index)];
+    if (m.currentHp <= 0) return false;
+    return m.currentIntent.kind == MonsterIntentKind::Attack;
 }
 void BattleEngine::set_effect_selected_instance_ids(const std::vector<InstanceId>& ids) {
     effect_selected_instance_ids_.clear();
