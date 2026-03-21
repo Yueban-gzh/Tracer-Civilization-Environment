@@ -114,13 +114,28 @@ void CardSystem::init_deck(const std::vector<CardId>& initial_card_ids) {
     hand_.clear();
     discard_pile_.clear();
     exhaust_pile_.clear();
+    std::vector<CardInstance> innate_cards;
+    std::vector<CardInstance> normal_cards;
+    innate_cards.reserve(initial_card_ids.size());
+    normal_cards.reserve(initial_card_ids.size());
     for (const auto& id : initial_card_ids) {
         CardInstance c;
         c.instanceId = ++next_instance_id_;
         c.id         = id;
         c.temporary  = false;
-        draw_pile_.push_back(c);
+        const auto* cd = get_card_by_id_ ? get_card_by_id_(id) : nullptr;
+        if (cd && cd->innate) {
+            innate_cards.push_back(c);
+        } else {
+            normal_cards.push_back(c);
+        }
     }
+    // 固有牌：战斗开始时优先进入手牌；若超过手牌上限，溢出的固有牌放回抽牌堆。
+    for (const auto& c : innate_cards) {
+        if (static_cast<int>(hand_.size()) < hand_limit_) hand_.push_back(c);
+        else draw_pile_.push_back(c);
+    }
+    for (const auto& c : normal_cards) draw_pile_.push_back(c);
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(draw_pile_.begin(), draw_pile_.end(), g);

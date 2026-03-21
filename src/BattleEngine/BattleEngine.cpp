@@ -423,6 +423,12 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  void BattleEngine::handle_player_turn_start() {                        // 玩家回合开始
      int draw_count = state_.player.cardsToDrawPerTurn;                 // 本回合抽牌数
      int energy      = state_.player.maxEnergy;                         // 本回合能量
+    if (state_.turnNumber == 1 && card_system_) {
+        // 首回合：固有牌已在 init_deck 预放入手牌，首回合抽牌需要扣除这些已在手的牌。
+        int already_in_hand = static_cast<int>(card_system_->get_hand().size());
+        draw_count -= already_in_hand;
+        if (draw_count < 0) draw_count = 0;
+    }
  
      TurnStartContext ctx{                                              // 回合开始上下文
          draw_count,                                                    // 抽牌数（可被 modifier 修改）
