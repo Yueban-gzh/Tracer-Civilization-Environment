@@ -1,6 +1,6 @@
 // src/MapEngine/MapEngine.cpp
-#include "MapEngine/MapEngine.hpp"
-#include "MapEngine/MapConfig.hpp"
+#include "../../include/MapEngine/MapEngine.hpp" 
+#include "../../include/MapEngine/MapConfig.hpp"
 #include <queue>
 #include <stack>
 #include <set>
@@ -10,7 +10,7 @@
 
 namespace MapEngine {
 
-    // ==== 修改：构造函数初始化所有成员 ====
+    // ==== ????????????????????? ====
     MapEngine::MapEngine()
         : total_layers_(0)
         , m_contentIdGenerator(nullptr)
@@ -51,9 +51,10 @@ namespace MapEngine {
         layers_.clear();
         total_layers_ = layers;
 
-        std::cout << "开始生成地图：" << layers << "层，每层约"<< nodes_per_layer << "个节点" << std::endl;
+        std::cout << "???????" << layers << " ????? "
+            << nodes_per_layer << " ???" << std::endl;
 
-        // 生成所有节点
+        // ??????????
         for (int layer = 0; layer < layers; ++layer) {
             std::random_device rd;
             std::mt19937 gen(rd());
@@ -64,7 +65,7 @@ namespace MapEngine {
                 node_count = 1;
             }
 
-            std::cout << "  第" << layer << "层生成" << node_count << "个节点" << std::endl;
+            std::cout << "  ??" << layer << "??????" << node_count << "?????" << std::endl;
 
             for (int i = 0; i < node_count; ++i) {
                 MapNode node;
@@ -78,14 +79,14 @@ namespace MapEngine {
                     node.type = this->random_node_type(layer, layers);
                 }
 
-                // ==== 修改：使用生成器填充 content_id ====
+                // ==== ???????????????? content_id ====
                 if (m_contentIdGenerator) {
                     node.content_id = m_contentIdGenerator(node.type, layer, i);
                 }
                 else {
                     node.content_id = "content_" + std::to_string(static_cast<int>(node.type)) + "_" + node.id;
                 }
-                // ==== 修改结束 ====
+                // ==== ?????? ====
 
                 node.position.x = 100.0f + i * 200.0f;
                 node.position.y = 100.0f + layer * 100.0f;
@@ -98,12 +99,12 @@ namespace MapEngine {
         this->build_connections();
 
         if (!this->validate_path_exists()) {
-            std::cerr << "错误：起点到Boss不可达，重新生成..." << std::endl;
+            std::cerr << "?????? Boss???????..." << std::endl;
             this->init_map(layers, nodes_per_layer, layer_types);
             return;
         }
 
-        std::cout << "地图生成完成！节点总数：" << nodes_.size() << std::endl;
+        std::cout << "????????????" << nodes_.size() << std::endl;
     }
 
     void MapEngine::init_fixed_map(const MapConfig& config) {
@@ -115,11 +116,11 @@ namespace MapEngine {
 
         total_layers_ = static_cast<int>(layerTypes.size());
 
-        std::cout << "初始化地图: " << config.getName() << std::endl;
-        std::cout << "描述: " << config.getDescription() << std::endl;
-        std::cout << "共 " << total_layers_ << " 层" << std::endl;
+        std::cout << "??????" << config.getName() << std::endl;
+        std::cout << "???" << config.getDescription() << std::endl;
+        std::cout << "???" << total_layers_ << std::endl;
 
-        // 创建节点
+        // ???????
         for (int layer = 0; layer < total_layers_; ++layer) {
             const auto& types = layerTypes[layer];
             const auto& pos = positions[layer];
@@ -130,15 +131,15 @@ namespace MapEngine {
                 node.layer = layer;
                 node.type = static_cast<NodeType>(types[i]);
 
-                // ==== 修改：使用生成器填充 content_id ====
+                // ==== ???????????????? content_id ====
                 if (m_contentIdGenerator) {
                     node.content_id = m_contentIdGenerator(node.type, layer, static_cast<int>(i));
                 }
                 else {
                     node.content_id = "content_" + std::to_string(static_cast<int>(node.type)) + "_" + node.id;
-                    std::cout << "警告：未设置内容ID生成器，使用默认ID: " << node.content_id << std::endl;
+                    std::cout << "???????? ID ???????? ID?" << node.content_id << std::endl;
                 }
-                // ==== 修改结束 ====
+                // ==== ?????? ====
 
                 node.position = pos[i];
                 node.is_visited = false;
@@ -148,15 +149,16 @@ namespace MapEngine {
                 nodes_[node.id] = node;
                 layers_[layer].push_back(node.id);
 
-                std::cout << "  创建节点 " << node.id << " 于位置 ("<< pos[i].x << ", " << pos[i].y << ")" << std::endl;
+                std::cout << "  ???? " << node.id << " ??? ("
+                    << pos[i].x << ", " << pos[i].y << ")" << std::endl;
             }
         }
 
-        // 构建连接
+        // ????????
         auto connections = config.getConnections();
         this->build_fixed_connections(connections);
 
-        std::cout << "地图初始化完成！节点总数：" << nodes_.size() << std::endl;
+        std::cout << "?????????????" << nodes_.size() << std::endl;
     }
 
     void MapEngine::build_fixed_connections(
@@ -165,7 +167,7 @@ namespace MapEngine {
         for (int layer = 0; layer < static_cast<int>(connections.size()); ++layer) {
             const auto& layerConnections = connections[layer];
 
-            std::cout << "处理第 " << layer << " 层到第 " << (layer + 1) << " 层的连接:" << std::endl;
+            std::cout << "??? " << layer << " ??? " << (layer + 1) << " ????" << std::endl;
 
             for (const auto& conn : layerConnections) {
                 int fromIdx = conn.first;
@@ -174,21 +176,21 @@ namespace MapEngine {
                 NodeId fromId = this->generate_node_id(layer, fromIdx);
                 NodeId toId = this->generate_node_id(layer + 1, toIdx);
 
-                // 检查节点是否存在
+                // ???????????
                 if (nodes_.find(fromId) == nodes_.end()) {
-                    std::cerr << "错误: 源节点 " << fromId << " 不存在!" << std::endl;
+                    std::cerr << "??????????" << fromId << std::endl;
                     continue;
                 }
                 if (nodes_.find(toId) == nodes_.end()) {
-                    std::cerr << "错误: 目标节点 " << toId << " 不存在!" << std::endl;
+                    std::cerr << "???????????" << toId << std::endl;
                     continue;
                 }
 
-                // 添加连接
+                // ????????
                 nodes_[fromId].next_nodes.push_back(toId);
                 nodes_[toId].prev_nodes.push_back(fromId);
 
-                std::cout << "  连接: " << fromId << " -> " << toId << std::endl;
+                std::cout << "  ??: " << fromId << " -> " << toId << std::endl;
             }
         }
     }
@@ -234,10 +236,10 @@ namespace MapEngine {
     bool MapEngine::validate_path_exists() {
         if (layers_.empty()) return false;
 
-        // 检查是否有第0层
+        // ?????????0??
         if (layers_.find(0) == layers_.end() || layers_.at(0).empty()) return false;
 
-        // 检查是否有最后一层
+        // ??????????????
         if (layers_.find(total_layers_ - 1) == layers_.end() ||
             layers_.at(total_layers_ - 1).empty()) return false;
 
@@ -467,30 +469,30 @@ namespace MapEngine {
     void MapEngine::set_current_node(const NodeId& node_id) {
         auto it = nodes_.find(node_id);
         if (it != nodes_.end()) {
-            // 先将所有节点的 is_current 设为 false
+            // ?????????? is_current ??? false
             for (auto& pair : nodes_) {
                 pair.second.is_current = false;
             }
 
-            // 设置新的当前节点
+            // ???????????
             it->second.is_current = true;
 
-            // ==== 添加：触发节点进入回调 ====
+            // ==== ????????????????? ====
             if (m_nodeEnterCallback) {
                 m_nodeEnterCallback(it->second);
-                std::cout << "触发节点进入回调: " << node_id << std::endl;
+                std::cout << "?????????" << node_id << std::endl;
             }
-            // ==== 添加结束 ====
+            // ==== ??????? ====
         }
     }
 
     void MapEngine::update_reachable_nodes() {
-        // 先将所有节点的可达性设为 false
+        // ????????????????? false
         for (auto& pair : nodes_) {
             pair.second.is_reachable = false;
         }
 
-        // 找到当前节点
+        // ?????????
         NodeId currentId;
         for (const auto& pair : nodes_) {
             if (pair.second.is_current) {
@@ -501,17 +503,17 @@ namespace MapEngine {
 
         if (currentId.empty()) return;
 
-        // 获取当前节点的下一层节点（直接连接）
+        // ?????????????????????????
         auto& currentNode = nodes_[currentId];
         for (const auto& nextId : currentNode.next_nodes) {
             nodes_[nextId].is_reachable = true;
         }
 
-        // 当前节点本身也是可达的（用于显示）
+        // ????????????????????????
         nodes_[currentId].is_reachable = true;
     }
 
-    // ==== 新增：hasCurrentNode 方法的实现 ====
+    // ==== ??????hasCurrentNode ????????? ====
     bool MapEngine::hasCurrentNode() const {
         for (const auto& pair : nodes_) {
             if (pair.second.is_current) {

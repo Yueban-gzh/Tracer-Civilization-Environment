@@ -96,14 +96,6 @@ public:
     }
 };
 
-class DataDiskRelic : public IBattleModifier {  // 数据磁盘：每场战斗开始时获得 1 点集中（非每回合开始）
-public:
-    void on_battle_start(BattleState& state) override {
-        if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
-        add_or_merge_status(state.player.statuses, "focus", 1, -1);  // 获得 1 层集中，本场战斗内有效
-    }
-};
-
 class SmoothStoneRelic : public IBattleModifier {  // 意外光滑的石头：每场战斗开始时，获得 1 点敏捷
 public:
     void on_battle_start(BattleState& state) override {
@@ -201,7 +193,7 @@ public:
         if (ctx && ctx->is_attack)
             attacked_this_turn_ = true;             // 打出攻击牌，标记本回合已攻击
     }
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
         if (!attacked_this_turn_)
             next_turn_extra_energy_ = true;          // 本回合未打攻击，下回合获得 1 能量
@@ -248,7 +240,7 @@ public:
 
 class OrichalcumRelic : public IBattleModifier {  // 奥利哈钢：回合结束时若没有任何格挡，获得 6 点格挡
 public:
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
         if (state.player.block > 0) return;         // 已有格挡则不触发
         state.player.block += 6;                    // 获得 6 点格挡
@@ -290,8 +282,6 @@ create_relic_modifiers(const std::vector<RelicId>& relics) {
             out.push_back(std::make_shared<CopperScalesRelic>());
         } else if (id == "centennial_puzzle") {
             out.push_back(std::make_shared<CentennialPuzzleRelic>());
-        } else if (id == "data_disk") {
-            out.push_back(std::make_shared<DataDiskRelic>());
         } else if (id == "clockwork_boots") {
             out.push_back(std::make_shared<ClockworkBootsRelic>());
         } else if (id == "happy_flower") {

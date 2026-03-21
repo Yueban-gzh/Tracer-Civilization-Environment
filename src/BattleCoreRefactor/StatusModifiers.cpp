@@ -29,7 +29,6 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
 
  class PlayerConfusionModifier : public IBattleModifier {};         // 混乱：抽牌费用随机（桩）
  class PlayerDexterityDownModifier : public IBattleModifier {};     // 敏捷降低（桩）
- class PlayerFocusDownModifier : public IBattleModifier {};
 
  class PlayerFrailModifier : public IBattleModifier {               // 脆弱：在 X 回合内，从卡牌获得的格挡减少 25%
  public:
@@ -40,7 +39,7 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
      }
  };
  
- class PlayerCannotDrawModifier : public IBattleModifier {};       // 无法抽牌（桩）
+class PlayerCannotDrawModifier : public IBattleModifier {};       // 无法抽牌：由 BattleEngine::draw_cards_impl 统一拦截“额外抽牌”
  class PlayerFlexModifier : public IBattleModifier {};              // 灵活（桩）
  class PlayerDeviationModifier : public IBattleModifier {};         // 偏差（桩）
 
@@ -78,12 +77,12 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
  
  class PlayerCurseModifier : public IBattleModifier {};             // 诅咒（桩）
  class PlayerCannotBlockModifier : public IBattleModifier {};        // 无法格挡（桩）
- class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形态：回合开始敏捷归零
+class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形态：回合结束失去 1 点敏捷
  public:
-     void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
+   void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "wraith_form");
          if (stacks <= 0) return;
-         BattleEngine::reduce_status_stacks(state.player.statuses, "dexterity", stacks);  // 清空敏捷
+        BattleEngine::reduce_status_stacks(state.player.statuses, "dexterity", 1);
      }
  };
  
@@ -152,29 +151,6 @@ public:
          ctx->from_corpse_explosion = false;
      }
  };
- class MonsterMarkModifier : public IBattleModifier {                 // 点穴：点穴/压力点牌对目标造成 mark 层数伤害
- public:
-     void on_card_played(BattleState& state, CardId card_id, int target_monster_index, CardPlayContext* ctx) override {
-         if (card_id != "点穴" && card_id != "pressure_points") return;  // 仅点穴类牌触发
-         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size()) return;
-         if (!ctx || !ctx->deal_damage_to_monster_ignoring_block) return;
-         int stacks = BattleEngine::get_status_stacks(state.monsters[target_monster_index].statuses, "mark");
-         if (stacks <= 0) return;
-         ctx->deal_damage_to_monster_ignoring_block(target_monster_index, stacks);
-     }
- };
- class MonsterTrackLockModifier : public IBattleModifier {           // 轨道锁定：充能球伤害 ×1.5
- public:
-     void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {
-         if (dmg.source_type != DamagePacket::SourceType::Orb) return;  // 仅充能球
-         int idx = dmg.target_monster_index;
-         if (idx < 0 || static_cast<size_t>(idx) >= state.monsters.size()) return;
-         int stacks = BattleEngine::get_status_stacks(state.monsters[idx].statuses, "track_lock");
-         if (stacks <= 0) return;
-         dmg.modified_amount = dmg.modified_amount * 3 / 2;          // 伤害 ×1.5
-     }
- };
- 
  // ========== 负面 - 通用 ==========
  class StrengthDownModifier : public IBattleModifier {               // 力量降低：伤害 - 层数
  public:
@@ -244,7 +220,7 @@ public:
 
  class RegenerateModifier : public IBattleModifier {                   // 再生（玩家）：其回合结束时回复 X 点生命，层数每回合 -1
     public:
-        void on_turn_end_player(BattleState& state) override {
+       void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
             int stacks = BattleEngine::get_status_stacks(state.player.statuses, "regeneration");
             if (stacks <= 0) return;                                      // 无再生层数则跳过
             state.player.currentHp += stacks;                             // 回复生命（层数 = 回复量）
@@ -278,7 +254,7 @@ public:
 
 class StrengthBoostModifier : public IBattleModifier {                 // 力量增益：每回合结束时获得 X 点力量
 public:
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         int stacks = BattleEngine::get_status_stacks(state.player.statuses, "strength_boost");
         if (stacks <= 0) return;
         add_strength_stacks(state.player.statuses, stacks);
@@ -333,7 +309,7 @@ public:
          static const char* const negative[] = {                     // 杀戮尖塔 wiki：人工制品可阻挡的负面效果
              "weak", "vulnerable", "strength_down", "dexterity_down", "poison", "frail",
              "draw_reduction", "fasting", "confusion", "entangle", "choke", "slow",
-             "shackles", "corpse_explosion", "mark", "track_lock", "wraith_form"
+            "shackles", "corpse_explosion", "wraith_form"
          };
          for (const auto* n : negative) if (id == n) return true;
          return false;
@@ -353,17 +329,31 @@ public:
      }
  };
  class BarricadeModifier : public IBattleModifier {};                // 壁垒（桩）
- class IntangibleModifier : public IBattleModifier {};               //  intangible（桩）
+class IntangibleModifier : public IBattleModifier {                // 无实体：受到伤害时最多为 1
+public:
+    void on_monster_deal_damage(DamagePacket& dmg, const BattleState& state) override {  // 怪物打玩家
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "intangible");
+        if (stacks <= 0) return;
+        if (dmg.modified_amount > 1) dmg.modified_amount = 1;
+    }
+    void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {   // 玩家打怪物
+        int idx = dmg.target_monster_index;
+        if (idx < 0 || static_cast<size_t>(idx) >= state.monsters.size()) return;
+        int stacks = BattleEngine::get_status_stacks(state.monsters[static_cast<size_t>(idx)].statuses, "intangible");
+        if (stacks <= 0) return;
+        if (dmg.modified_amount > 1) dmg.modified_amount = 1;
+    }
+};
  class MetallicizeModifier : public IBattleModifier {                // 金属化：玩家回合结束加格挡
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "metallicize");
          if (stacks > 0) state.player.block += stacks;
      }
  };
  class MultiArmorModifier : public IBattleModifier {                 // 多层护甲：回合结束加格挡（玩家+怪物）
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "multi_armor");
          if (stacks > 0) state.player.block += stacks;
      }
@@ -376,7 +366,7 @@ public:
  };
  class RitualModifier : public IBattleModifier {                     // 仪式：回合结束加力量（玩家+怪物）
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "ritual");
          if (stacks <= 0) return;
          add_strength_stacks(state.player.statuses, stacks);
@@ -440,20 +430,6 @@ public:
  };
  class PlayerVigorModifier : public IBattleModifier {};               // 活力（桩）
 
- // 集中：所有充能球的效果增加 X 点（等离子球不受影响）
- // 等离子球只提供能量，不造成伤害，故在伤害修正中无需排除
- class PlayerFocusModifier : public IBattleModifier {
-    public:
-        void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {
-            if (dmg.source_type != DamagePacket::SourceType::Orb) return;  // 仅充能球伤害生效
-            if (dmg.modified_amount <= 0) return;                          // 无伤害则跳过
-            int focus = BattleEngine::get_status_stacks(state.player.statuses, "focus");  // 集中层数
-            if (focus <= 0) return;                                        // 无集中层数则跳过
-            dmg.modified_amount += focus;                                  // 充能球伤害 + 集中层数
-        }
-        // TODO：霜冻球格挡、黑暗球 evoke 等需在充能球结算处读取 focus 并加上
-    };
-
  class PlayerBlockUpModifier : public IBattleModifier {               // 格挡+：回合开始加格挡
  public:
      void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
@@ -466,7 +442,14 @@ public:
  class PlayerMantraModifier : public IBattleModifier {};              // 真言（桩）
  class PlayerAccuracyModifier : public IBattleModifier {};           // 精准（桩）
  class PlayerAmplifyModifier : public IBattleModifier {};             // 增幅（桩）
- class PlayerAfterimageModifier : public IBattleModifier {};         // 残像（桩）
+class PlayerAfterimageModifier : public IBattleModifier {           // 残像：每打出一张牌获得 1 点格挡/层
+public:
+    void on_card_played(BattleState& state, CardId /*card_id*/, int /*target_monster_index*/, CardPlayContext* /*ctx*/) override {
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "after_image");
+        if (stacks <= 0) return;
+        state.player.block += stacks;
+    }
+};
  class PlayerBattleHymnModifier : public IBattleModifier {};          // 战歌（桩）
  class PlayerBlasphemyModifier : public IBattleModifier {};          // 渎神（桩）
  class PlayerShadowModifier : public IBattleModifier {};              // 暗影（桩）
@@ -494,7 +477,19 @@ public:
  class ElectrodynamicsModifier : public IBattleModifier {};          // 电动力学（桩）
  class FeelNoPainModifier : public IBattleModifier {};               // 无痛（桩）
  class EvolveModifier : public IBattleModifier {};                   // 进化（桩）
- class FlameBarrierModifier : public IBattleModifier {};              // 火焰屏障（桩）
+class FlameBarrierModifier : public IBattleModifier {                // 火焰屏障：玩家被攻击时对攻击者造成层数反伤
+public:
+    void on_damage_applied(const DamagePacket& dmg, BattleState& state, DamageAppliedContext* ctx) override {
+        if (!ctx || !ctx->damage_to_player || !ctx->deal_damage_to_monster_ignoring_block) return;
+        if (!dmg.from_attack) return;
+        if (dmg.source_type != DamagePacket::SourceType::Monster) return;
+        if (dmg.source_monster_index < 0 || dmg.source_monster_index >= static_cast<int>(state.monsters.size())) return;
+        if (state.monsters[static_cast<size_t>(dmg.source_monster_index)].currentHp <= 0) return;
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "flame_barrier");
+        if (stacks <= 0) return;
+        ctx->deal_damage_to_monster_ignoring_block(dmg.source_monster_index, stacks);
+    }
+};
  class HeatSinkModifier : public IBattleModifier {};                 // 散热片（桩）
  class FreeAttackModifier : public IBattleModifier {};               // 免费攻击（桩）
  class FireBreathModifier : public IBattleModifier {};                // 火焰吐息（桩）
@@ -510,8 +505,26 @@ public:
  class MachineLearningModifier : public IBattleModifier {};         // 机器学习（桩）
  class ConfidentVictoryModifier : public IBattleModifier {};         // 自信胜利（桩）
  class NirvanaModifier : public IBattleModifier {};                  // 涅槃（桩）
- class PoisonCloudModifier : public IBattleModifier {};               // 毒云（桩）
- class OmegaModifier : public IBattleModifier {};                    // 欧米茄（桩）
+class PoisonCloudModifier : public IBattleModifier {                 // 毒雾：玩家回合开始时，对所有敌人施加中毒
+public:
+    void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "poison_cloud");
+        if (stacks <= 0) return;
+        for (auto& m : state.monsters) {
+            if (m.currentHp <= 0) continue;
+            bool merged = false;
+            for (auto& s : m.statuses) {
+                if (s.id == "poison") {
+                    s.stacks += stacks;
+                    if (s.duration < stacks) s.duration = stacks;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) m.statuses.push_back(StatusInstance{"poison", stacks, stacks});
+        }
+    }
+};
  class PhantomModifier : public IBattleModifier {};                  // 幻影（桩）
  class PenNibModifier : public IBattleModifier {};                   // 笔尖（桩）
  class RicochetModifier : public IBattleModifier {};                 // 弹跳（桩）
@@ -542,7 +555,23 @@ public:
  class StaticDischargeModifier : public IBattleModifier {};         // 静电释放（桩）
  class CrueltyModifier : public IBattleModifier {};                  // 残忍（桩）
  class StudyModifier : public IBattleModifier {};                    // 学习（桩）
- class BombModifier : public IBattleModifier {};                     // 炸弹（桩）
+class BombModifier : public IBattleModifier {                      // 炸弹：玩家回合结束时，倒计时到 1 则对全体造成 X 伤害
+public:
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* ctx) override {
+        if (!ctx || !ctx->deal_damage_to_monster_ignoring_block) return;
+        int bomb_damage = 0;
+        for (const auto& s : state.player.statuses) {
+            if (s.id == "the_bomb" && s.duration == 1) {
+                bomb_damage += s.stacks;
+            }
+        }
+        if (bomb_damage <= 0) return;
+        for (size_t i = 0; i < state.monsters.size(); ++i) {
+            if (state.monsters[i].currentHp <= 0) continue;
+            ctx->deal_damage_to_monster_ignoring_block(static_cast<int>(i), bomb_damage);
+        }
+    }
+};
  class MeleeModifier : public IBattleModifier {};                    // 近战（桩）
  class LingchiModifier : public IBattleModifier {};                  // 凌迟（桩）
  class EssentialToolsModifier : public IBattleModifier {};           // 必备工具（桩）
@@ -568,7 +597,7 @@ public:
             if (s.duration > 0) {                                // 每回合 -1，仅对 duration>0 的生效
                 --s.duration;
                 // 对于虚弱/易伤/脆弱这类「层数 = 持续时间」的减益，层数也同步递减，
-                if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+               if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail" || s.id == "intangible") && s.stacks > 0) {
                     --s.stacks;
                 }
             }
@@ -584,7 +613,7 @@ public:
             for (auto& s : m.statuses) {
                 if (s.duration > 0) {                             // 每回合 -1
                     --s.duration;
-                    if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+                   if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail" || s.id == "intangible") && s.stacks > 0) {
                         --s.stacks;
                     }
                 }
@@ -615,7 +644,6 @@ public:
      out.push_back(std::make_shared<PlayerPoisonModifier>());
      out.push_back(std::make_shared<PlayerConfusionModifier>());
      out.push_back(std::make_shared<PlayerDexterityDownModifier>());
-     out.push_back(std::make_shared<PlayerFocusDownModifier>());
      out.push_back(std::make_shared<PlayerFrailModifier>());
      out.push_back(std::make_shared<PlayerCannotDrawModifier>());
      out.push_back(std::make_shared<PlayerFlexModifier>());
@@ -632,7 +660,6 @@ public:
      out.push_back(std::make_shared<PlayerDrawCardModifier>());
      out.push_back(std::make_shared<PlayerEnergyUpModifier>());
      out.push_back(std::make_shared<PlayerVigorModifier>());
-     out.push_back(std::make_shared<PlayerFocusModifier>());
      out.push_back(std::make_shared<PlayerBlockUpModifier>());
      out.push_back(std::make_shared<PlayerMantraModifier>());
      out.push_back(std::make_shared<PlayerAccuracyModifier>());
@@ -682,7 +709,6 @@ public:
      out.push_back(std::make_shared<ConfidentVictoryModifier>());
      out.push_back(std::make_shared<NirvanaModifier>());
      out.push_back(std::make_shared<PoisonCloudModifier>());
-     out.push_back(std::make_shared<OmegaModifier>());
      out.push_back(std::make_shared<PhantomModifier>());
      out.push_back(std::make_shared<PenNibModifier>());
      out.push_back(std::make_shared<RicochetModifier>());
@@ -714,8 +740,6 @@ public:
      out.push_back(std::make_shared<MonsterShacklesModifier>());
      out.push_back(std::make_shared<MonsterChokeModifier>());
      out.push_back(std::make_shared<MonsterCorpseExplosionModifier>());
-     out.push_back(std::make_shared<MonsterMarkModifier>());
-     out.push_back(std::make_shared<MonsterTrackLockModifier>());
      out.push_back(std::make_shared<StrengthDownModifier>());
      out.push_back(std::make_shared<WeakModifier>());
      out.push_back(std::make_shared<VulnerableModifier>());

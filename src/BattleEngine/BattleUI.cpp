@@ -12,9 +12,22 @@
 #include <cstdio>                                  // std::snprintf
 #include <cstdint>                                 // std::uint8_t
 #include <cstring>                                 // std::strlen
+#include <iostream>                                // 选牌调试输出（控制台）
 #include <string>                                  // std::string
+#include <unordered_set>                           // 抽/弃牌动画 diff
 
 namespace tce {
+
+    /** 当前能量与数据层标记下，该手牌下标是否可「打出」（普通出牌；选牌弃牌/消耗不限） */
+    inline bool hand_index_playable_now(const BattleStateSnapshot& s, int handIdx) {
+        if (handIdx < 0 || static_cast<size_t>(handIdx) >= s.hand.size()) return false;
+        const CardData* cd = get_card_by_id(s.hand[static_cast<size_t>(handIdx)].id);
+        if (!cd) return true;
+        if (cd->unplayable) return false;
+        if (cd->cost == -2) return false;
+        if (cd->cost == -1) return true; // X 费：0 能量也可打出（效果层按支付 0 处理）
+        return s.energy >= cd->cost;
+    }
 
     namespace {                                    // 文件内匿名命名空间：常量与辅助函数，仅本文件可见
         constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72 像素
@@ -70,7 +83,6 @@ namespace tce {
                 {"marble_bag", {L"弹珠袋", L"战斗开始时给所有敌人 1 层易伤"}},
                 {"small_blood_vial", {L"小血瓶", L"战斗开始时回复 2 点生命"}},
                 {"copper_scales", {L"铜制鳞片", L"战斗开始时获得 3 点荆棘"}},
-                {"data_disk", {L"数据磁盘", L"战斗开始时获得 1 点集中"}},
                 {"smooth_stone", {L"意外光滑的石头", L"战斗开始时获得 1 点敏捷"}},
                 {"lantern", {L"灯笼", L"每场战斗第一回合获得 1 点能量"}},
                 {"happy_flower", {L"开心小花", L"每 3 回合获得 1 点能量"}},
@@ -296,13 +308,10 @@ namespace tce {
     }
 
     bool BattleUI::can_pay_selected_card_cost() const {
-        if (!lastSnapshot_) return true;            // 没有快照时不拦截（允许）
+        if (!lastSnapshot_) return true;
         if (selectedHandIndex_ < 0 || static_cast<size_t>(selectedHandIndex_) >= lastSnapshot_->hand.size())
-            return true;                           // 无选中牌时允许
-        const auto& id = lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id;
-        const CardData* cd = get_card_by_id(id);
-        int cost = cd ? cd->cost : 0;
-        return lastSnapshot_->energy >= cost;       // 当前能量是否足够支付该牌费用
+            return true;
+        return hand_index_playable_now(*lastSnapshot_, selectedHandIndex_);
     }
 
     void BattleUI::draw_center_tip(sf::RenderWindow& window) {
@@ -341,6 +350,187 @@ namespace tce {
     }
 
     bool BattleUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
+        // 通用选牌弹窗：优先级高于普通战斗交互
+        if (card_select_active_) {
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left) {
+                    std::cerr << "[BattleUI][card_select] 左键 mouse=(" << mousePos.x << "," << mousePos.y << ") "
+                              << "use_hand=" << (card_select_use_hand_area_ ? 1 : 0) << "\n";
+                    // 先处理「确定」：不可放在手牌命中失败分支之后，否则 handIndex<0 时永远点不到确定
+                    if (card_select_confirm_rect_.contains(mousePos)) {
+                        std::cerr << "[BattleUI][card_select] 区域: 确定按钮 rect=("
+                                  << card_select_confirm_rect_.position.x << "," << card_select_confirm_rect_.position.y << ") size("
+                                  << card_select_confirm_rect_.size.x << "x" << card_select_confirm_rect_.size.y << ") 已选="
+                                  << card_select_selected_indices_.size() << "/" << card_select_required_pick_count_ << "\n";
+                        if (static_cast<int>(card_select_selected_indices_.size()) >= card_select_required_pick_count_) {
+                            pending_card_select_indices_ = card_select_selected_indices_;
+                            pending_card_select_cancelled_ = false;
+                            set_card_select_active(false);
+                            std::cerr << "[BattleUI][card_select] -> 确认提交\n";
+                        } else {
+                            std::cerr << "[BattleUI][card_select] -> 选够张数前确定无效\n";
+                        }
+                        return false;
+                    }
+                    if (card_select_use_hand_area_) {
+                        if (!lastSnapshot_) {
+                            std::cerr << "[BattleUI][card_select] 错误: lastSnapshot_ 为空（本帧 draw 未写入快照）\n";
+                            return false;
+                        }
+                        int handIndex = -1;
+                        int hitVia = -1; // 0=缓存矩形 1=扇形兜底
+                        for (size_t i = 0; i < hand_card_rects_.size() && i < hand_card_rect_indices_.size(); ++i) {
+                            if (!hand_card_rects_[i].contains(mousePos)) continue;
+                            handIndex = hand_card_rect_indices_[i];
+                            hitVia = 0;
+                            break;
+                        }
+                        if (handIndex < 0) {
+                            std::vector<int> vis;
+                            std::vector<sf::Vector2f> centers;
+                            std::vector<float> angTmp;
+                            compute_card_select_hand_fan_(*lastSnapshot_, card_select_selected_indices_, vis, centers, angTmp);
+                            std::cerr << "[BattleUI][card_select] 手牌扇形兜底: 可见张数=" << vis.size()
+                                      << " 缓存矩形数=" << hand_card_rects_.size() << "\n";
+                            for (int j = static_cast<int>(vis.size()) - 1; j >= 0; --j) {
+                                const float cx = centers[static_cast<size_t>(j)].x;
+                                const float cy = centers[static_cast<size_t>(j)].y;
+                                const sf::FloatRect r(sf::Vector2f(cx - CARD_W * 0.5f, cy - CARD_H * 0.5f), sf::Vector2f(CARD_W, CARD_H));
+                                if (r.contains(mousePos)) {
+                                    handIndex = vis[static_cast<size_t>(j)];
+                                    hitVia = 1;
+                                    break;
+                                }
+                            }
+                        } else {
+                            std::cerr << "[BattleUI][card_select] 命中缓存矩形 handIndex=" << handIndex << "\n";
+                        }
+                        if (handIndex < 0 || static_cast<size_t>(handIndex) >= lastSnapshot_->hand.size()) {
+                            std::cerr << "[BattleUI][card_select] 未命中任何手牌区卡片 handIndex=" << handIndex
+                                      << " handSize=" << lastSnapshot_->hand.size() << " hitVia=" << hitVia << "\n";
+                            return false;
+                        }
+                        if (hitVia == 1) {
+                            std::cerr << "[BattleUI][card_select] 扇形兜底命中 handIndex=" << handIndex << "\n";
+                        }
+                        const auto& clicked = lastSnapshot_->hand[static_cast<size_t>(handIndex)];
+                        const auto erasePullAnimForCandidate = [this](int candIdx) {
+                            card_select_pull_anims_.erase(
+                                std::remove_if(card_select_pull_anims_.begin(), card_select_pull_anims_.end(),
+                                               [candIdx](const CardSelectPullAnim& a) { return a.candidateIndex == candIdx; }),
+                                card_select_pull_anims_.end());
+                        };
+                        auto toggleCandidateIndex = [&](int k) {
+                            auto it = std::find(card_select_selected_indices_.begin(), card_select_selected_indices_.end(), k);
+                            if (it != card_select_selected_indices_.end()) {
+                                card_select_selected_indices_.erase(it);
+                                erasePullAnimForCandidate(k);
+                                std::cerr << "[BattleUI][card_select] -> 取消候选 k=" << k
+                                          << " 当前已选数=" << card_select_selected_indices_.size() << "\n";
+                                return;
+                            }
+                            const std::vector<int> selBefore = card_select_selected_indices_;
+                            std::vector<int> vis;
+                            std::vector<sf::Vector2f> centers;
+                            std::vector<float> angTmp;
+                            compute_card_select_hand_fan_(*lastSnapshot_, selBefore, vis, centers, angTmp);
+                            sf::Vector2f startC = mousePos;
+                            for (size_t j = 0; j < vis.size(); ++j) {
+                                if (vis[j] == handIndex) {
+                                    startC = centers[j];
+                                    break;
+                                }
+                            }
+                            const int cap = card_select_required_pick_count_;
+                            // 已达上限：不能再增加张数，点击另一张候选则替换「最后选中的那一项」
+                            if (cap > 0 && static_cast<int>(card_select_selected_indices_.size()) >= cap) {
+                                const int oldLast = card_select_selected_indices_.back();
+                                erasePullAnimForCandidate(oldLast);
+                                card_select_selected_indices_.back() = k;
+                                erasePullAnimForCandidate(k);
+                                CardSelectPullAnim anim;
+                                anim.candidateIndex = k;
+                                anim.startCenter = startC;
+                                anim.targetCenter = startC;
+                                anim.durationSec = 0.22f;
+                                anim.clock.restart();
+                                card_select_pull_anims_.push_back(std::move(anim));
+                                std::cerr << "[BattleUI][card_select] -> 已满(" << cap << ") 替换末选 old=" << oldLast
+                                          << " -> k=" << k << "\n";
+                                return;
+                            }
+                            erasePullAnimForCandidate(k);
+                            CardSelectPullAnim anim;
+                            anim.candidateIndex = k;
+                            anim.startCenter = startC;
+                            anim.targetCenter = startC;
+                            anim.durationSec = 0.22f;
+                            anim.clock.restart();
+                            card_select_pull_anims_.push_back(std::move(anim));
+                            card_select_selected_indices_.push_back(k);
+                            std::cerr << "[BattleUI][card_select] -> 选中候选 k=" << k
+                                      << " 当前已选数=" << card_select_selected_indices_.size() << "\n";
+                        };
+                        // 优先：主流程传入的「手牌下标」与点击下标一致（不依赖快照/牌库 instanceId 同步）
+                        if (!card_select_candidate_hand_indices_.empty() &&
+                            card_select_candidate_hand_indices_.size() == card_select_ids_.size()) {
+                            for (size_t k = 0; k < card_select_candidate_hand_indices_.size(); ++k) {
+                                if (card_select_candidate_hand_indices_[k] != handIndex) continue;
+                                std::cerr << "[BattleUI][card_select] 匹配候选(手牌下标) k=" << k
+                                          << " cardId=" << card_select_ids_[k] << " handIndex=" << handIndex << "\n";
+                                toggleCandidateIndex(static_cast<int>(k));
+                                return false;
+                            }
+                            std::cerr << "[BattleUI][card_select] 点击在手牌上但不在候选内 handIndex=" << handIndex
+                                      << "（可能点在要打出的那张上）\n";
+                            return false;
+                        }
+                        if (!card_select_candidate_instance_ids_.empty() &&
+                            card_select_candidate_instance_ids_.size() == card_select_ids_.size()) {
+                            for (size_t k = 0; k < card_select_candidate_instance_ids_.size(); ++k) {
+                                if (card_select_candidate_instance_ids_[k] != clicked.instanceId) continue;
+                                std::cerr << "[BattleUI][card_select] 匹配候选(instanceId) k=" << k << "\n";
+                                toggleCandidateIndex(static_cast<int>(k));
+                                return false;
+                            }
+                            std::cerr << "[BattleUI][card_select] instanceId 未匹配任何候选\n";
+                            return false;
+                        }
+                        const CardId& clickedId = clicked.id;
+                        for (size_t k = 0; k < card_select_ids_.size(); ++k) {
+                            if (card_select_ids_[k] != clickedId) continue;
+                            std::cerr << "[BattleUI][card_select] 匹配候选(仅 cardId) k=" << k << "\n";
+                            toggleCandidateIndex(static_cast<int>(k));
+                            return false;
+                        }
+                        std::cerr << "[BattleUI][card_select] cardId 未匹配任何候选 clickedId=" << clickedId << "\n";
+                        return false;
+                    }
+                    for (size_t i = 0; i < card_select_rects_.size() && i < card_select_ids_.size(); ++i) {
+                        if (card_select_rects_[i].contains(mousePos)) {
+                            std::cerr << "[BattleUI][card_select] 区域: 弹窗网格槽 i=" << i
+                                      << " rect=(" << card_select_rects_[i].position.x << ","
+                                      << card_select_rects_[i].position.y << ")\n";
+                            auto it = std::find(card_select_selected_indices_.begin(), card_select_selected_indices_.end(), static_cast<int>(i));
+                            if (it != card_select_selected_indices_.end()) {
+                                card_select_selected_indices_.erase(it);
+                            } else {
+                                const int cap = card_select_required_pick_count_;
+                                if (cap > 0 && static_cast<int>(card_select_selected_indices_.size()) >= cap)
+                                    card_select_selected_indices_.back() = static_cast<int>(i);
+                                else
+                                    card_select_selected_indices_.push_back(static_cast<int>(i));
+                            }
+                            return false;
+                        }
+                    }
+                    std::cerr << "[BattleUI][card_select] 未命中确定/手牌/网格任一区域\n";
+                }
+            }
+            return false;
+        }
+
         // 奖励界面：处理卡牌选择、跳过、继续；返回 false 表示事件已消费
         if (reward_screen_active_) {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
@@ -553,8 +743,16 @@ namespace tce {
 
     void BattleUI::set_deck_view_active(bool active) {
         deck_view_active_ = active;
+        if (active) {
+            pile_anim_snapshot_ready_ = false;
+            pile_card_flights_.clear();
+            pile_draw_anim_hiding_.clear();
+            pending_select_ui_pile_fly_remaining_ = 0;
+        }
         if (!active) {
             deck_view_scroll_y_ = 0.f;
+            pile_anim_snapshot_ready_ = false;
+            pending_select_ui_pile_fly_remaining_ = 0;
             return;
         }
         // 默认滚动到第二行可见、并露出第三行一部分（3 行及以上时）
@@ -587,6 +785,10 @@ namespace tce {
 
     void BattleUI::set_reward_screen_active(bool active) {
         reward_screen_active_ = active;
+        pile_anim_snapshot_ready_ = false;
+        pile_card_flights_.clear();
+        pile_draw_anim_hiding_.clear();
+        pending_select_ui_pile_fly_remaining_ = 0;
         if (!active) {
             reward_card_picked_ = false;
             pending_continue_to_next_battle_ = false;
@@ -643,10 +845,335 @@ namespace tce {
         return reward_card_ids_[index];
     }
 
+    void BattleUI::set_card_select_active(bool active) {
+        card_select_active_ = active;
+        if (!active) {
+            card_select_rects_.clear();
+            card_select_selected_indices_.clear();
+            card_select_candidate_hand_indices_.clear();
+            card_select_pull_anims_.clear();
+            card_select_hide_hand_index_ = -1;
+        }
+    }
+
+    void BattleUI::compute_card_select_hand_fan_(const BattleStateSnapshot& s, const std::vector<int>& selected_candidate_indices,
+                                                 std::vector<int>& out_vis_hand_indices,
+                                                 std::vector<sf::Vector2f>& out_centers, std::vector<float>& out_angles) const {
+        out_vis_hand_indices.clear();
+        out_centers.clear();
+        out_angles.clear();
+        const size_t handCount = s.hand.size();
+        for (size_t i = 0; i < handCount; ++i) {
+            const int hi = static_cast<int>(i);
+            // 触发选牌界面的那张牌视作已打出，不参与扇面排布
+            if (card_select_hide_hand_index_ >= 0 && hi == card_select_hide_hand_index_)
+                continue;
+            bool pulled = false;
+            if (!card_select_candidate_hand_indices_.empty() &&
+                card_select_candidate_hand_indices_.size() == card_select_ids_.size()) {
+                for (int si : selected_candidate_indices) {
+                    if (si < 0 || static_cast<size_t>(si) >= card_select_candidate_hand_indices_.size()) continue;
+                    if (card_select_candidate_hand_indices_[static_cast<size_t>(si)] == hi) {
+                        pulled = true;
+                        break;
+                    }
+                }
+            } else if (card_select_candidate_instance_ids_.size() == card_select_ids_.size()) {
+                const InstanceId iid = s.hand[i].instanceId;
+                for (int si : selected_candidate_indices) {
+                    if (si < 0 || static_cast<size_t>(si) >= card_select_candidate_instance_ids_.size()) continue;
+                    if (card_select_candidate_instance_ids_[static_cast<size_t>(si)] == iid) {
+                        pulled = true;
+                        break;
+                    }
+                }
+            }
+            if (!pulled) out_vis_hand_indices.push_back(hi);
+        }
+        const size_t n = out_vis_hand_indices.size();
+        constexpr float DEG2RAD = 3.14159265f / 180.f;
+        const float pivotX = static_cast<float>(width_) * 0.5f;
+        const float pivotY = static_cast<float>(height_) + HAND_PIVOT_Y_BELOW;
+        const float arcTopCenterY = static_cast<float>(height_) - HAND_ARC_TOP_ABOVE_BOTTOM + CARD_H * 0.5f;
+        const float arcRadius = pivotY - arcTopCenterY;
+        float handFanSpanDeg = (n > 1)
+            ? (static_cast<float>(n - 1) * HAND_CARD_DISPLAY_STEP / arcRadius * (180.f / 3.14159265f))
+            : 0.f;
+        if (handFanSpanDeg > HAND_FAN_SPAN_MAX_DEG) handFanSpanDeg = HAND_FAN_SPAN_MAX_DEG;
+        const float angleStepDeg = (n > 1) ? (handFanSpanDeg / static_cast<float>(n - 1)) : 0.f;
+        out_centers.resize(n);
+        out_angles.resize(n);
+        for (size_t j = 0; j < n; ++j) {
+            const float angleDeg = n > 1 ? (static_cast<float>(j) - static_cast<float>(n - 1) * 0.5f) * angleStepDeg : 0.f;
+            const float rad = angleDeg * DEG2RAD;
+            out_centers[j].x = pivotX + arcRadius * std::sin(rad);
+            out_centers[j].y = pivotY - arcRadius * std::cos(rad);
+            out_angles[j] = angleDeg;
+        }
+    }
+
+    void BattleUI::set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel, bool use_hand_area, std::vector<InstanceId> candidate_instance_ids, int required_pick_count, std::vector<int> candidate_hand_indices, int hide_played_hand_index) {
+        card_select_title_ = std::move(title);
+        card_select_ids_ = std::move(card_ids);
+        card_select_candidate_instance_ids_ = std::move(candidate_instance_ids);
+        card_select_candidate_hand_indices_ = std::move(candidate_hand_indices);
+        card_select_allow_cancel_ = allow_cancel;
+        card_select_use_hand_area_ = use_hand_area;
+        card_select_required_pick_count_ = std::max(1, required_pick_count);
+        card_select_hide_hand_index_ = (use_hand_area && hide_played_hand_index >= 0) ? hide_played_hand_index : -1;
+        card_select_rects_.clear();
+        card_select_selected_indices_.clear();
+        card_select_pull_anims_.clear();
+        pending_card_select_indices_.clear();
+        pending_card_select_cancelled_ = false;
+        pending_card_select_index_ = -2;
+        card_select_confirm_pulse_clock_.restart();
+
+        if (use_hand_area) {
+            selectedHandIndex_ = -1;
+            isAimingCard_ = false;
+            selectedCardIsFollowing_ = false;
+        }
+
+        if (!card_select_use_hand_area_) {
+            constexpr float CARD_W = 190.f;
+            constexpr float CARD_H = 280.f;
+            constexpr float GAP = 28.f;
+            const size_t n = card_select_ids_.size();
+            const float totalW = static_cast<float>(n) * CARD_W + (n > 1 ? static_cast<float>(n - 1) * GAP : 0.f);
+            const float startX = (static_cast<float>(width_) - totalW) * 0.5f;
+            const float y = 320.f;
+            for (size_t i = 0; i < n; ++i) {
+                const float x = startX + static_cast<float>(i) * (CARD_W + GAP);
+                card_select_rects_.emplace_back(sf::Vector2f(x, y), sf::Vector2f(CARD_W, CARD_H));
+            }
+            constexpr float BTN_W = 140.f;
+            constexpr float BTN_H = 50.f;
+            card_select_confirm_rect_ = sf::FloatRect(
+                sf::Vector2f(width_ * 0.5f - BTN_W * 0.5f, y + CARD_H + 52.f),
+                sf::Vector2f(BTN_W, BTN_H));
+        } else {
+            constexpr float BTN_W = 140.f;
+            constexpr float BTN_H = 50.f;
+            // 手牌选择模式：确定键上移，整体位于底栏手牌扇区之上（避免与手牌重叠）
+            const float btnCenterX = width_ * 0.5f - BTN_W * 0.5f;
+            const float btnY = static_cast<float>(height_) - 420.f;
+            card_select_confirm_rect_ = sf::FloatRect(
+                sf::Vector2f(btnCenterX, btnY),
+                sf::Vector2f(BTN_W, BTN_H));
+        }
+    }
+
+    bool BattleUI::pollCardSelectPick(int& outCardIndex) {
+        if (pending_card_select_index_ < -1) return false;
+        outCardIndex = pending_card_select_index_;
+        pending_card_select_index_ = -2;
+        return true;
+    }
+
+    bool BattleUI::pollCardSelectResult(std::vector<int>& outCardIndices, bool& outCancelled) {
+        if (!pending_card_select_cancelled_ && pending_card_select_indices_.empty()) return false;
+        outCancelled = pending_card_select_cancelled_;
+        outCardIndices = pending_card_select_indices_;
+        pending_card_select_cancelled_ = false;
+        pending_card_select_indices_.clear();
+        return true;
+    }
+
+    std::string BattleUI::get_card_select_id_at(size_t index) const {
+        if (index >= card_select_ids_.size()) return "";
+        return card_select_ids_[index];
+    }
+
+    void BattleUI::tick_pile_card_anims_() {
+        for (auto it = pile_card_flights_.begin(); it != pile_card_flights_.end();) {
+            const float t = it->clock.getElapsedTime().asSeconds() / it->duration_sec;
+            if (t >= 1.f) {
+                if (it->kind == PileCardFlightAnim::DrawToHand)
+                    pile_draw_anim_hiding_.erase(it->instance_id);
+                it = pile_card_flights_.erase(it);
+            } else
+                ++it;
+        }
+    }
+
+    sf::Vector2f BattleUI::hand_fan_card_center_(size_t hand_index, size_t hand_count) const {
+        if (hand_count == 0) return sf::Vector2f(static_cast<float>(width_) * 0.5f, static_cast<float>(height_) * 0.82f);
+        constexpr float DEG2RAD = 3.14159265f / 180.f;
+        constexpr float HAND_PIVOT_Y_BELOW = 1900.f;
+        constexpr float HAND_ARC_TOP_ABOVE_BOTTOM = 220.f;
+        constexpr float HAND_CARD_DISPLAY_STEP = 145.f;
+        constexpr float HAND_FAN_SPAN_MAX_DEG = 45.f;
+        constexpr float CARD_H_LOC = 300.f;
+        const float pivotX = static_cast<float>(width_) * 0.5f;
+        const float pivotY = static_cast<float>(height_) + HAND_PIVOT_Y_BELOW;
+        const float arcTopCenterY = static_cast<float>(height_) - HAND_ARC_TOP_ABOVE_BOTTOM + CARD_H_LOC * 0.5f;
+        const float arcRadius = pivotY - arcTopCenterY;
+        float handFanSpanDeg = (hand_count > 1)
+            ? (static_cast<float>(hand_count - 1) * HAND_CARD_DISPLAY_STEP / arcRadius * (180.f / 3.14159265f))
+            : 0.f;
+        if (handFanSpanDeg > HAND_FAN_SPAN_MAX_DEG) handFanSpanDeg = HAND_FAN_SPAN_MAX_DEG;
+        const float angleStepDeg = (hand_count > 1) ? (handFanSpanDeg / static_cast<float>(hand_count - 1)) : 0.f;
+        const float angleDeg = hand_count > 1 ? (static_cast<float>(hand_index) - (hand_count - 1) * 0.5f) * angleStepDeg : 0.f;
+        const float rad = angleDeg * DEG2RAD;
+        const float cx = pivotX + arcRadius * std::sin(rad);
+        const float cy = pivotY - arcRadius * std::cos(rad);
+        return sf::Vector2f(cx, cy);
+    }
+
+    void BattleUI::set_pending_select_ui_pile_fly(int discard_or_exhaust_count) {
+        pending_select_ui_pile_fly_remaining_ = std::max(0, discard_or_exhaust_count);
+    }
+
+    sf::Vector2f BattleUI::card_select_preview_center_for_fly_() const {
+        // 与 drawCardSelectScreen 手牌区模式中间预览条一致：SEL_H=300，顶 y=268
+        constexpr float SEL_H = 300.f;
+        constexpr float previewTopY = 268.f;
+        const float cx = static_cast<float>(width_) * 0.5f;
+        const float cy = previewTopY + SEL_H * 0.5f;
+        return sf::Vector2f(cx, cy);
+    }
+
+    void BattleUI::pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const {
+        constexpr float PILE_ICON_W = 52.f;
+        constexpr float PILE_ICON_H = 72.f;
+        constexpr float PILE_CENTER_OFFSET = 36.f;
+        constexpr float SIDE_MARGIN = 24.f;
+        constexpr float BOTTOM_MARGIN = 20.f;
+        const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
+        const float drawPileY = static_cast<float>(height_) - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+        out_draw = sf::Vector2f(drawPileX + PILE_ICON_W * 0.5f, drawPileY + PILE_ICON_H * 0.5f);
+        const float discardX = static_cast<float>(width_) - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;
+        const float discardY = static_cast<float>(height_) - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+        out_discard = sf::Vector2f(discardX + PILE_ICON_W * 0.5f, discardY + PILE_ICON_H * 0.5f);
+        constexpr float exW = PILE_ICON_W - 6.f;
+        constexpr float exH = 48.f;
+        out_exhaust = sf::Vector2f(discardX + 3.f + exW * 0.5f, discardY - 56.f + exH * 0.5f);
+    }
+
+    void BattleUI::detect_pile_card_anims_(const BattleStateSnapshot& s) {
+        if (deck_view_active_) return;
+
+        if (!pile_anim_snapshot_ready_) {
+            prev_hand_for_pile_anim_ = s.hand;
+            prev_discard_sz_for_anim_ = s.discardPileSize;
+            prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
+            pile_anim_snapshot_ready_ = true;
+            return;
+        }
+
+        std::unordered_set<InstanceId> prev_ids;
+        prev_ids.reserve(prev_hand_for_pile_anim_.size() + 4);
+        for (const auto& c : prev_hand_for_pile_anim_) prev_ids.insert(c.instanceId);
+        std::unordered_set<InstanceId> cur_ids;
+        cur_ids.reserve(s.hand.size() + 4);
+        for (const auto& c : s.hand) cur_ids.insert(c.instanceId);
+
+        sf::Vector2f drawC, discardC, exhaustC;
+        pile_pile_screen_centers_(drawC, discardC, exhaustC);
+
+        constexpr size_t kMaxNewAnims = 16;
+
+        // 新入手牌：从抽牌堆飞向扇区目标位
+        for (size_t i = 0; i < s.hand.size() && pile_card_flights_.size() < kMaxNewAnims + 8; ++i) {
+            const auto& c = s.hand[i];
+            if (prev_ids.count(c.instanceId)) continue;
+            PileCardFlightAnim a;
+            a.card_id     = c.id;
+            a.start       = drawC;
+            a.end         = hand_fan_card_center_(i, s.hand.size());
+            a.kind        = PileCardFlightAnim::DrawToHand;
+            a.instance_id = c.instanceId;
+            a.duration_sec = 0.38f;
+            a.use_arc_path = true;
+            a.clock.restart();
+            pile_card_flights_.push_back(std::move(a));
+            pile_draw_anim_hiding_.insert(c.instanceId);
+        }
+
+        std::vector<CardInstance> removed;
+        removed.reserve(8);
+        for (const auto& c : prev_hand_for_pile_anim_) {
+            if (!cur_ids.count(c.instanceId)) removed.push_back(c);
+        }
+
+        int discard_delta = s.discardPileSize - prev_discard_sz_for_anim_;
+        int exhaust_delta = s.exhaustPileSize - prev_exhaust_sz_for_anim_;
+
+        for (const auto& c : removed) {
+            if (pile_card_flights_.size() >= kMaxNewAnims + 8) break;
+            sf::Vector2f start = drawC;
+            auto it = instance_hand_center_cache_.find(c.instanceId);
+            if (it != instance_hand_center_cache_.end()) start = it->second;
+
+            PileCardFlightAnim a;
+            a.card_id     = c.id;
+            a.start       = start;
+            a.instance_id = c.instanceId;
+            a.duration_sec = 0.38f;
+            a.clock.restart();
+            if (exhaust_delta > 0) {
+                a.end = exhaustC;
+                a.kind = PileCardFlightAnim::HandToExhaust;
+                --exhaust_delta;
+            } else if (discard_delta > 0) {
+                a.end = discardC;
+                a.kind = PileCardFlightAnim::HandToDiscard;
+                --discard_delta;
+            } else
+                continue;
+            // 手牌→弃牌/消耗：统一走二次贝塞尔弧线；选牌界面确认时起点改为中央预览区
+            a.use_arc_path = true;
+            if (pending_select_ui_pile_fly_remaining_ > 0) {
+                a.start = card_select_preview_center_for_fly_();
+                a.duration_sec = 0.42f;
+                --pending_select_ui_pile_fly_remaining_;
+            }
+            pile_card_flights_.push_back(std::move(a));
+        }
+
+        prev_hand_for_pile_anim_ = s.hand;
+        prev_discard_sz_for_anim_ = s.discardPileSize;
+        prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
+    }
+
+    void BattleUI::draw_pile_card_anims_(sf::RenderWindow& window) {
+        if (!fontLoaded_ || pile_card_flights_.empty()) return;
+        constexpr float FW = 120.f;
+        constexpr float FH = 185.f;
+        for (const auto& a : pile_card_flights_) {
+            float t = a.clock.getElapsedTime().asSeconds() / a.duration_sec;
+            if (t > 1.f) t = 1.f;
+            const float te = 1.f - (1.f - t) * (1.f - t);
+            sf::Vector2f pos;
+            if (a.use_arc_path) {
+                const sf::Vector2f& p0 = a.start;
+                const sf::Vector2f& p2 = a.end;
+                sf::Vector2f p1 = (p0 + p2) * 0.5f;
+                const float dx = p2.x - p0.x;
+                const float bow = std::min(220.f, std::abs(dx) * 0.45f + 90.f);
+                p1.y -= bow;
+                const float u = 1.f - te;
+                pos = p0 * (u * u) + p1 * (2.f * u * te) + p2 * (te * te);
+            } else {
+                pos = a.start * (1.f - te) + a.end * te;
+            }
+            sf::Color outline(210, 190, 120);
+            if (a.kind == PileCardFlightAnim::HandToDiscard) outline = sf::Color(130, 130, 220);
+            else if (a.kind == PileCardFlightAnim::HandToExhaust) outline = sf::Color(150, 150, 150);
+            drawDetailedCardAt(window, a.card_id, pos.x - FW * 0.5f, pos.y - FH * 0.5f, FW, FH, outline, 3.f);
+        }
+    }
+
     void BattleUI::draw(sf::RenderWindow& window, IBattleUIDataProvider& data) {
         const BattleStateSnapshot& s = data.get_snapshot();  // 从适配器取战斗状态快照
+        // 拷贝到成员：lastSnapshot_ 若指向适配器/调用方栈上的临时引用，事件在下一帧处理时会悬垂，表现为 hand.size()==0
+        snapshotForEvents_ = s;
+        lastSnapshot_      = &snapshotForEvents_;
         if (!fontLoaded_) return;                   // 字体未加载则不绘制（避免崩溃）
-        lastSnapshot_ = &s;                         // 供 handleEvent、can_pay_selected_card_cost 等读取
+
+        tick_pile_card_anims_();
+        detect_pile_card_anims_(snapshotForEvents_);
 
         // 背景图（最底层，铺满窗口）
         int idx = currentBackgroundIndex_;
@@ -683,8 +1210,19 @@ namespace tce {
         if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利标题+金币+遗物/药水+三选一卡牌+跳过/继续
             drawBattleCenter(window, s);             // 底层仍画战场（模糊背景感）
             drawBottomBar(window, s);
+            draw_pile_card_anims_(window);
             drawTopRight(window, s);
             drawRewardScreen(window);
+            draw_center_tip(window);
+            return;
+        }
+
+        if (card_select_active_) {                   // 选牌弹窗：底层战场 + 弹窗
+            drawBattleCenter(window, s);
+            drawBottomBar(window, s);
+            draw_pile_card_anims_(window);
+            drawTopRight(window, s);
+            drawCardSelectScreen(window);
             draw_center_tip(window);
             return;
         }
@@ -701,6 +1239,7 @@ namespace tce {
         window.draw(handBg);
 
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
+        draw_pile_card_anims_(window);
         drawTopRight(window, s);                    // 右上角：地图/牌组/设置按钮、回合数
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
     }
@@ -1061,6 +1600,285 @@ namespace tce {
         }
     }
 
+    void BattleUI::drawDetailedCardAt(sf::RenderWindow& window, const std::string& card_id, float cardX, float cardY, float w, float h,
+                                      const sf::Color& outlineColor, float outlineThickness) {
+        const CardData* cd = get_card_by_id(card_id);
+        char buf[32];
+        const float pad = 4.f;
+        const float innerL = pad;
+        const float innerT = pad;
+        const float innerW = w - pad * 2.f;
+        sf::RectangleShape cardBg(sf::Vector2f(w, h));
+        cardBg.setPosition(sf::Vector2f(cardX, cardY));
+        cardBg.setFillColor(sf::Color(55, 50, 48));
+        cardBg.setOutlineColor(outlineColor);
+        cardBg.setOutlineThickness(outlineThickness);
+        window.draw(cardBg);
+        const float titleY = cardY + innerT + 24.f;
+        const float titleH = 32.f;
+        sf::RectangleShape titleBar(sf::Vector2f(innerW - 16.f, titleH));
+        titleBar.setPosition(sf::Vector2f(cardX + innerL + 8.f, titleY));
+        titleBar.setFillColor(sf::Color(72, 68, 65));
+        titleBar.setOutlineColor(sf::Color(90, 85, 82));
+        titleBar.setOutlineThickness(1.f);
+        window.draw(titleBar);
+        const float artTop = titleY + titleH + 4.f;
+        const float artH = 98.f;
+        sf::ConvexShape artPanel;
+        artPanel.setPointCount(8);
+        artPanel.setPoint(0, sf::Vector2f(cardX + innerL, artTop));
+        artPanel.setPoint(1, sf::Vector2f(cardX + innerL + innerW, artTop));
+        artPanel.setPoint(2, sf::Vector2f(cardX + innerL + innerW, artTop + artH - 12.f));
+        artPanel.setPoint(3, sf::Vector2f(cardX + innerL + innerW * 0.75f, artTop + artH));
+        artPanel.setPoint(4, sf::Vector2f(cardX + innerL + innerW * 0.5f, artTop + artH - 10.f));
+        artPanel.setPoint(5, sf::Vector2f(cardX + innerL + innerW * 0.25f, artTop + artH));
+        artPanel.setPoint(6, sf::Vector2f(cardX + innerL, artTop + artH - 12.f));
+        artPanel.setPoint(7, sf::Vector2f(cardX + innerL, artTop));
+        artPanel.setFillColor(sf::Color(120, 45, 42));
+        artPanel.setOutlineColor(sf::Color(100, 38, 35));
+        artPanel.setOutlineThickness(1.f);
+        window.draw(artPanel);
+        const float typeY = artTop + artH + 6.f;
+        const float typeH = 26.f;
+        sf::RectangleShape typeBar(sf::Vector2f(innerW - 24.f, typeH));
+        typeBar.setPosition(sf::Vector2f(cardX + innerL + 12.f, typeY));
+        typeBar.setFillColor(sf::Color(72, 68, 65));
+        typeBar.setOutlineColor(sf::Color(90, 85, 82));
+        typeBar.setOutlineThickness(1.f);
+        window.draw(typeBar);
+        int cost = cd ? cd->cost : 1;
+        if (cost != -2) {
+            const float costR = 22.f;
+            const float costCx = cardX + innerL + costR - 10.f;
+            const float costCy = cardY + innerT + costR - 10.f;
+            sf::CircleShape costCircle(costR);
+            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
+            costCircle.setFillColor(sf::Color(200, 55, 50));
+            costCircle.setOutlineColor(sf::Color(255, 190, 90));
+            costCircle.setOutlineThickness(2.f);
+            window.draw(costCircle);
+            if (cost == -1) {
+                std::snprintf(buf, sizeof(buf), "X");
+            } else {
+                std::snprintf(buf, sizeof(buf), "%d", cost);
+            }
+            sf::Text costText(font_, buf, 26);
+            costText.setFillColor(sf::Color::White);
+            const sf::FloatRect cb = costText.getLocalBounds();
+            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
+            costText.setPosition(sf::Vector2f(costCx, costCy));
+            window.draw(costText);
+        }
+        sf::String cardName;
+        if (cd && !cd->name.empty())
+            cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
+        else
+            cardName = sf::String(card_id);
+        sf::Text nameText(fontForChinese(), cardName, 20);
+        nameText.setFillColor(sf::Color::White);
+        const sf::FloatRect nb = nameText.getLocalBounds();
+        nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
+        nameText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, titleY + titleH * 0.5f));
+        window.draw(nameText);
+        sf::String typeStr = sf::String(L"?");
+        if (cd) {
+            switch (cd->cardType) {
+            case CardType::Attack: typeStr = sf::String(L"攻击"); break;
+            case CardType::Skill:  typeStr = sf::String(L"技能"); break;
+            case CardType::Power:  typeStr = sf::String(L"能力"); break;
+            case CardType::Status: typeStr = sf::String(L"状态"); break;
+            case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;
+            }
+        }
+        sf::Text typeText(fontForChinese(), typeStr, 16);
+        typeText.setFillColor(sf::Color::White);
+        const sf::FloatRect tb = typeText.getLocalBounds();
+        typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+        typeText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, typeY + typeH * 0.5f));
+        window.draw(typeText);
+        sf::String descStr;
+        if (cd && !cd->description.empty())
+            descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
+        const float descX = cardX + innerL + 12.f;
+        const float descY = typeY + typeH + 14.f;
+        const float descMaxW = innerW - 24.f;
+        const float descMaxH = (cardY + h) - descY - 14.f;
+        draw_wrapped_text(window, fontForChinese(), descStr, 15,
+                          sf::Vector2f(descX, descY), descMaxW, descMaxH,
+                          sf::Color(240, 238, 235));
+    }
+
+    void BattleUI::drawCardSelectScreen(sf::RenderWindow& window) {
+        constexpr float CARD_W = 190.f;
+        constexpr float CARD_H = 280.f;
+        constexpr float BTN_W = 140.f;
+        constexpr float BTN_H = 50.f;
+        constexpr float OVERLAY_TOP = RELICS_ROW_Y + RELICS_ROW_H;
+        const float W = static_cast<float>(width_);
+        const float H = static_cast<float>(height_);
+        // 与 drawBottomBar 手牌扇形一致（勿用本函数内 CARD_H=280 的网格牌尺寸）
+        constexpr float FAN_CARD_W = 190.f;
+        constexpr float FAN_CARD_H = 300.f;
+        const sf::Color dimColor(18, 18, 26, static_cast<std::uint8_t>(card_select_use_hand_area_ ? 178 : 165));
+        auto drawDimRect = [&](float x, float y, float rw, float rh) {
+            if (rw <= 0.f || rh <= 0.f) return;
+            sf::RectangleShape r(sf::Vector2f(rw, rh));
+            r.setPosition(sf::Vector2f(x, y));
+            r.setFillColor(dimColor);
+            window.draw(r);
+        };
+        if (card_select_use_hand_area_ && lastSnapshot_) {
+            std::vector<int> vis;
+            std::vector<sf::Vector2f> centers;
+            std::vector<float> angles;
+            compute_card_select_hand_fan_(*lastSnapshot_, card_select_selected_indices_, vis, centers, angles);
+            if (!vis.empty()) {
+                constexpr float DEG2RAD = 3.14159265f / 180.f;
+                constexpr float pad = 14.f;
+                const float hw = FAN_CARD_W * 0.5f;
+                const float hh = FAN_CARD_H * 0.5f;
+                float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+                for (size_t j = 0; j < vis.size(); ++j) {
+                    const float cx = centers[j].x;
+                    const float cy = centers[j].y;
+                    const float rad = angles[j] * DEG2RAD;
+                    const float c = std::cos(rad), s = std::sin(rad);
+                    const float lx[4] = {-hw, hw, hw, -hw};
+                    const float ly[4] = {-hh, -hh, hh, hh};
+                    for (int k = 0; k < 4; ++k) {
+                        const float wx = cx + lx[k] * c - ly[k] * s;
+                        const float wy = cy + lx[k] * s + ly[k] * c;
+                        minX = std::min(minX, wx);
+                        maxX = std::max(maxX, wx);
+                        minY = std::min(minY, wy);
+                        maxY = std::max(maxY, wy);
+                    }
+                }
+                minX -= pad;
+                maxX += pad;
+                minY -= pad;
+                maxY += pad;
+                minX = std::max(0.f, minX);
+                maxX = std::min(W, maxX);
+                minY = std::max(OVERLAY_TOP, minY);
+                maxY = std::min(H, maxY);
+                if (minX < maxX && minY < maxY) {
+                    if (minY > OVERLAY_TOP + 0.5f)
+                        drawDimRect(0.f, OVERLAY_TOP, W, minY - OVERLAY_TOP);
+                    if (minX > 0.5f)
+                        drawDimRect(0.f, minY, minX, H - minY);
+                    if (maxX < W - 0.5f)
+                        drawDimRect(maxX, minY, W - maxX, H - minY);
+                    if (maxY < H - 0.5f)
+                        drawDimRect(minX, maxY, maxX - minX, H - maxY);
+                } else {
+                    drawDimRect(0.f, OVERLAY_TOP, W, H - OVERLAY_TOP);
+                }
+            } else {
+                drawDimRect(0.f, OVERLAY_TOP, W, H - OVERLAY_TOP);
+            }
+        } else {
+            drawDimRect(0.f, OVERLAY_TOP, W, H - OVERLAY_TOP);
+        }
+
+        sf::Text title(fontForChinese(), sf::String(card_select_title_.empty() ? L"选择一张牌" : card_select_title_), 42);
+        title.setFillColor(sf::Color(255, 230, 170));
+        const sf::FloatRect tb = title.getLocalBounds();
+        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
+        title.setPosition(sf::Vector2f(width_ * 0.5f, 180.f));
+        window.draw(title);
+
+        if (!card_select_use_hand_area_) {
+            for (size_t i = 0; i < card_select_rects_.size() && i < card_select_ids_.size(); ++i) {
+                const auto& r = card_select_rects_[i];
+                sf::RectangleShape cardBg(sf::Vector2f(CARD_W, CARD_H));
+                cardBg.setPosition(sf::Vector2f(r.position));
+                cardBg.setFillColor(sf::Color(55, 50, 48));
+                bool selected = std::find(card_select_selected_indices_.begin(), card_select_selected_indices_.end(), static_cast<int>(i)) != card_select_selected_indices_.end();
+                cardBg.setOutlineColor(selected ? sf::Color(100, 220, 120) : (r.contains(mousePos_) ? sf::Color(230, 200, 120) : sf::Color(180, 50, 45)));
+                cardBg.setOutlineThickness(4.f);
+                window.draw(cardBg);
+
+                const CardData* cd = get_card_by_id(card_select_ids_[i]);
+                sf::String cardName = (cd && !cd->name.empty())
+                    ? sf::String::fromUtf8(cd->name.begin(), cd->name.end())
+                    : sf::String(card_select_ids_[i]);
+                sf::Text nameText(fontForChinese(), cardName, 22);
+                nameText.setFillColor(sf::Color::White);
+                const sf::FloatRect nb = nameText.getLocalBounds();
+                nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, 0.f));
+                nameText.setPosition(sf::Vector2f(r.position.x + CARD_W * 0.5f, r.position.y + 20.f));
+                window.draw(nameText);
+            }
+        } else {
+            // 与手牌/牌组视图同规格；从手牌扇区插值飞到中央，已选牌不再画在底部扇形里
+            constexpr float SEL_W = 190.f;
+            constexpr float SEL_H = 300.f;
+            constexpr float GAP = 22.f;
+            const size_t n = card_select_selected_indices_.size();
+            const float totalW = static_cast<float>(n) * SEL_W + (n > 1 ? static_cast<float>(n - 1) * GAP : 0.f);
+            const float startX = width_ * 0.5f - totalW * 0.5f;
+            const float y = 268.f;
+            for (size_t i = 0; i < n; ++i) {
+                int idx = card_select_selected_indices_[i];
+                if (idx < 0 || static_cast<size_t>(idx) >= card_select_ids_.size()) continue;
+                const CardId& cid = card_select_ids_[static_cast<size_t>(idx)];
+                const float tcx = startX + static_cast<float>(i) * (SEL_W + GAP) + SEL_W * 0.5f;
+                const float tcy = y + SEL_H * 0.5f;
+                sf::Vector2f drawCenter(tcx, tcy);
+                if (!card_select_pull_anims_.empty()) {
+                    for (auto& anim : card_select_pull_anims_) {
+                        if (anim.candidateIndex != idx) continue;
+                        anim.targetCenter = sf::Vector2f(tcx, tcy);
+                        const float t = anim.durationSec > 0.0001f
+                            ? std::min(1.f, anim.clock.getElapsedTime().asSeconds() / anim.durationSec)
+                            : 1.f;
+                        const float te = 1.f - (1.f - t) * (1.f - t);
+                        drawCenter.x = anim.startCenter.x * (1.f - te) + anim.targetCenter.x * te;
+                        drawCenter.y = anim.startCenter.y * (1.f - te) + anim.targetCenter.y * te;
+                        break;
+                    }
+                }
+                drawDetailedCardAt(window, cid, drawCenter.x - SEL_W * 0.5f, drawCenter.y - SEL_H * 0.5f, SEL_W, SEL_H,
+                                   sf::Color(100, 220, 120), 4.f);
+            }
+
+            std::wstring prog = L"已选 " + std::to_wstring(static_cast<int>(n)) + L" / "
+                + std::to_wstring(card_select_required_pick_count_) + L" 张 · 点手牌加入或移回";
+            sf::Text progText(fontForChinese(), sf::String(prog), 22);
+            progText.setFillColor(sf::Color(255, 245, 200));
+            const sf::FloatRect pb = progText.getLocalBounds();
+            progText.setOrigin(sf::Vector2f(pb.position.x + pb.size.x * 0.5f, 0.f));
+            progText.setPosition(sf::Vector2f(width_ * 0.5f, 228.f));
+            window.draw(progText);
+        }
+
+        const bool canConfirm = static_cast<int>(card_select_selected_indices_.size()) >= card_select_required_pick_count_;
+        sf::RectangleShape confirmBtn(sf::Vector2f(BTN_W, BTN_H));
+        confirmBtn.setPosition(sf::Vector2f(card_select_confirm_rect_.position));
+        if (canConfirm && card_select_use_hand_area_) {
+            const float pulse = 0.5f + 0.5f * std::sin(card_select_confirm_pulse_clock_.getElapsedTime().asSeconds() * 7.f);
+            const auto gFill = static_cast<std::uint8_t>(125 + static_cast<int>(55.f * pulse));
+            const auto gLine = static_cast<std::uint8_t>(185 + static_cast<int>(50.f * pulse));
+            confirmBtn.setFillColor(sf::Color(95, gFill, 75));
+            confirmBtn.setOutlineColor(sf::Color(255, gLine, 100));
+            confirmBtn.setOutlineThickness(3.f + 3.f * pulse);
+        } else {
+            confirmBtn.setFillColor(canConfirm ? sf::Color(100, 140, 80) : sf::Color(70, 70, 75));
+            confirmBtn.setOutlineColor(canConfirm ? sf::Color(150, 200, 120) : sf::Color(120, 120, 130));
+            confirmBtn.setOutlineThickness(2.f);
+        }
+        window.draw(confirmBtn);
+        sf::Text confirmText(fontForChinese(), sf::String(L"确定"), 24);
+        confirmText.setFillColor(sf::Color::White);
+        const sf::FloatRect cfb = confirmText.getLocalBounds();
+        confirmText.setOrigin(sf::Vector2f(cfb.position.x + cfb.size.x * 0.5f, cfb.position.y + cfb.size.y * 0.5f));
+        confirmText.setPosition(sf::Vector2f(card_select_confirm_rect_.position.x + BTN_W * 0.5f, card_select_confirm_rect_.position.y + BTN_H * 0.5f));
+        window.draw(confirmText);
+
+        // 选牌流程不支持取消按钮
+    }
+
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         constexpr float DECK_CARD_W = 190.f;           // 牌组界面卡牌宽
@@ -1075,13 +1893,11 @@ namespace tce {
         const float viewTop = TOP_BAR_BG_H;           // 视口顶部（顶栏下沿）
         const float viewBottom = static_cast<float>(height_);  // 视口底部
         const size_t cardCount = deck_view_cards_.size();
-        const int numRows = (cardCount == 0) ? 0 : (static_cast<int>(cardCount) + COLS - 1) / COLS;  // 行数
         constexpr float FIRST_ROW_CENTER_Y = 430.f;  // 第一行牌中心距屏幕顶部 430
         const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;  // 第一行牌顶 280
         const float padTop = firstRowTop - contentTop;  // 内容区顶部留白
         const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;  // 总内容宽度
         const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;  // 水平居中
-        char buf[32];
 
         for (size_t i = 0; i < cardCount; ++i) {
             const int row = static_cast<int>(i) / COLS;
@@ -1090,101 +1906,8 @@ namespace tce {
             const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;  // 减去滚动偏移
             if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;  // 视口外不绘制（裁剪优化）
             const CardInstance& inst = deck_view_cards_[i];
-            const CardData* cd = get_card_by_id(inst.id);
             const float w = DECK_CARD_W, h = DECK_CARD_H;
-            const float pad = 4.f, innerL = pad, innerT = pad, innerW = w - pad * 2.f;
-            sf::RectangleShape cardBg(sf::Vector2f(w, h));
-            cardBg.setPosition(sf::Vector2f(cardX, cardY));
-            cardBg.setFillColor(sf::Color(55, 50, 48));
-            cardBg.setOutlineColor(sf::Color(180, 50, 45));
-            cardBg.setOutlineThickness(8.f);
-            window.draw(cardBg);
-            const float titleY = cardY + innerT + 24.f;
-            const float titleH = 32.f;
-            sf::RectangleShape titleBar(sf::Vector2f(innerW - 16.f, titleH));
-            titleBar.setPosition(sf::Vector2f(cardX + innerL + 8.f, titleY));
-            titleBar.setFillColor(sf::Color(72, 68, 65));
-            titleBar.setOutlineColor(sf::Color(90, 85, 82));
-            titleBar.setOutlineThickness(1.f);
-            window.draw(titleBar);
-            const float artTop = titleY + titleH + 4.f;
-            const float artH = 98.f;
-            sf::ConvexShape artPanel;
-            artPanel.setPointCount(8);
-            artPanel.setPoint(0, sf::Vector2f(cardX + innerL, artTop));
-            artPanel.setPoint(1, sf::Vector2f(cardX + innerL + innerW, artTop));
-            artPanel.setPoint(2, sf::Vector2f(cardX + innerL + innerW, artTop + artH - 12.f));
-            artPanel.setPoint(3, sf::Vector2f(cardX + innerL + innerW * 0.75f, artTop + artH));
-            artPanel.setPoint(4, sf::Vector2f(cardX + innerL + innerW * 0.5f, artTop + artH - 10.f));
-            artPanel.setPoint(5, sf::Vector2f(cardX + innerL + innerW * 0.25f, artTop + artH));
-            artPanel.setPoint(6, sf::Vector2f(cardX + innerL, artTop + artH - 12.f));
-            artPanel.setPoint(7, sf::Vector2f(cardX + innerL, artTop));
-            artPanel.setFillColor(sf::Color(120, 45, 42));
-            artPanel.setOutlineColor(sf::Color(100, 38, 35));
-            artPanel.setOutlineThickness(1.f);
-            window.draw(artPanel);
-            const float typeY = artTop + artH + 6.f;
-            const float typeH = 26.f;
-            sf::RectangleShape typeBar(sf::Vector2f(innerW - 24.f, typeH));
-            typeBar.setPosition(sf::Vector2f(cardX + innerL + 12.f, typeY));
-            typeBar.setFillColor(sf::Color(72, 68, 65));
-            typeBar.setOutlineColor(sf::Color(90, 85, 82));
-            typeBar.setOutlineThickness(1.f);
-            window.draw(typeBar);
-            const float costR = 22.f;
-            const float costCx = cardX + innerL + costR - 10.f;
-            const float costCy = cardY + innerT + costR - 10.f;
-            sf::CircleShape costCircle(costR);
-            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-            costCircle.setFillColor(sf::Color(200, 55, 50));
-            costCircle.setOutlineColor(sf::Color(255, 190, 90));
-            costCircle.setOutlineThickness(2.f);
-            window.draw(costCircle);
-            int cost = cd ? cd->cost : 1;
-            std::snprintf(buf, sizeof(buf), "%d", cost);
-            sf::Text costText(font_, buf, 26);
-            costText.setFillColor(sf::Color::White);
-            const sf::FloatRect cb = costText.getLocalBounds();
-            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-            costText.setPosition(sf::Vector2f(costCx, costCy));
-            window.draw(costText);
-            sf::String cardName;
-            if (cd && !cd->name.empty())
-                cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
-            else
-                cardName = sf::String(inst.id);
-            sf::Text nameText(fontForChinese(), cardName, 20);
-            nameText.setFillColor(sf::Color::White);
-            const sf::FloatRect nb = nameText.getLocalBounds();
-            nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-            nameText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, titleY + titleH * 0.5f));
-            window.draw(nameText);
-            sf::String typeStr = sf::String(L"?");
-            if (cd) {
-                switch (cd->cardType) {
-                case CardType::Attack: typeStr = sf::String(L"攻击"); break;
-                case CardType::Skill:  typeStr = sf::String(L"技能"); break;
-                case CardType::Power:  typeStr = sf::String(L"能力"); break;
-                case CardType::Status: typeStr = sf::String(L"状态"); break;
-                case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;
-                }
-            }
-            sf::Text typeText(fontForChinese(), typeStr, 16);
-            typeText.setFillColor(sf::Color::White);
-            const sf::FloatRect tb = typeText.getLocalBounds();
-            typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-            typeText.setPosition(sf::Vector2f(cardX + innerL + innerW * 0.5f, typeY + typeH * 0.5f));
-            window.draw(typeText);
-            sf::String descStr;
-            if (cd && !cd->description.empty())
-                descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
-            const float descX = cardX + innerL + 12.f;
-            const float descY = typeY + typeH + 14.f;
-            const float descMaxW = innerW - 24.f;
-            const float descMaxH = (cardY + h) - descY - 14.f;
-            draw_wrapped_text(window, fontForChinese(), descStr, 15,
-                              sf::Vector2f(descX, descY), descMaxW, descMaxH,
-                              sf::Color(240, 238, 235));
+            drawDetailedCardAt(window, inst.id, cardX, cardY, w, h, sf::Color(180, 50, 45), 8.f);
         }
 
         const float returnW = 180.f, returnH = 50.f;
@@ -1940,7 +2663,17 @@ namespace tce {
             : 0.f;
         if (handFanSpanDeg > HAND_FAN_SPAN_MAX_DEG) handFanSpanDeg = HAND_FAN_SPAN_MAX_DEG;  // 限制最大弧度
         const float angleStepDeg = (handCount > 1) ? (handFanSpanDeg / static_cast<float>(handCount - 1)) : 0.f;
-        const float angleStepRad = angleStepDeg * DEG2RAD;
+        hand_card_rects_.clear();
+        hand_card_rect_indices_.clear();
+        hand_card_rects_.reserve(handCount);
+        hand_card_rect_indices_.reserve(handCount);
+
+        const bool handSelectReshuffleFan = card_select_active_ && card_select_use_hand_area_;
+        std::vector<int> selectFanVis;
+        std::vector<sf::Vector2f> selectFanCenters;
+        std::vector<float> selectFanAngles;
+        if (handSelectReshuffleFan)
+            compute_card_select_hand_fan_(s, card_select_selected_indices_, selectFanVis, selectFanCenters, selectFanAngles);
 
         auto getCardPos = [&](size_t idx, bool addHoverLift, float& out_cx, float& out_cy, float& out_angleDeg) {
             const float angleDeg = handCount > 1 ? (static_cast<float>(idx) - (handCount - 1) * 0.5f) * angleStepDeg : 0.f;  // 居中分布
@@ -1954,28 +2687,42 @@ namespace tce {
         int hoverIndex = -1;                        // 当前悬停的手牌下标（-1 表示无）
         // 若当前没有选中牌，则根据鼠标位置计算 hover；选中后 hover 不再影响展示
         if (selectedHandIndex_ < 0) {
-            for (int i = static_cast<int>(handCount) - 1; i >= 0; --i) {
-                float cx_i, cy_i, angleDeg;
-                getCardPos(static_cast<size_t>(i), false, cx_i, cy_i, angleDeg);
-                const float cardLeft = cx_i - CARD_W * 0.5f;
-                const float cardTop = cy_i - CARD_H * 0.5f;
-                if (mousePos_.x >= cardLeft && mousePos_.x <= cardLeft + CARD_W && mousePos_.y >= cardTop && mousePos_.y <= cardTop + CARD_H) {
-                    hoverIndex = i;
-                    // 左键点击时开始选中该牌（由 handleEvent 设置 selectedHandIndex_）
-                    break;
+            if (handSelectReshuffleFan) {
+                for (int j = static_cast<int>(selectFanVis.size()) - 1; j >= 0; --j) {
+                    const float cx_i = selectFanCenters[static_cast<size_t>(j)].x;
+                    const float cy_i = selectFanCenters[static_cast<size_t>(j)].y;
+                    const float cardLeft = cx_i - CARD_W * 0.5f;
+                    const float cardTop = cy_i - CARD_H * 0.5f;
+                    if (mousePos_.x >= cardLeft && mousePos_.x <= cardLeft + CARD_W && mousePos_.y >= cardTop && mousePos_.y <= cardTop + CARD_H) {
+                        hoverIndex = selectFanVis[static_cast<size_t>(j)];
+                        break;
+                    }
+                }
+            } else {
+                for (int i = static_cast<int>(handCount) - 1; i >= 0; --i) {
+                    float cx_i, cy_i, angleDeg;
+                    getCardPos(static_cast<size_t>(i), false, cx_i, cy_i, angleDeg);
+                    const float cardLeft = cx_i - CARD_W * 0.5f;
+                    const float cardTop = cy_i - CARD_H * 0.5f;
+                    if (mousePos_.x >= cardLeft && mousePos_.x <= cardLeft + CARD_W && mousePos_.y >= cardTop && mousePos_.y <= cardTop + CARD_H) {
+                        // 普通出牌：不可打出/能量不够的牌不参与悬停，无法选中
+                        if (!card_select_active_ && !hand_index_playable_now(s, i))
+                            continue;
+                        hoverIndex = i;
+                        // 左键点击时开始选中该牌（由 handleEvent 设置 selectedHandIndex_）
+                        break;
+                    }
                 }
             }
             // 若本帧没有显式选中牌且有 hover，按 hover 行为处理
-            if (hoverIndex >= 0 && selectedHandIndex_ < 0 && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
-                // 能量不足时直接在中央弹出提示，不进入瞄准/选牌
-                if (lastSnapshot_) {
-                    const auto& id = s.hand[static_cast<size_t>(hoverIndex)].id;
-                    const CardData* cd = get_card_by_id(id);
-                    int cost = cd ? cd->cost : 0;
-                    if (lastSnapshot_->energy < cost) {
+            if (!card_select_active_ && hoverIndex >= 0 && selectedHandIndex_ < 0 && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
+                if (!hand_index_playable_now(s, hoverIndex)) {
+                    const CardData* cd = get_card_by_id(s.hand[static_cast<size_t>(hoverIndex)].id);
+                    if (cd && (cd->unplayable || cd->cost == -2))
+                        show_center_tip(L"无法打出", 1.2f);
+                    else
                         show_center_tip(L"能量不足", 1.2f);
-                        return;
-                    }
+                    return;
                 }
                 selectedHandIndex_ = hoverIndex;
                 // 选中时即进入“出牌瞄准/选择目标”阶段，根据卡牌类型决定是否需要敌人目标
@@ -1990,9 +2737,15 @@ namespace tce {
             }
         }
 
-        auto drawOneCard = [&](size_t idx, bool isHover, bool isSelected) {
+        auto drawOneCard = [&](size_t idx, bool isHover, bool isSelected, bool useFanOverride, float fanCx, float fanCy, float fanAng) {
             float cx_i, cy_i, angleDeg;
-            getCardPos(idx, isHover, cx_i, cy_i, angleDeg);
+            if (useFanOverride && !isSelected) {
+                cx_i = fanCx;
+                cy_i = fanCy;
+                angleDeg = fanAng;
+            } else {
+                getCardPos(idx, isHover && !isSelected, cx_i, cy_i, angleDeg);
+            }
             float w, h;
             if (isSelected) {
                 // 选中牌：根据是否需要敌人目标决定行为（敌人目标：原位内跟随/离开后固定；自选：始终跟随）
@@ -2030,11 +2783,16 @@ namespace tce {
                 }
                 angleDeg = 0.f;
             }
-            else if (isHover) {                     // 仅悬停：预览大小、下边距底 5
-                w = CARD_PREVIEW_W;
-                h = CARD_PREVIEW_H;
-                angleDeg = 0.f;                     // 预览时旋转归零
-                cy_i = static_cast<float>(height_) - CARD_PREVIEW_BOTTOM_ABOVE - h * 0.5f;
+            else if (isHover) {                     // 仅悬停：预览大小、下边距底 5（手牌区选牌时保留在扇形上，避免误判）
+                if (useFanOverride && !isSelected) {
+                    w = CARD_W;
+                    h = CARD_H;
+                } else {
+                    w = CARD_PREVIEW_W;
+                    h = CARD_PREVIEW_H;
+                    angleDeg = 0.f;                     // 预览时旋转归零
+                    cy_i = static_cast<float>(height_) - CARD_PREVIEW_BOTTOM_ABOVE - h * 0.5f;
+                }
             }
             else {
                 w = CARD_W;
@@ -2099,31 +2857,36 @@ namespace tce {
             typeBar.setOutlineThickness(1.f);
             window.draw(typeBar, states);
 
-            const float costR = 22.f;
-            const float costCx = innerL + costR - 10.f;
-            const float costCy = innerT + costR - 10.f;
-            sf::CircleShape costRing(costR + 4.f);
-            costRing.setPosition(sf::Vector2f(costCx - costR - 4.f, costCy - costR - 4.f));
-            costRing.setFillColor(sf::Color(0, 0, 0, 0));
-            costRing.setOutlineColor(sf::Color(255, 190, 90));
-            costRing.setOutlineThickness(3.f);
-            window.draw(costRing, states);
-            sf::CircleShape costCircle(costR);
-            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-            costCircle.setFillColor(sf::Color(200, 55, 50));
-            costCircle.setOutlineColor(sf::Color(255, 190, 90));
-            costCircle.setOutlineThickness(2.f);
-            window.draw(costCircle, states);
-
             const CardData* cd = get_card_by_id(s.hand[idx].id);
             int cost = cd ? cd->cost : 1;
-            std::snprintf(buf, sizeof(buf), "%d", cost);
-            sf::Text costText(font_, buf, 26);
-            costText.setFillColor(sf::Color::White);
-            const sf::FloatRect cb = costText.getLocalBounds();
-            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-            costText.setPosition(sf::Vector2f(costCx, costCy));
-            window.draw(costText, states);
+            if (cost != -2) {  // -2（状态/诅咒）不显示费用圈
+                const float costR = 22.f;
+                const float costCx = innerL + costR - 10.f;
+                const float costCy = innerT + costR - 10.f;
+                sf::CircleShape costRing(costR + 4.f);
+                costRing.setPosition(sf::Vector2f(costCx - costR - 4.f, costCy - costR - 4.f));
+                costRing.setFillColor(sf::Color(0, 0, 0, 0));
+                costRing.setOutlineColor(sf::Color(255, 190, 90));
+                costRing.setOutlineThickness(3.f);
+                window.draw(costRing, states);
+                sf::CircleShape costCircle(costR);
+                costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
+                costCircle.setFillColor(sf::Color(200, 55, 50));
+                costCircle.setOutlineColor(sf::Color(255, 190, 90));
+                costCircle.setOutlineThickness(2.f);
+                window.draw(costCircle, states);
+                if (cost == -1) {
+                    std::snprintf(buf, sizeof(buf), "X");
+                } else {
+                    std::snprintf(buf, sizeof(buf), "%d", cost);
+                }
+                sf::Text costText(font_, buf, 26);
+                costText.setFillColor(sf::Color::White);
+                const sf::FloatRect cb = costText.getLocalBounds();
+                costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
+                costText.setPosition(sf::Vector2f(costCx, costCy));
+                window.draw(costText, states);
+            }
 
             sf::String cardName;
             if (cd && !cd->name.empty()) {
@@ -2173,20 +2936,77 @@ namespace tce {
             draw_wrapped_text(window, fontForChinese(), descStr, 15,
                               sf::Vector2f(descX, descY), descMaxW, descMaxH,
                               sf::Color(240, 238, 235), states);
+            // 普通战斗：不可打出或能量不足时压暗（选牌弃牌/消耗界面不过滤，不压暗）
+            if (!card_select_active_ && !hand_index_playable_now(s, static_cast<int>(idx))) {
+                sf::RectangleShape dimMask(sf::Vector2f(w, h));
+                dimMask.setFillColor(sf::Color(12, 12, 18, 150));
+                window.draw(dimMask, states);
+            }
             };
 
-        for (size_t i = 0; i < handCount; ++i) {
-            if (static_cast<int>(i) == selectedHandIndex_) continue;  // 选中牌最后单独绘制（置顶）
-            if (hoverIndex >= 0 && static_cast<size_t>(hoverIndex) == i)
-                drawOneCard(i, true, false);
-            else
-                drawOneCard(i, false, false);
+        if (handSelectReshuffleFan) {
+            for (size_t j = 0; j < selectFanVis.size(); ++j) {
+                const int hi = selectFanVis[j];
+                if (pile_draw_anim_hiding_.count(s.hand[static_cast<size_t>(hi)].instanceId)) continue;
+                const float cx_i = selectFanCenters[j].x;
+                const float cy_i = selectFanCenters[j].y;
+                hand_card_rects_.emplace_back(
+                    sf::Vector2f(cx_i - CARD_W * 0.5f, cy_i - CARD_H * 0.5f),
+                    sf::Vector2f(CARD_W, CARD_H));
+                hand_card_rect_indices_.push_back(hi);
+            }
+            for (size_t j = 0; j < selectFanVis.size(); ++j) {
+                const int hi = selectFanVis[j];
+                if (pile_draw_anim_hiding_.count(s.hand[static_cast<size_t>(hi)].instanceId)) continue;
+                if (hi == selectedHandIndex_) continue;
+                const bool isHov = hoverIndex >= 0 && hoverIndex == hi;
+                float cx = selectFanCenters[j].x;
+                float cy = selectFanCenters[j].y;
+                const float ang = selectFanAngles[j];
+                if (isHov) cy -= 28.f;
+                drawOneCard(static_cast<size_t>(hi), isHov, false, true, cx, cy, ang);
+            }
+        } else {
+            for (size_t i = 0; i < handCount; ++i) {
+                if (pile_draw_anim_hiding_.count(s.hand[i].instanceId)) continue;
+                float cx_i, cy_i, angleDeg;
+                getCardPos(i, false, cx_i, cy_i, angleDeg);
+                hand_card_rects_.emplace_back(
+                    sf::Vector2f(cx_i - CARD_W * 0.5f, cy_i - CARD_H * 0.5f),
+                    sf::Vector2f(CARD_W, CARD_H));
+                hand_card_rect_indices_.push_back(static_cast<int>(i));
+                if (static_cast<int>(i) == selectedHandIndex_) continue;  // 选中牌最后单独绘制（置顶）
+                if (hoverIndex >= 0 && static_cast<size_t>(hoverIndex) == i)
+                    drawOneCard(i, true, false, false, 0.f, 0.f, 0.f);
+                else
+                    drawOneCard(i, false, false, false, 0.f, 0.f, 0.f);
+            }
         }
         if (selectedHandIndex_ >= 0 && static_cast<size_t>(selectedHandIndex_) < handCount) {
-            drawOneCard(static_cast<size_t>(selectedHandIndex_), false, true);  // 选中牌最后画，置顶
+            if (!pile_draw_anim_hiding_.count(s.hand[static_cast<size_t>(selectedHandIndex_)].instanceId))
+                drawOneCard(static_cast<size_t>(selectedHandIndex_), false, true, false, 0.f, 0.f, 0.f);  // 选中牌最后画，置顶
         }
-        else if (hoverIndex >= 0) {
-            drawOneCard(static_cast<size_t>(hoverIndex), true, false);
+        else if (hoverIndex >= 0 && !handSelectReshuffleFan) {
+            if (!pile_draw_anim_hiding_.count(s.hand[static_cast<size_t>(hoverIndex)].instanceId))
+                drawOneCard(static_cast<size_t>(hoverIndex), true, false, false, 0.f, 0.f, 0.f);
+        }
+
+        // 供下一帧弃牌/消耗飞牌起点（本帧手牌中心）
+        instance_hand_center_cache_.clear();
+        if (handSelectReshuffleFan) {
+            for (size_t j = 0; j < selectFanVis.size(); ++j) {
+                const int hi = selectFanVis[j];
+                float cx = selectFanCenters[j].x;
+                float cy = selectFanCenters[j].y;
+                if (hoverIndex >= 0 && hoverIndex == hi) cy -= 28.f;
+                instance_hand_center_cache_[s.hand[static_cast<size_t>(hi)].instanceId] = sf::Vector2f(cx, cy);
+            }
+        } else {
+            for (size_t i = 0; i < handCount; ++i) {
+                float cx_i, cy_i, angleDeg;
+                getCardPos(i, hoverIndex >= 0 && static_cast<int>(i) == hoverIndex, cx_i, cy_i, angleDeg);
+                instance_hand_center_cache_[s.hand[i].instanceId] = sf::Vector2f(cx_i, cy_i);
+            }
         }
 
         bool aimingAtMonster = false;               // 鼠标是否在怪物上（决定箭头颜色：红=可攻击，蓝=不可）

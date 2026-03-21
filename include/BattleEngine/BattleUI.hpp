@@ -5,15 +5,15 @@
 #pragma once                                    // 防止头文件重复包含
 
 #include "BattleUIData.hpp"                     // UI 数据提供者接口、快照结构
+#include "BattleStateSnapshot.hpp"              // 完整快照（成员内拷贝，避免 lastSnapshot_ 悬垂）
 #include "../CardSystem/CardSystem.hpp"         // 卡牌实例、牌组视图
 #include <SFML/Graphics.hpp>                    // 窗口、字体、图形绘制
 #include <string>                               // 字符串
 #include <unordered_map>                        // 怪物 id→纹理 缓存
+#include <unordered_set>                        // 抽/弃牌动画：隐藏飞行中的手牌实例
 #include <vector>                               // 动态数组
 
 namespace tce {
-
-struct BattleStateSnapshot;                     // 前向声明：战斗状态快照（含手牌、怪物等）
 
 class BattleUI {
 public:
@@ -71,11 +71,31 @@ public:
     /** 获取奖励卡牌列表中指定下标的卡牌 id（0~2），越界返回空串 */
     std::string get_reward_card_id_at(size_t index) const;
 
+    /** 选牌弹窗：用于卡牌效果中的“从候选牌中选择一张/多张”（当前先支持单选） */
+    void set_card_select_active(bool active);
+    /** candidate_hand_indices：与 card_ids 同序，表示每张候选在「当前手牌」中的下标；手牌区选牌时优先用此匹配点击，避免 instanceId 与快照不一致导致无法选中 */
+    /** hide_played_hand_index：>=0 时该手牌下标视为已打出，扇区与底栏手牌绘制中均不显示（选牌界面用） */
+    void set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel = true, bool use_hand_area = false, std::vector<InstanceId> candidate_instance_ids = {}, int required_pick_count = 1, std::vector<int> candidate_hand_indices = {}, int hide_played_hand_index = -1);
+    bool is_card_select_active() const { return card_select_active_; }
+    /** 轮询一次选牌结果：-1 取消，0~N-1 选中的下标 */
+    bool pollCardSelectPick(int& outCardIndex);
+    /** 轮询一次选牌结果（多选版）：outCancelled=true 表示取消。 */
+    bool pollCardSelectResult(std::vector<int>& outCardIndices, bool& outCancelled);
+    /** 获取选牌列表中指定下标的卡牌 id，越界返回空串 */
+    std::string get_card_select_id_at(size_t index) const;
+
+    /** 在确认选牌并即将打出触发牌前调用：接下来若干张「离手进入弃牌/消耗」的飞牌从屏幕中央选牌区飞出并走弧线（与 main/GameFlow 中 play_card 配对） */
+    void set_pending_select_ui_pile_fly(int discard_or_exhaust_count);
+
 private:
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
+    void drawCardSelectScreen(sf::RenderWindow& window);  // 选牌弹窗
+    /** 在指定矩形内绘制完整卡牌（与牌组视图一致：费用圈/类型/描述换行），供选牌中间预览等复用 */
+    void drawDetailedCardAt(sf::RenderWindow& window, const std::string& card_id, float x, float y, float w, float h,
+                            const sf::Color& outlineColor, float outlineThickness = 8.f);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 右上角：牌组、抽牌堆
@@ -83,6 +103,38 @@ private:
     void draw_center_tip(sf::RenderWindow& window);          // 内部：绘制中央提示
     void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/药水悬停提示
     bool can_pay_selected_card_cost() const;   // 当前选中的牌能量是否足够
+
+    /** 根据当前选中的候选下标，计算仍在手牌扇区展示的牌（手牌下标顺序）及每张的中心/角度 */
+    void compute_card_select_hand_fan_(const BattleStateSnapshot& s, const std::vector<int>& selected_candidate_indices,
+                                       std::vector<int>& out_vis_hand_indices,
+                                       std::vector<sf::Vector2f>& out_centers, std::vector<float>& out_angles) const;
+
+    /** 抽牌堆→手牌、手牌→弃牌/消耗 的飞牌动画（与逻辑不同步帧，仅表现层） */
+    void tick_pile_card_anims_();
+    void detect_pile_card_anims_(const BattleStateSnapshot& s);
+    void draw_pile_card_anims_(sf::RenderWindow& window);
+    sf::Vector2f hand_fan_card_center_(size_t hand_index, size_t hand_count) const;
+    void pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const;
+    sf::Vector2f card_select_preview_center_for_fly_() const;
+
+    struct PileCardFlightAnim {
+        CardId       card_id;
+        sf::Vector2f start{};
+        sf::Vector2f end{};
+        float        duration_sec = 0.36f;
+        sf::Clock    clock{};
+        enum Kind { DrawToHand, HandToDiscard, HandToExhaust } kind = DrawToHand;
+        InstanceId   instance_id = 0;
+        bool         use_arc_path = false;
+    };
+    std::vector<PileCardFlightAnim>     pile_card_flights_;
+    std::unordered_set<InstanceId>      pile_draw_anim_hiding_;       // 抽到手的牌在飞入完成前不画在手牌区
+    std::unordered_map<InstanceId, sf::Vector2f> instance_hand_center_cache_; // 上一帧手牌中心，供弃牌起点
+    std::vector<CardInstance>           prev_hand_for_pile_anim_;
+    int                                 prev_discard_sz_for_anim_ = 0;
+    int                                 prev_exhaust_sz_for_anim_ = 0;
+    bool                                pile_anim_snapshot_ready_ = false;
+    int                                 pending_select_ui_pile_fly_remaining_ = 0;
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度
@@ -125,8 +177,9 @@ private:
     // 选中牌当前屏幕中心位置（用于绘制瞄准箭头）
     sf::Vector2f selectedCardScreenPos_{0.f, 0.f};  // 牌跟随鼠标时的屏幕坐标
 
-    // 最近一次绘制使用的快照（用于在事件处理阶段校验能量等 UI 侧逻辑）
-    const BattleStateSnapshot* lastSnapshot_ = nullptr;  // 绘制时传入，事件处理时读取
+    // 最近一次绘制：将适配器快照拷贝到本对象，lastSnapshot_ 始终指向 snapshotForEvents_（避免指向 main 栈上已销毁的临时快照）
+    BattleStateSnapshot        snapshotForEvents_{};
+    const BattleStateSnapshot* lastSnapshot_ = nullptr;
 
     // 屏幕中间提示（如“能量不足”）
     sf::Clock    centerTipClock_;              // 提示计时器
@@ -166,6 +219,37 @@ private:
     sf::FloatRect                 reward_continue_rect_;       // 继续按钮
     bool                          pending_continue_to_next_battle_ = false;
     int                           pending_reward_card_index_ = -2;  // -2 无，-1 跳过，0~2 选中的卡
+
+    // 通用选牌弹窗（供效果牌交互复用）
+    bool                          card_select_active_ = false;
+    std::wstring                  card_select_title_;
+    std::vector<std::string>      card_select_ids_;
+    std::vector<InstanceId>       card_select_candidate_instance_ids_;
+    std::vector<int>              card_select_candidate_hand_indices_;
+    std::vector<sf::FloatRect>    card_select_rects_;
+    std::vector<sf::FloatRect>    hand_card_rects_;       // 当前帧手牌点击矩形（用于手牌区选牌）
+    std::vector<int>              hand_card_rect_indices_; // 与 hand_card_rects_ 对齐的手牌下标
+    sf::FloatRect                 card_select_cancel_rect_;
+    sf::FloatRect                 card_select_confirm_rect_;
+    bool                          card_select_allow_cancel_ = true;
+    bool                          card_select_use_hand_area_ = false;   // true=直接在手牌区选牌；false=弹窗网格选牌
+    int                           card_select_required_pick_count_ = 1;
+    /** 选牌时从扇区隐藏的手牌下标（触发选牌的那张，视作已打出） */
+    int                           card_select_hide_hand_index_ = -1;
+    std::vector<int>              card_select_selected_indices_;
+    std::vector<int>              pending_card_select_indices_;
+    bool                          pending_card_select_cancelled_ = false;
+    int                           pending_card_select_index_ = -2;   // -2 无，-1 取消，0~N-1 选中
+    /** 手牌区多选：已选牌从扇区飞到中央的插值动画（按候选列表下标 k，与 instanceId 无关） */
+    struct CardSelectPullAnim {
+        int          candidateIndex = -1;
+        sf::Vector2f startCenter{0.f, 0.f};
+        sf::Vector2f targetCenter{0.f, 0.f};
+        float        durationSec = 0.22f;
+        sf::Clock    clock{};
+    };
+    std::vector<CardSelectPullAnim> card_select_pull_anims_;
+    sf::Clock                       card_select_confirm_pulse_clock_{};
 };
 
 } // namespace tce
