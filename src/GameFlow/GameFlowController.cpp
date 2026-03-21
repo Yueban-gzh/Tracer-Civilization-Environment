@@ -74,16 +74,26 @@ bool GameFlowController::initialize() {
     playerState_.relics = { "burning_blood" };
 
     cardSystem_.init_master_deck({
-        "feed", "feed+",
-        "fiend_fire", "fiend_fire+",
-        "whirlwind", "whirlwind+",
-        "burst", "burst+",
-        "corpse_explosion", "corpse_explosion+",
-        "after_image", "after_image+",
-        "wraith_form", "wraith_form+",
-        "apotheosis", "apotheosis+",
-        "master_of_strategy", "master_of_strategy+",
-        "the_bomb", "the_bomb+",
+        "armaments",
+        "burning_pact",
+        "true_grit",
+        "survivor",
+        "acrobatics",
+        "flame_barrier",
+        "second_wind",
+        "spot_weakness",
+        "prepared",
+        "all_out_attack",
+        "calculated_gamble",
+        "concentrate",
+        "piercing_wail",
+        "sneaky_strike",
+        "venomology",
+        "noxious_fumes",
+        "reflex",
+        "tactician",
+        "tools_of_the_trade",
+        "well_laid_plans",
     });
 
     const MapEngine::MapConfig* config = mapConfigManager_.getCurrentConfig();
@@ -254,6 +264,15 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     }
 
     bool runningBattleScene = true;
+    struct PendingCardSelectPlay {
+        bool active = false;
+        int playHandIndex = -1;
+        int playTargetMonsterIndex = -1;
+        int requiredCount = 1;
+        std::wstring title;
+        std::vector<InstanceId> candidateInstanceIds;
+        std::vector<InstanceId> selectedInstanceIds;
+    } pendingSelectPlay;
     while (window_.isOpen() && runningBattleScene) {
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
@@ -270,6 +289,11 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                mousePos = window_.mapPixelToCoords(mp->position);
+            } else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>()) {
+                mousePos = window_.mapPixelToCoords(mr->position);
+            }
             if (ui.handleEvent(*ev, mousePos)) {
                 battleEngine_.end_turn();
             }
@@ -282,7 +306,100 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         int handIndex = -1;
         int targetMonsterIndex = -1;
         if (ui.pollPlayCardRequest(handIndex, targetMonsterIndex)) {
-            battleEngine_.play_card(handIndex, targetMonsterIndex);
+            const auto& handNow = cardSystem_.get_hand();
+            if (handIndex >= 0 && static_cast<size_t>(handIndex) < handNow.size()) {
+                const CardId& id = handNow[static_cast<size_t>(handIndex)].id;
+                bool needSelect = (id == "survivor" || id == "survivor+" ||
+                                   id == "true_grit" || id == "true_grit+" ||
+                                   id == "burning_pact" || id == "burning_pact+" ||
+                                   id == "concentrate" || id == "concentrate+" ||
+                                   id == "all_out_attack" || id == "all_out_attack+" ||
+                                   id == "acrobatics" || id == "acrobatics+" ||
+                                   id == "prepared" || id == "prepared+");
+                if (needSelect) {
+                    std::vector<std::string> candidates;
+                    std::vector<InstanceId> candidateIids;
+                    std::vector<int> candidateHandIdx;
+                    for (size_t i = 0; i < handNow.size(); ++i) {
+                        if (static_cast<int>(i) == handIndex) continue;
+                        candidates.push_back(handNow[i].id);
+                        candidateIids.push_back(handNow[i].instanceId);
+                        candidateHandIdx.push_back(static_cast<int>(i));
+                    }
+                    if (!candidates.empty()) {
+                        pendingSelectPlay.active = true;
+                        pendingSelectPlay.playHandIndex = handIndex;
+                        pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
+                        pendingSelectPlay.requiredCount =
+                            (id == "concentrate+") ? 2 :
+                            (id == "concentrate") ? 3 :
+                            (id == "prepared+") ? 2 :
+                            (id == "prepared") ? 1 :
+                            1;
+                        if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
+                            pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
+                        if (pendingSelectPlay.requiredCount <= 0) {
+                            battleEngine_.play_card(handIndex, targetMonsterIndex);
+                            continue;
+                        }
+                        pendingSelectPlay.selectedInstanceIds.clear();
+                        if (id == "true_grit" || id == "true_grit+" ||
+                            id == "burning_pact" || id == "burning_pact+") {
+                            pendingSelectPlay.title = L"选择要消耗的手牌";
+                        } else {
+                            pendingSelectPlay.title = L"选择要丢弃的手牌";
+                        }
+                        pendingSelectPlay.candidateInstanceIds = candidateIids;
+                        ui.set_card_select_data(
+                            pendingSelectPlay.title,
+                            std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx));
+                        ui.set_card_select_active(true);
+                    } else {
+                        battleEngine_.play_card(handIndex, targetMonsterIndex);
+                    }
+                } else {
+                    battleEngine_.play_card(handIndex, targetMonsterIndex);
+                }
+            } else {
+                battleEngine_.play_card(handIndex, targetMonsterIndex);
+            }
+        }
+
+        std::vector<int> pickedHandIndices;
+        bool cardSelectCancelled = false;
+        if (ui.pollCardSelectResult(pickedHandIndices, cardSelectCancelled)) {
+            if (pendingSelectPlay.active) {
+                if (cardSelectCancelled) {  // 取消：本次不打出牌
+                    pendingSelectPlay.active = false;
+                    pendingSelectPlay.selectedInstanceIds.clear();
+                    pendingSelectPlay.candidateInstanceIds.clear();
+                } else {
+                    for (int pickedHandIndex : pickedHandIndices) {
+                        if (pickedHandIndex >= 0 && static_cast<size_t>(pickedHandIndex) < pendingSelectPlay.candidateInstanceIds.size()) {
+                            pendingSelectPlay.selectedInstanceIds.push_back(
+                                pendingSelectPlay.candidateInstanceIds[static_cast<size_t>(pickedHandIndex)]);
+                        }
+                    }
+                }
+                if (!pendingSelectPlay.active) {
+                    // cancelled
+                } else if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) >= pendingSelectPlay.requiredCount) {
+                    // 只取前 requiredCount 个，避免异常多选
+                    if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.requiredCount) {
+                        pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.requiredCount));
+                    }
+                    battleEngine_.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);
+                    battleEngine_.play_card(pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
+                    pendingSelectPlay.active = false;
+                    pendingSelectPlay.selectedInstanceIds.clear();
+                    pendingSelectPlay.candidateInstanceIds.clear();
+                } else {
+                    // 理论上不会到这里（UI 已限制“确定”按钮），兜底按取消处理
+                    pendingSelectPlay.active = false;
+                    pendingSelectPlay.selectedInstanceIds.clear();
+                    pendingSelectPlay.candidateInstanceIds.clear();
+                }
+            }
         }
 
         int potionSlotIndex = -1;
@@ -303,7 +420,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
 
-        if (!ui.is_deck_view_active() && !battleEngine_.is_battle_over()) {
+        if (!ui.is_deck_view_active() && !ui.is_card_select_active() && !battleEngine_.is_battle_over()) {
             battleEngine_.step_turn_phase();
         }
 
@@ -449,6 +566,11 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                 }
             }
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                mousePos = window_.mapPixelToCoords(mp->position);
+            } else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>()) {
+                mousePos = window_.mapPixelToCoords(mr->position);
+            }
             ui.handleEvent(*ev, mousePos);
         }
 
@@ -668,6 +790,11 @@ bool GameFlowController::runRestScene() {
                 }
             }
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                mousePos = window_.mapPixelToCoords(mp->position);
+            } else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>()) {
+                mousePos = window_.mapPixelToCoords(mr->position);
+            }
             ui.handleEvent(*ev, mousePos);
         }
 

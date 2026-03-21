@@ -3,6 +3,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <deque>
 
 #include "Types.hpp"
 #include "BattleState.hpp"
@@ -59,8 +60,28 @@ public:
     int get_draw_pile_size() const;
     /** 将手牌全部移入消耗堆，返回消耗张数（如恶魔之焰）。 */
     int exhaust_all_hand_cards();
+    /** 随机弃掉手牌中的 n 张，返回实际弃牌张数。 */
+    int discard_random_hand_cards(int n);
+    /** 弃掉全部手牌，返回实际弃牌张数。 */
+    int discard_all_hand_cards();
+    /** 按预选实例顺序弃牌，最多 n 张；返回实际弃牌张数。 */
+    int discard_selected_hand_cards(int n);
+    /** 随机消耗手牌中的 n 张，返回实际消耗张数。 */
+    int exhaust_random_hand_cards(int n);
+    /** 按预选实例顺序消耗手牌，最多 n 张；返回实际消耗张数。 */
+    int exhaust_selected_hand_cards(int n);
+    /** 消耗手牌中全部非攻击牌，返回实际消耗张数。 */
+    int exhaust_non_attack_hand_cards();
+    /** 随机升级手牌中的 n 张可升级牌，返回实际升级张数。 */
+    int upgrade_random_cards_in_hand(int n);
+    /** 升级手牌中全部可升级牌，返回升级张数。 */
+    int upgrade_all_cards_in_hand();
     /** 升级当前战斗中的全部牌（手/抽/弃/消耗），返回升级张数（如神化）。 */
     int upgrade_all_cards_in_combat();
+    /** 是否存在任意存活怪物，其当前意图为攻击（用于 Spot Weakness）。 */
+    bool any_monster_intends_attack() const;
+    /** 获得一瓶随机药水（药水槽已满时返回空串）。 */
+    PotionId grant_random_potion();
 
 private:
     friend class BattleEngine;
@@ -161,7 +182,21 @@ public:
     int get_discard_pile_size_impl() const;
     int get_draw_pile_size_impl() const;
     int exhaust_all_hand_cards_impl();
+    int discard_random_hand_cards_impl(int n);
+    int discard_all_hand_cards_impl();
+    int discard_selected_hand_cards_impl(int n);
+    int exhaust_random_hand_cards_impl(int n);
+    int exhaust_selected_hand_cards_impl(int n);
+    int exhaust_non_attack_hand_cards_impl();
+    int upgrade_random_cards_in_hand_impl(int n);
+    int upgrade_all_cards_in_hand_impl();
     int upgrade_all_cards_in_combat_impl();
+    bool any_monster_intends_attack_impl() const;
+public:
+    /** 为下一次卡牌效果注入“手牌选择结果”（实例 id 队列，按顺序消费）。 */
+    void set_effect_selected_instance_ids(const std::vector<InstanceId>& ids);
+private:
+    std::deque<InstanceId> effect_selected_instance_ids_;
     void add_player_max_hp_impl(int amount);
 
 private:

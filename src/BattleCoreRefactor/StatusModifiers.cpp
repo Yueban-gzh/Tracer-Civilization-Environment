@@ -39,7 +39,7 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
      }
  };
  
- class PlayerCannotDrawModifier : public IBattleModifier {};       // 无法抽牌（桩）
+class PlayerCannotDrawModifier : public IBattleModifier {};       // 无法抽牌：由 BattleEngine::draw_cards_impl 统一拦截“额外抽牌”
  class PlayerFlexModifier : public IBattleModifier {};              // 灵活（桩）
  class PlayerDeviationModifier : public IBattleModifier {};         // 偏差（桩）
 
@@ -477,7 +477,19 @@ public:
  class ElectrodynamicsModifier : public IBattleModifier {};          // 电动力学（桩）
  class FeelNoPainModifier : public IBattleModifier {};               // 无痛（桩）
  class EvolveModifier : public IBattleModifier {};                   // 进化（桩）
- class FlameBarrierModifier : public IBattleModifier {};              // 火焰屏障（桩）
+class FlameBarrierModifier : public IBattleModifier {                // 火焰屏障：玩家被攻击时对攻击者造成层数反伤
+public:
+    void on_damage_applied(const DamagePacket& dmg, BattleState& state, DamageAppliedContext* ctx) override {
+        if (!ctx || !ctx->damage_to_player || !ctx->deal_damage_to_monster_ignoring_block) return;
+        if (!dmg.from_attack) return;
+        if (dmg.source_type != DamagePacket::SourceType::Monster) return;
+        if (dmg.source_monster_index < 0 || dmg.source_monster_index >= static_cast<int>(state.monsters.size())) return;
+        if (state.monsters[static_cast<size_t>(dmg.source_monster_index)].currentHp <= 0) return;
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "flame_barrier");
+        if (stacks <= 0) return;
+        ctx->deal_damage_to_monster_ignoring_block(dmg.source_monster_index, stacks);
+    }
+};
  class HeatSinkModifier : public IBattleModifier {};                 // 散热片（桩）
  class FreeAttackModifier : public IBattleModifier {};               // 免费攻击（桩）
  class FireBreathModifier : public IBattleModifier {};                // 火焰吐息（桩）
@@ -493,7 +505,26 @@ public:
  class MachineLearningModifier : public IBattleModifier {};         // 机器学习（桩）
  class ConfidentVictoryModifier : public IBattleModifier {};         // 自信胜利（桩）
  class NirvanaModifier : public IBattleModifier {};                  // 涅槃（桩）
- class PoisonCloudModifier : public IBattleModifier {};               // 毒云（桩）
+class PoisonCloudModifier : public IBattleModifier {                 // 毒雾：玩家回合开始时，对所有敌人施加中毒
+public:
+    void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "poison_cloud");
+        if (stacks <= 0) return;
+        for (auto& m : state.monsters) {
+            if (m.currentHp <= 0) continue;
+            bool merged = false;
+            for (auto& s : m.statuses) {
+                if (s.id == "poison") {
+                    s.stacks += stacks;
+                    if (s.duration < stacks) s.duration = stacks;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) m.statuses.push_back(StatusInstance{"poison", stacks, stacks});
+        }
+    }
+};
  class PhantomModifier : public IBattleModifier {};                  // 幻影（桩）
  class PenNibModifier : public IBattleModifier {};                   // 笔尖（桩）
  class RicochetModifier : public IBattleModifier {};                 // 弹跳（桩）

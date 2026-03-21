@@ -54,7 +54,7 @@
 draw(window, data)
     │
     ├─ s = data.get_snapshot()
-    ├─ lastSnapshot_ = &s                    // 供 handleEvent 使用
+    ├─ snapshotForEvents_ = s; lastSnapshot_ = &snapshotForEvents_   // 拷贝快照，供 handleEvent（避免悬垂）
     │
     ├─ 背景图 + 顶栏背景色块
     ├─ drawTopBar() + drawRelicsRow()

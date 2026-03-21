@@ -499,9 +499,229 @@ void effect_inflame(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("strength", is_upgraded ? 3 : 2, -1);
 }
 
-// 战斗专注：抽 3/4 张牌（本回合禁抽用状态实现时可在此加 draw_reduction）
+// 武装：获得 5 点格挡；未升级随机升级手牌 1 张，升级版升级手牌全部
+void effect_armaments(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(5);
+    ctx.add_block_to_player(block);
+    if (is_upgraded) ctx.upgrade_all_cards_in_hand();
+    else ctx.upgrade_random_cards_in_hand(1);
+}
+
+// 燃烧契约：随机消耗 1 张手牌；抽 2/3 张牌
+void effect_burning_pact(EffectContext& ctx, bool is_upgraded) {
+    int exhausted = ctx.exhaust_selected_hand_cards(1);
+    if (exhausted <= 0) exhausted = ctx.exhaust_random_hand_cards(1);
+    if (exhausted <= 0) return;
+    ctx.draw_cards(is_upgraded ? 3 : 2);
+}
+
+// 坚毅：获得 7/9 点格挡；随机消耗 1 张手牌
+void effect_true_grit(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 9 : 7);
+    ctx.add_block_to_player(block);
+    int exhausted = ctx.exhaust_selected_hand_cards(1);
+    if (exhausted <= 0) ctx.exhaust_random_hand_cards(1);
+}
+
+// 生存者：获得 8/11 点格挡；随机弃掉 1 张手牌
+void effect_survivor(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 11 : 8);
+    ctx.add_block_to_player(block);
+    int discarded = ctx.discard_selected_hand_cards(1);
+    if (discarded <= 0) ctx.discard_random_hand_cards(1);
+}
+
+// 杂技：抽 3/4 张牌，然后随机弃掉 1 张手牌
+void effect_acrobatics(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_cards(is_upgraded ? 4 : 3);
+    int discarded = ctx.discard_selected_hand_cards(1);
+    if (discarded <= 0) ctx.discard_random_hand_cards(1);
+}
+
+// 火焰屏障：获得 12/16 点格挡，并获得本回合反伤 4/6（flame_barrier）
+void effect_flame_barrier(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 16 : 12);
+    ctx.add_block_to_player(block);
+    ctx.apply_status_to_player("flame_barrier", is_upgraded ? 6 : 4, 1);
+}
+
+// 斗魂：消耗手牌中所有非攻击牌；每张获得 5/7 点格挡
+void effect_second_wind(EffectContext& ctx, bool is_upgraded) {
+    int exhausted = ctx.exhaust_non_attack_hand_cards();
+    if (exhausted <= 0) return;
+    int base_total = exhausted * (is_upgraded ? 7 : 5);
+    int block = ctx.get_effective_block_for_player(base_total);
+    ctx.add_block_to_player(block);
+}
+
+// 看破弱点：若有任意存活怪物意图攻击，则获得 3/4 点力量
+void effect_spot_weakness(EffectContext& ctx, bool is_upgraded) {
+    if (!ctx.any_monster_intends_attack()) return;
+    ctx.apply_status_to_player("strength", is_upgraded ? 4 : 3, -1);
+}
+
+// 预谋：抽 1/2，随后随机弃 1/2（当前 UI 未支持手选弃牌）
+void effect_prepared(EffectContext& ctx, bool is_upgraded) {
+    int n = is_upgraded ? 2 : 1;
+    ctx.draw_cards(n);
+    int discarded = ctx.discard_selected_hand_cards(n);
+    if (discarded < n) ctx.discard_random_hand_cards(n - discarded);
+}
+
+// 全力攻击：对所有敌人造成 10/14 伤害，随后随机弃 1 张手牌
+void effect_all_out_attack(EffectContext& ctx, bool is_upgraded) {
+    ctx.deal_damage_to_all_monsters(is_upgraded ? 14 : 10);
+    int discarded = ctx.discard_selected_hand_cards(1);
+    if (discarded <= 0) ctx.discard_random_hand_cards(1);
+}
+
+// 计算下注：弃掉全部手牌，然后抽等量张牌（消耗由 cards.json 字段控制）
+void effect_calculated_gamble(EffectContext& ctx, bool /*is_upgraded*/) {
+    int n = ctx.discard_all_hand_cards();
+    if (n > 0) ctx.draw_cards(n);
+}
+
+// 全神贯注：随机弃 3/2 张牌，若弃牌数量满足则获得 2 点能量
+void effect_concentrate(EffectContext& ctx, bool is_upgraded) {
+    int need = is_upgraded ? 2 : 3;
+    int discarded = ctx.discard_selected_hand_cards(need);
+    if (discarded < need) discarded += ctx.discard_random_hand_cards(need - discarded);
+    if (discarded >= need) ctx.add_energy_to_player(2);
+}
+
+// 尖啸：所有敌人失去 6/8 点力量，持续 1 回合（通过 strength_down 表示）
+void effect_piercing_wail(EffectContext& ctx, bool is_upgraded) {
+    int n = is_upgraded ? 8 : 6;
+    ctx.apply_status_to_all_monsters("strength_down", n, 1);
+}
+
+// 隐秘打击：造成 12/16 伤害；若本回合弃过牌，获得 2 点能量
+void effect_sneaky_strike(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 16 : 12, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    if (ctx.get_status_stacks_on_player("discarded_this_turn") > 0)
+        ctx.add_energy_to_player(2);
+}
+
+// 炼制药水：获得一瓶随机药水（药水栏满则无效果）
+void effect_venomology(EffectContext& ctx, bool /*is_upgraded*/) {
+    (void)ctx.grant_random_potion();
+}
+
+// 毒雾：每回合开始时使所有敌人获得 2/3 层中毒（由 PoisonCloudModifier 处理）
+void effect_noxious_fumes(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("poison_cloud", is_upgraded ? 3 : 2, -1);
+}
+
+// 必备工具：回合开始额外抽 1 并弃 1（由 BattleEngine 回合开始逻辑处理）
+void effect_tools_of_the_trade(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("essential_tools", 1, -1);
+}
+
+// 计划妥当：回合结束时额外保留 1/2 张非保留手牌（由 BattleEngine 回合结束逻辑处理）
+void effect_well_laid_plans(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("well_planned", is_upgraded ? 2 : 1, -1);
+}
+
+// 战斗专注：抽 3/4 张牌，并在本回合内禁止再抽牌
 void effect_battle_trance(EffectContext& ctx, bool is_upgraded) {
     ctx.draw_cards(is_upgraded ? 4 : 3);
+    ctx.apply_status_to_player("cannot_draw", 1, 1);
+}
+
+// 扫荡射线：对全体造成 6/9 伤害并抽 1
+void effect_sweeping_beam(EffectContext& ctx, bool is_upgraded) {
+    ctx.deal_damage_to_all_monsters(is_upgraded ? 9 : 6);
+    ctx.draw_cards(1);
+}
+
+// 飞跃：获得 9/12 格挡
+void effect_leap(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 12 : 9);
+    ctx.add_block_to_player(block);
+}
+
+// 充电：获得 7/10 格挡，下回合获得 1 点能量
+void effect_charge_battery(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 10 : 7);
+    ctx.add_block_to_player(block);
+    ctx.apply_status_to_player("energy_up", 1, 1);
+}
+
+// 启动流程：获得 10/13 格挡（固有/消耗由数据层字段处理）
+void effect_boot_sequence(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 13 : 10);
+    ctx.add_block_to_player(block);
+}
+
+// 快速检索：抽 3/4 张牌
+void effect_skim(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_cards(is_upgraded ? 4 : 3);
+}
+
+// 超频：抽 2/3 张牌，并加入 1 张灼伤到弃牌堆
+void effect_steam_power(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_cards(is_upgraded ? 3 : 2);
+    ctx.generate_to_discard_pile("card_026");
+}
+
+// 光束射线：造成 3/4 伤害，并施加 1/2 层易伤
+void effect_beam_cell(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 4 : 3, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    int vuln = is_upgraded ? 2 : 1;
+    ctx.apply_status_to_monster(ctx.target_monster_index, "vulnerable", vuln, vuln);
+}
+
+// 核心电涌：造成 11/15 伤害，获得 1 层人工制品
+void effect_core_surge(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 15 : 11, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    ctx.apply_status_to_player("artifact", 1, -1);
+}
+
+// 内核加速：获得 2/3 点能量，加入 1 张虚空到弃牌堆
+void effect_turbo(EffectContext& ctx, bool is_upgraded) {
+    ctx.add_energy_to_player(is_upgraded ? 3 : 2);
+    ctx.generate_to_discard_pile("void");
+}
+
+// 自动护盾：若当前没有格挡，获得 11/15 格挡
+void effect_auto_shields(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.get_player_block() > 0) return;
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 15 : 11);
+    ctx.add_block_to_player(block);
+}
+
+// 弹回：造成 9/12 点伤害（回牌堆顶效果待后续卡序系统补齐）
+void effect_rebound(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 12 : 9, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+}
+
+// 双倍能量：将当前能量翻倍（等价于再获得当前能量值）
+void effect_double_energy(EffectContext& ctx, bool /*is_upgraded*/) {
+    int e = ctx.get_player_energy();
+    if (e > 0) ctx.add_energy_to_player(e);
+}
+
+// 堆栈：获得弃牌堆张数/弃牌堆张数+3 的格挡
+void effect_stack(EffectContext& ctx, bool is_upgraded) {
+    int base = ctx.get_discard_pile_size() + (is_upgraded ? 3 : 0);
+    if (base <= 0) return;
+    int block = ctx.get_effective_block_for_player(base);
+    ctx.add_block_to_player(block);
+}
+
+// 汇集：抽牌堆每 4/3 张牌获得 1 点能量
+void effect_aggregate(EffectContext& ctx, bool is_upgraded) {
+    int per = is_upgraded ? 3 : 4;
+    int e = ctx.get_draw_pile_size() / per;
+    if (e > 0) ctx.add_energy_to_player(e);
 }
 
 // 金属化：回合结束时获得 3/4 点格挡（metallicize 状态）
@@ -754,8 +974,72 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("crippling_poison+", [](EffectContext& c) { effect_crippling_poison(c, true); });
     card_system.register_card_effect("inflame", [](EffectContext& c) { effect_inflame(c, false); });
     card_system.register_card_effect("inflame+", [](EffectContext& c) { effect_inflame(c, true); });
+    card_system.register_card_effect("armaments", [](EffectContext& c) { effect_armaments(c, false); });
+    card_system.register_card_effect("armaments+", [](EffectContext& c) { effect_armaments(c, true); });
+    card_system.register_card_effect("burning_pact", [](EffectContext& c) { effect_burning_pact(c, false); });
+    card_system.register_card_effect("burning_pact+", [](EffectContext& c) { effect_burning_pact(c, true); });
+    card_system.register_card_effect("true_grit", [](EffectContext& c) { effect_true_grit(c, false); });
+    card_system.register_card_effect("true_grit+", [](EffectContext& c) { effect_true_grit(c, true); });
+    card_system.register_card_effect("survivor", [](EffectContext& c) { effect_survivor(c, false); });
+    card_system.register_card_effect("survivor+", [](EffectContext& c) { effect_survivor(c, true); });
+    card_system.register_card_effect("acrobatics", [](EffectContext& c) { effect_acrobatics(c, false); });
+    card_system.register_card_effect("acrobatics+", [](EffectContext& c) { effect_acrobatics(c, true); });
+    card_system.register_card_effect("flame_barrier", [](EffectContext& c) { effect_flame_barrier(c, false); });
+    card_system.register_card_effect("flame_barrier+", [](EffectContext& c) { effect_flame_barrier(c, true); });
+    card_system.register_card_effect("second_wind", [](EffectContext& c) { effect_second_wind(c, false); });
+    card_system.register_card_effect("second_wind+", [](EffectContext& c) { effect_second_wind(c, true); });
+    card_system.register_card_effect("spot_weakness", [](EffectContext& c) { effect_spot_weakness(c, false); });
+    card_system.register_card_effect("spot_weakness+", [](EffectContext& c) { effect_spot_weakness(c, true); });
+    card_system.register_card_effect("prepared", [](EffectContext& c) { effect_prepared(c, false); });
+    card_system.register_card_effect("prepared+", [](EffectContext& c) { effect_prepared(c, true); });
+    card_system.register_card_effect("all_out_attack", [](EffectContext& c) { effect_all_out_attack(c, false); });
+    card_system.register_card_effect("all_out_attack+", [](EffectContext& c) { effect_all_out_attack(c, true); });
+    card_system.register_card_effect("calculated_gamble", [](EffectContext& c) { effect_calculated_gamble(c, false); });
+    card_system.register_card_effect("calculated_gamble+", [](EffectContext& c) { effect_calculated_gamble(c, true); });
+    card_system.register_card_effect("concentrate", [](EffectContext& c) { effect_concentrate(c, false); });
+    card_system.register_card_effect("concentrate+", [](EffectContext& c) { effect_concentrate(c, true); });
+    card_system.register_card_effect("piercing_wail", [](EffectContext& c) { effect_piercing_wail(c, false); });
+    card_system.register_card_effect("piercing_wail+", [](EffectContext& c) { effect_piercing_wail(c, true); });
+    card_system.register_card_effect("sneaky_strike", [](EffectContext& c) { effect_sneaky_strike(c, false); });
+    card_system.register_card_effect("sneaky_strike+", [](EffectContext& c) { effect_sneaky_strike(c, true); });
+    card_system.register_card_effect("venomology", [](EffectContext& c) { effect_venomology(c, false); });
+    card_system.register_card_effect("venomology+", [](EffectContext& c) { effect_venomology(c, true); });
+    card_system.register_card_effect("noxious_fumes", [](EffectContext& c) { effect_noxious_fumes(c, false); });
+    card_system.register_card_effect("noxious_fumes+", [](EffectContext& c) { effect_noxious_fumes(c, true); });
+    card_system.register_card_effect("tools_of_the_trade", [](EffectContext& c) { effect_tools_of_the_trade(c, false); });
+    card_system.register_card_effect("tools_of_the_trade+", [](EffectContext& c) { effect_tools_of_the_trade(c, true); });
+    card_system.register_card_effect("well_laid_plans", [](EffectContext& c) { effect_well_laid_plans(c, false); });
+    card_system.register_card_effect("well_laid_plans+", [](EffectContext& c) { effect_well_laid_plans(c, true); });
     card_system.register_card_effect("battle_trance", [](EffectContext& c) { effect_battle_trance(c, false); });
     card_system.register_card_effect("battle_trance+", [](EffectContext& c) { effect_battle_trance(c, true); });
+    card_system.register_card_effect("sweeping_beam", [](EffectContext& c) { effect_sweeping_beam(c, false); });
+    card_system.register_card_effect("sweeping_beam+", [](EffectContext& c) { effect_sweeping_beam(c, true); });
+    card_system.register_card_effect("leap", [](EffectContext& c) { effect_leap(c, false); });
+    card_system.register_card_effect("leap+", [](EffectContext& c) { effect_leap(c, true); });
+    card_system.register_card_effect("charge_battery", [](EffectContext& c) { effect_charge_battery(c, false); });
+    card_system.register_card_effect("charge_battery+", [](EffectContext& c) { effect_charge_battery(c, true); });
+    card_system.register_card_effect("boot_sequence", [](EffectContext& c) { effect_boot_sequence(c, false); });
+    card_system.register_card_effect("boot_sequence+", [](EffectContext& c) { effect_boot_sequence(c, true); });
+    card_system.register_card_effect("skim", [](EffectContext& c) { effect_skim(c, false); });
+    card_system.register_card_effect("skim+", [](EffectContext& c) { effect_skim(c, true); });
+    card_system.register_card_effect("steam_power", [](EffectContext& c) { effect_steam_power(c, false); });
+    card_system.register_card_effect("steam_power+", [](EffectContext& c) { effect_steam_power(c, true); });
+    card_system.register_card_effect("beam_cell", [](EffectContext& c) { effect_beam_cell(c, false); });
+    card_system.register_card_effect("beam_cell+", [](EffectContext& c) { effect_beam_cell(c, true); });
+    card_system.register_card_effect("core_surge", [](EffectContext& c) { effect_core_surge(c, false); });
+    card_system.register_card_effect("core_surge+", [](EffectContext& c) { effect_core_surge(c, true); });
+    card_system.register_card_effect("turbo", [](EffectContext& c) { effect_turbo(c, false); });
+    card_system.register_card_effect("turbo+", [](EffectContext& c) { effect_turbo(c, true); });
+    card_system.register_card_effect("auto_shields", [](EffectContext& c) { effect_auto_shields(c, false); });
+    card_system.register_card_effect("auto_shields+", [](EffectContext& c) { effect_auto_shields(c, true); });
+    card_system.register_card_effect("rebound", [](EffectContext& c) { effect_rebound(c, false); });
+    card_system.register_card_effect("rebound+", [](EffectContext& c) { effect_rebound(c, true); });
+    card_system.register_card_effect("double_energy", [](EffectContext& c) { effect_double_energy(c, false); });
+    card_system.register_card_effect("double_energy+", [](EffectContext& c) { effect_double_energy(c, true); });
+    card_system.register_card_effect("stack", [](EffectContext& c) { effect_stack(c, false); });
+    card_system.register_card_effect("stack+", [](EffectContext& c) { effect_stack(c, true); });
+    card_system.register_card_effect("aggregate", [](EffectContext& c) { effect_aggregate(c, false); });
+    card_system.register_card_effect("aggregate+", [](EffectContext& c) { effect_aggregate(c, true); });
     card_system.register_card_effect("metallicize", [](EffectContext& c) { effect_metallicize(c, false); });
     card_system.register_card_effect("metallicize+", [](EffectContext& c) { effect_metallicize(c, true); });
     card_system.register_card_effect("footwork", [](EffectContext& c) { effect_footwork(c, false); });

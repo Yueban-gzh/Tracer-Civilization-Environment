@@ -293,6 +293,115 @@ int CardSystem::exhaust_all_hand_cards() {
     return n;
 }
 
+int CardSystem::discard_random_hand_cards(int count) {
+    if (count <= 0 || hand_.empty()) return 0;
+    int moved = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    while (count > 0 && !hand_.empty()) {
+        std::uniform_int_distribution<int> dist(0, static_cast<int>(hand_.size()) - 1);
+        int idx = dist(gen);
+        auto c = remove_from_hand(idx);
+        add_to_discard(std::move(c));
+        --count;
+        ++moved;
+    }
+    return moved;
+}
+
+int CardSystem::discard_hand_card_by_instance_id(InstanceId instance_id) {
+    for (int i = 0; i < static_cast<int>(hand_.size()); ++i) {
+        if (hand_[static_cast<size_t>(i)].instanceId != instance_id) continue;
+        auto c = remove_from_hand(i);
+        add_to_discard(std::move(c));
+        return 1;
+    }
+    return 0;
+}
+
+int CardSystem::discard_all_hand_cards() {
+    int n = static_cast<int>(hand_.size());
+    for (int i = n - 1; i >= 0; --i) {
+        auto c = remove_from_hand(i);
+        add_to_discard(std::move(c));
+    }
+    return n;
+}
+
+int CardSystem::exhaust_random_hand_cards(int count) {
+    if (count <= 0 || hand_.empty()) return 0;
+    int moved = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    while (count > 0 && !hand_.empty()) {
+        std::uniform_int_distribution<int> dist(0, static_cast<int>(hand_.size()) - 1);
+        int idx = dist(gen);
+        auto c = remove_from_hand(idx);
+        add_to_exhaust(std::move(c));
+        --count;
+        ++moved;
+    }
+    return moved;
+}
+
+int CardSystem::exhaust_hand_card_by_instance_id(InstanceId instance_id) {
+    for (int i = 0; i < static_cast<int>(hand_.size()); ++i) {
+        if (hand_[static_cast<size_t>(i)].instanceId != instance_id) continue;
+        auto c = remove_from_hand(i);
+        add_to_exhaust(std::move(c));
+        return 1;
+    }
+    return 0;
+}
+
+int CardSystem::exhaust_non_attack_hand_cards() {
+    if (hand_.empty()) return 0;
+    int moved = 0;
+    for (int i = static_cast<int>(hand_.size()) - 1; i >= 0; --i) {
+        const auto& inst = hand_[static_cast<size_t>(i)];
+        const CardData* cd = get_card_by_id_ ? get_card_by_id_(inst.id) : nullptr;
+        if (!cd) continue;
+        if (cd->cardType == CardType::Attack) continue;
+        auto c = remove_from_hand(i);
+        add_to_exhaust(std::move(c));
+        ++moved;
+    }
+    return moved;
+}
+
+int CardSystem::upgrade_random_cards_in_hand(int count) {
+    if (count <= 0 || hand_.empty()) return 0;
+    std::vector<int> upgradable_indices;
+    upgradable_indices.reserve(hand_.size());
+    for (int i = 0; i < static_cast<int>(hand_.size()); ++i) {
+        if (can_upgrade_card_id(get_card_by_id_, hand_[static_cast<size_t>(i)].id))
+            upgradable_indices.push_back(i);
+    }
+    if (upgradable_indices.empty()) return 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(upgradable_indices.begin(), upgradable_indices.end(), gen);
+    int upgraded = 0;
+    int limit = std::min(count, static_cast<int>(upgradable_indices.size()));
+    for (int i = 0; i < limit; ++i) {
+        auto& c = hand_[static_cast<size_t>(upgradable_indices[static_cast<size_t>(i)])];
+        c.id += "+";
+        ++upgraded;
+    }
+    return upgraded;
+}
+
+int CardSystem::upgrade_all_cards_in_hand() {
+    int upgraded = 0;
+    for (auto& c : hand_) {
+        if (can_upgrade_card_id(get_card_by_id_, c.id)) {
+            c.id += "+";
+            ++upgraded;
+        }
+    }
+    return upgraded;
+}
+
 // 注册卡牌效果函数（CardId → EffectFn）
 void CardSystem::register_card_effect(CardId id, std::function<void(EffectContext&)> fn) {
     if (fn) effect_registry_[std::move(id)] = std::move(fn);

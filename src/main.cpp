@@ -75,18 +75,28 @@ static void runMapUITest(sf::RenderWindow& window);
      player.gold       = 99;                                // 金币
      player.cardsToDrawPerTurn = 5;                         // 每回合抽牌数
  
-   // 初始牌组：改为当前待测卡牌（每种一张基础版 + 一张升级版）
+  // 初始牌组：改为当前新做的红绿卡（每种一张基础版）
    card_system.init_master_deck({
-       "feed", "feed+",
-       "fiend_fire", "fiend_fire+",
-       "whirlwind", "whirlwind+",
-       "burst", "burst+",
-       "corpse_explosion", "corpse_explosion+",
-       "after_image", "after_image+",
-       "wraith_form", "wraith_form+",
-       "apotheosis", "apotheosis+",
-       "master_of_strategy", "master_of_strategy+",
-       "the_bomb", "the_bomb+",
+      "armaments",
+      "burning_pact",
+      "true_grit",
+      "survivor",
+      "acrobatics",
+      "flame_barrier",
+      "second_wind",
+      "spot_weakness",
+      "prepared",
+      "all_out_attack",
+      "calculated_gamble",
+      "concentrate",
+      "piercing_wail",
+      "sneaky_strike",
+      "venomology",
+      "noxious_fumes",
+      "reflex",
+      "tactician",
+      "tools_of_the_trade",
+      "well_laid_plans",
    });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
@@ -116,6 +126,16 @@ static void runMapUITest(sf::RenderWindow& window);
 
     apply_battle_test_mock(player, relics);
     engine.start_battle(monsters, player, card_system.get_master_deck_card_ids(), relics);  // 开始战斗
+
+    struct PendingSelectPlayState {
+        bool active = false;
+        int playHandIndex = -1;
+        int playTargetMonsterIndex = -1;
+        int requiredCount = 1;
+        std::wstring title;
+        std::vector<InstanceId> candidateInstanceIds;
+        std::vector<InstanceId> selectedInstanceIds;
+    } pendingSelectPlay;
 
     CheatEngine cheat(&engine, &card_system);  // 金手指引擎（独立于主逻辑）
     CheatPanel cheat_panel(&cheat, static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
@@ -243,7 +263,13 @@ static void runMapUITest(sf::RenderWindow& window);
                  window.close();
              if (cheat_panel.handleEvent(*ev))             // 金手指面板优先（F2/输入/Enter）
                  continue;
-             sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));  // 鼠标坐标转世界坐标
+             // SFML3：鼠标按下/抬起事件内带像素坐标，与 getPosition 在部分环境下不一致；选牌命中需与事件一致
+             sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+             if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                 mousePos = window.mapPixelToCoords(mp->position);
+             } else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>()) {
+                 mousePos = window.mapPixelToCoords(mr->position);
+             }
              if (ui.handleEvent(*ev, mousePos))              // 将事件交给 UI 处理
                  engine.end_turn();   // 点击结束回合按钮即调用
          }
@@ -252,12 +278,104 @@ static void runMapUITest(sf::RenderWindow& window);
          sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));  // 当前鼠标位置
          ui.setMousePosition(mousePos);                     // 传给 UI（用于悬停等）
  
-         // 若 UI 中有"打出牌"的请求，则调用战斗引擎出牌
+        // 若 UI 中有"打出牌"请求：先拦截需要“弃/耗指定手牌”的牌，进入手牌选择流程
          int handIndex = -1;                                // 手牌下标
          int targetMonsterIndex = -1;                       // 目标怪物下标
          if (ui.pollPlayCardRequest(handIndex, targetMonsterIndex)) {  // 轮询是否有出牌请求
-             engine.play_card(handIndex, targetMonsterIndex);  // 执行出牌
+            const auto& handNow = card_system.get_hand();
+            if (handIndex >= 0 && static_cast<size_t>(handIndex) < handNow.size()) {
+                const CardId& id = handNow[static_cast<size_t>(handIndex)].id;
+                const bool needSelect = (id == "survivor" || id == "survivor+" ||
+                                         id == "true_grit" || id == "true_grit+" ||
+                                         id == "burning_pact" || id == "burning_pact+" ||
+                                         id == "concentrate" || id == "concentrate+" ||
+                                         id == "all_out_attack" || id == "all_out_attack+" ||
+                                         id == "acrobatics" || id == "acrobatics+" ||
+                                         id == "prepared" || id == "prepared+");
+                if (needSelect) {
+                    std::vector<std::string> candidates;
+                    std::vector<InstanceId> candidateIids;
+                    std::vector<int> candidateHandIdx;
+                    candidates.reserve(handNow.size());
+                    candidateIids.reserve(handNow.size());
+                    candidateHandIdx.reserve(handNow.size());
+                    for (size_t i = 0; i < handNow.size(); ++i) {
+                        if (static_cast<int>(i) == handIndex) continue;  // 不可选择正在打出的那张牌
+                        candidates.push_back(handNow[i].id);
+                        candidateIids.push_back(handNow[i].instanceId);
+                        candidateHandIdx.push_back(static_cast<int>(i));
+                    }
+                    if (!candidates.empty()) {
+                        pendingSelectPlay.active = true;
+                        pendingSelectPlay.playHandIndex = handIndex;
+                        pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
+                        pendingSelectPlay.requiredCount =
+                            (id == "concentrate+") ? 2 :
+                            (id == "concentrate") ? 3 :
+                            (id == "prepared+") ? 2 :
+                            (id == "prepared") ? 1 :
+                            1;
+                        if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
+                            pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
+                        if (pendingSelectPlay.requiredCount <= 0) {
+                            engine.play_card(handIndex, targetMonsterIndex);
+                        } else {
+                            pendingSelectPlay.selectedInstanceIds.clear();
+                            pendingSelectPlay.candidateInstanceIds = candidateIids;
+                            if (id == "true_grit" || id == "true_grit+" ||
+                                id == "burning_pact" || id == "burning_pact+") {
+                                pendingSelectPlay.title = L"选择要消耗的手牌";
+                            } else {
+                                pendingSelectPlay.title = L"选择要丢弃的手牌";
+                            }
+                            ui.set_card_select_data(
+                                pendingSelectPlay.title,
+                                std::move(candidates),
+                                true,
+                                true,
+                                std::move(candidateIids),
+                                pendingSelectPlay.requiredCount,
+                                std::move(candidateHandIdx));
+                            ui.set_card_select_active(true);
+                        }
+                    } else {
+                        engine.play_card(handIndex, targetMonsterIndex);
+                    }
+                } else {
+                    engine.play_card(handIndex, targetMonsterIndex);
+                }
+            } else {
+                engine.play_card(handIndex, targetMonsterIndex);
+            }
          }
+
+        std::vector<int> pickedHandIndices;
+        bool cardSelectCancelled = false;
+        if (ui.pollCardSelectResult(pickedHandIndices, cardSelectCancelled) && pendingSelectPlay.active) {
+            if (cardSelectCancelled) {
+                pendingSelectPlay.active = false;
+                pendingSelectPlay.selectedInstanceIds.clear();
+                pendingSelectPlay.candidateInstanceIds.clear();
+            } else {
+                for (int pickedHandIndex : pickedHandIndices) {
+                    if (pickedHandIndex >= 0 &&
+                        static_cast<size_t>(pickedHandIndex) < pendingSelectPlay.candidateInstanceIds.size()) {
+                        pendingSelectPlay.selectedInstanceIds.push_back(
+                            pendingSelectPlay.candidateInstanceIds[static_cast<size_t>(pickedHandIndex)]);
+                    }
+                }
+                if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) >= pendingSelectPlay.requiredCount) {
+                    if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.requiredCount) {
+                        pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.requiredCount));
+                    }
+                    engine.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);
+                    engine.play_card(pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
+                }
+                pendingSelectPlay.active = false;
+                pendingSelectPlay.selectedInstanceIds.clear();
+                pendingSelectPlay.candidateInstanceIds.clear();
+            }
+        }
  
          int potionSlotIndex = -1;                          // 药水槽下标
          int potionTargetIndex = -1;                        // 药水目标怪物下标（-1 表示无需目标）
@@ -351,7 +469,7 @@ static void runMapUITest(sf::RenderWindow& window);
          }
 
          // 先推进回合阶段（含玩家回合开始时的能量/抽牌），再取快照绘制，使能量与 UI 当帧一致
-         if (!ui.is_deck_view_active() && !ui.is_reward_screen_active())
+        if (!ui.is_deck_view_active() && !ui.is_reward_screen_active() && !ui.is_card_select_active())
              engine.step_turn_phase();                      // 推进回合阶段（下回合加能量在此生效后快照才取到）
 
          BattleState state = engine.get_battle_state();     // 获取当前战斗状态（已含本回合加能量、下回合加能量后的值）
