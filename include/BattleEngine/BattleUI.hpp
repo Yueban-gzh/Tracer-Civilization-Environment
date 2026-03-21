@@ -10,6 +10,7 @@
 #include <SFML/Graphics.hpp>                    // 窗口、字体、图形绘制
 #include <string>                               // 字符串
 #include <unordered_map>                        // 怪物 id→纹理 缓存
+#include <unordered_set>                        // 抽/弃牌动画：隐藏飞行中的手牌实例
 #include <vector>                               // 动态数组
 
 namespace tce {
@@ -73,7 +74,8 @@ public:
     /** 选牌弹窗：用于卡牌效果中的“从候选牌中选择一张/多张”（当前先支持单选） */
     void set_card_select_active(bool active);
     /** candidate_hand_indices：与 card_ids 同序，表示每张候选在「当前手牌」中的下标；手牌区选牌时优先用此匹配点击，避免 instanceId 与快照不一致导致无法选中 */
-    void set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel = true, bool use_hand_area = false, std::vector<InstanceId> candidate_instance_ids = {}, int required_pick_count = 1, std::vector<int> candidate_hand_indices = {});
+    /** hide_played_hand_index：>=0 时该手牌下标视为已打出，扇区与底栏手牌绘制中均不显示（选牌界面用） */
+    void set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel = true, bool use_hand_area = false, std::vector<InstanceId> candidate_instance_ids = {}, int required_pick_count = 1, std::vector<int> candidate_hand_indices = {}, int hide_played_hand_index = -1);
     bool is_card_select_active() const { return card_select_active_; }
     /** 轮询一次选牌结果：-1 取消，0~N-1 选中的下标 */
     bool pollCardSelectPick(int& outCardIndex);
@@ -81,6 +83,9 @@ public:
     bool pollCardSelectResult(std::vector<int>& outCardIndices, bool& outCancelled);
     /** 获取选牌列表中指定下标的卡牌 id，越界返回空串 */
     std::string get_card_select_id_at(size_t index) const;
+
+    /** 在确认选牌并即将打出触发牌前调用：接下来若干张「离手进入弃牌/消耗」的飞牌从屏幕中央选牌区飞出并走弧线（与 main/GameFlow 中 play_card 配对） */
+    void set_pending_select_ui_pile_fly(int discard_or_exhaust_count);
 
 private:
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
@@ -103,6 +108,33 @@ private:
     void compute_card_select_hand_fan_(const BattleStateSnapshot& s, const std::vector<int>& selected_candidate_indices,
                                        std::vector<int>& out_vis_hand_indices,
                                        std::vector<sf::Vector2f>& out_centers, std::vector<float>& out_angles) const;
+
+    /** 抽牌堆→手牌、手牌→弃牌/消耗 的飞牌动画（与逻辑不同步帧，仅表现层） */
+    void tick_pile_card_anims_();
+    void detect_pile_card_anims_(const BattleStateSnapshot& s);
+    void draw_pile_card_anims_(sf::RenderWindow& window);
+    sf::Vector2f hand_fan_card_center_(size_t hand_index, size_t hand_count) const;
+    void pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const;
+    sf::Vector2f card_select_preview_center_for_fly_() const;
+
+    struct PileCardFlightAnim {
+        CardId       card_id;
+        sf::Vector2f start{};
+        sf::Vector2f end{};
+        float        duration_sec = 0.36f;
+        sf::Clock    clock{};
+        enum Kind { DrawToHand, HandToDiscard, HandToExhaust } kind = DrawToHand;
+        InstanceId   instance_id = 0;
+        bool         use_arc_path = false;
+    };
+    std::vector<PileCardFlightAnim>     pile_card_flights_;
+    std::unordered_set<InstanceId>      pile_draw_anim_hiding_;       // 抽到手的牌在飞入完成前不画在手牌区
+    std::unordered_map<InstanceId, sf::Vector2f> instance_hand_center_cache_; // 上一帧手牌中心，供弃牌起点
+    std::vector<CardInstance>           prev_hand_for_pile_anim_;
+    int                                 prev_discard_sz_for_anim_ = 0;
+    int                                 prev_exhaust_sz_for_anim_ = 0;
+    bool                                pile_anim_snapshot_ready_ = false;
+    int                                 pending_select_ui_pile_fly_remaining_ = 0;
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度
@@ -202,6 +234,8 @@ private:
     bool                          card_select_allow_cancel_ = true;
     bool                          card_select_use_hand_area_ = false;   // true=直接在手牌区选牌；false=弹窗网格选牌
     int                           card_select_required_pick_count_ = 1;
+    /** 选牌时从扇区隐藏的手牌下标（触发选牌的那张，视作已打出） */
+    int                           card_select_hide_hand_index_ = -1;
     std::vector<int>              card_select_selected_indices_;
     std::vector<int>              pending_card_select_indices_;
     bool                          pending_card_select_cancelled_ = false;

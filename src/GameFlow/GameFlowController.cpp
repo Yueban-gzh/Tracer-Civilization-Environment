@@ -352,7 +352,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                         pendingSelectPlay.candidateInstanceIds = candidateIids;
                         ui.set_card_select_data(
                             pendingSelectPlay.title,
-                            std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx));
+                            std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx),
+                            handIndex);
                         ui.set_card_select_active(true);
                     } else {
                         battleEngine_.play_card(handIndex, targetMonsterIndex);
@@ -388,6 +389,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                     if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.requiredCount) {
                         pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.requiredCount));
                     }
+                    ui.set_pending_select_ui_pile_fly(static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()));
                     battleEngine_.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);
                     battleEngine_.play_card(pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
                     pendingSelectPlay.active = false;

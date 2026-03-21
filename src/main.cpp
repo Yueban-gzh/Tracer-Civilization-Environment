@@ -335,7 +335,8 @@ static void runMapUITest(sf::RenderWindow& window);
                                 true,
                                 std::move(candidateIids),
                                 pendingSelectPlay.requiredCount,
-                                std::move(candidateHandIdx));
+                                std::move(candidateHandIdx),
+                                handIndex);
                             ui.set_card_select_active(true);
                         }
                     } else {
@@ -368,6 +369,7 @@ static void runMapUITest(sf::RenderWindow& window);
                     if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.requiredCount) {
                         pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.requiredCount));
                     }
+                    ui.set_pending_select_ui_pile_fly(static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()));
                     engine.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);
                     engine.play_card(pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
                 }
