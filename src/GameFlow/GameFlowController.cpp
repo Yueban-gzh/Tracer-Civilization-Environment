@@ -24,6 +24,22 @@ int randomIndex(std::mt19937& rng, int boundExclusive) {
     std::uniform_int_distribution<int> dist(0, boundExclusive - 1);
     return dist(rng);
 }
+
+void applyBattleTestMock(PlayerBattleState& p) {
+    if (std::find(p.relics.begin(), p.relics.end(), "burning_blood") == p.relics.end()) {
+        p.relics.push_back("burning_blood");
+    }
+    if (std::find(p.relics.begin(), p.relics.end(), "marble_bag") == p.relics.end()) {
+        p.relics.push_back("marble_bag");
+    }
+
+    p.statuses.erase(std::remove_if(p.statuses.begin(), p.statuses.end(),
+        [](const StatusInstance& s) { return s.id == "metallicize"; }),
+        p.statuses.end());
+    p.statuses.push_back(StatusInstance{"metallicize", 6, 3});
+
+    p.potions = {"poison_potion", "block_potion", "strength_potion"};
+}
 } // namespace
 
 GameFlowController::GameFlowController(sf::RenderWindow& window)
@@ -58,8 +74,16 @@ bool GameFlowController::initialize() {
     playerState_.relics = { "burning_blood" };
 
     cardSystem_.init_master_deck({
-        "strike", "strike", "strike", "strike", "strike",
-        "defend", "defend", "defend", "defend", "bash"
+        "feed", "feed+",
+        "fiend_fire", "fiend_fire+",
+        "whirlwind", "whirlwind+",
+        "burst", "burst+",
+        "corpse_explosion", "corpse_explosion+",
+        "after_image", "after_image+",
+        "wraith_form", "wraith_form+",
+        "apotheosis", "apotheosis+",
+        "master_of_strategy", "master_of_strategy+",
+        "the_bomb", "the_bomb+",
     });
 
     const MapEngine::MapConfig* config = mapConfigManager_.getCurrentConfig();
@@ -196,6 +220,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         }
     }
 
+    applyBattleTestMock(playerState_);
     battleEngine_.start_battle(monsters, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
     BattleUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
     if (!ui.loadFont("assets/fonts/Sanji.ttf")) {

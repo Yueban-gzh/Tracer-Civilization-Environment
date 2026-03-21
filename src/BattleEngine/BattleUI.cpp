@@ -1140,7 +1140,11 @@ namespace tce {
             costCircle.setOutlineThickness(2.f);
             window.draw(costCircle);
             int cost = cd ? cd->cost : 1;
-            std::snprintf(buf, sizeof(buf), "%d", cost);
+            if (cost == -1) {
+                std::snprintf(buf, sizeof(buf), "X");
+            } else {
+                std::snprintf(buf, sizeof(buf), "%d", cost);
+            }
             sf::Text costText(font_, buf, 26);
             costText.setFillColor(sf::Color::White);
             const sf::FloatRect cb = costText.getLocalBounds();
@@ -2116,7 +2120,11 @@ namespace tce {
 
             const CardData* cd = get_card_by_id(s.hand[idx].id);
             int cost = cd ? cd->cost : 1;
-            std::snprintf(buf, sizeof(buf), "%d", cost);
+            if (cost == -1) {
+                std::snprintf(buf, sizeof(buf), "X");
+            } else {
+                std::snprintf(buf, sizeof(buf), "%d", cost);
+            }
             sf::Text costText(font_, buf, 26);
             costText.setFillColor(sf::Color::White);
             const sf::FloatRect cb = costText.getLocalBounds();

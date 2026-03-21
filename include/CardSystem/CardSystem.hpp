@@ -87,6 +87,10 @@ public:
     const std::vector<CardInstance>& get_exhaust_pile() const;
     /** 升级战斗中（手/抽/弃）任意位置的指定实例：将 id 改为升级版（如 strike→strike+）；返回是否成功。 */
     bool upgrade_card_in_deck(InstanceId instance_id);
+    /** 升级当前战斗中的所有牌（手/抽/弃/消耗）；返回实际升级张数。 */
+    int  upgrade_all_cards_in_combat();
+    /** 将当前手牌全部移入消耗堆；返回消耗张数。 */
+    int  exhaust_all_hand_cards();
     /** 执行卡牌效果：按 CardId 查找注册表并调用对应效果函数。 */
     void execute_effect(CardId id, EffectContext& ctx);
     /** 检查某卡牌是否已注册效果（未注册则打出会消耗能量但无效果）。 */

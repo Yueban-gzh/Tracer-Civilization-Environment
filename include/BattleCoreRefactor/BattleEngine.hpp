@@ -21,6 +21,7 @@ public:
     int target_monster_index = -1;
     int source_monster_index = -1;
     bool from_attack = false;
+    int x_cost_spent = 0;
 
     void deal_damage_to_player(int amount);
     void deal_damage_to_monster(int monster_index, int amount);
@@ -45,8 +46,10 @@ public:
     void add_energy_to_player(int amount);
     int get_status_stacks_on_monster(int monster_index, const StatusId& id) const;
     int get_status_stacks_on_player(const StatusId& id) const;
+    int get_monster_current_hp(int monster_index) const;
     void apply_status_to_all_monsters(StatusId id, int stacks, int duration);
     void deal_damage_to_all_monsters(int base_damage);
+    void add_player_max_hp(int amount);
     int get_player_block() const;
     /** 当前能量（用于如双倍能量等效果） */
     int get_player_energy() const;
@@ -54,6 +57,10 @@ public:
     int get_discard_pile_size() const;
     /** 抽牌堆张数（用于如汇集等效果） */
     int get_draw_pile_size() const;
+    /** 将手牌全部移入消耗堆，返回消耗张数（如恶魔之焰）。 */
+    int exhaust_all_hand_cards();
+    /** 升级当前战斗中的全部牌（手/抽/弃/消耗），返回升级张数（如神化）。 */
+    int upgrade_all_cards_in_combat();
 
 private:
     friend class BattleEngine;
@@ -143,6 +150,7 @@ public:
     void add_energy_to_player_impl(int amount);
     int get_status_stacks_on_monster_impl(int monster_index, const StatusId& id) const;
     int get_status_stacks_on_player_impl(const StatusId& id) const;
+    int get_monster_current_hp_impl(int monster_index) const;
     void apply_status_to_player_impl(StatusId id, int stacks, int duration);
     void apply_status_to_monster_impl(int monster_index, StatusId id, int stacks, int duration);
     void set_monster_status_stacks_impl(int monster_index, StatusId id, int stacks);
@@ -152,6 +160,9 @@ public:
     int get_player_energy_impl() const;
     int get_discard_pile_size_impl() const;
     int get_draw_pile_size_impl() const;
+    int exhaust_all_hand_cards_impl();
+    int upgrade_all_cards_in_combat_impl();
+    void add_player_max_hp_impl(int amount);
 
 private:
     BattleState           state_;

@@ -70,7 +70,13 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
     if (cd && cd->unplayable) return false;                            // 不可打出则失败
 
     int cost = cd ? cd->cost : 0;                                      // 费用
-    if (state_.player.energy < cost) return false;                     // 能量不足
+    const bool is_x_cost = (cost == -1);
+    int x_spent = 0;
+    if (is_x_cost) {
+        x_spent = state_.player.energy;
+    } else {
+        if (state_.player.energy < cost) return false;                 // 能量不足
+    }
 
     // 仅当 requiresTarget 为 true 时需选目标（群伤牌为 false，不需选目标）
     const bool needs_target = (cd && cd->requiresTarget);
@@ -89,12 +95,17 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
     if (!card_system_->has_effect_registered(played_id)) return false;  // 未注册效果则不打出（避免消耗能量无效果）
     CardInstance played = card_system_->remove_from_hand(hand_index);    // 从手牌移除
  
-     state_.player.energy -= cost;                                      // 扣除能量
+    if (is_x_cost) {
+        state_.player.energy = 0;                                      // X 费：消耗全部当前能量
+    } else {
+        state_.player.energy -= cost;                                  // 扣除能量
+    }
  
      EffectContext ctx;                                                 // 效果上下文
      fill_effect_context(ctx);                                          // 填充引擎指针
      ctx.target_monster_index = target_monster_index;                   // 目标怪物下标
      ctx.from_attack = (cd && cd->cardType == CardType::Attack);          // 是否为攻击牌
+    ctx.x_cost_spent = x_spent;                                        // 记录本次 X 费值（非 X 费为 0）
  
      CardPlayContext card_ctx{                                          // 打出卡牌上下文（勒脖、点穴等）
          [this](int monster_index, int amount) {                         // 对怪物造成无视格挡伤害的回调
@@ -111,7 +122,17 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
      };
      modifiers_.on_card_played(state_, played_id, target_monster_index, &card_ctx);  // 广播：打出卡牌（勒脖等）
  
-     card_system_->execute_effect(played_id, ctx);                       // 执行卡牌效果
+    int execute_times = 1;
+    if (cd && cd->cardType == CardType::Skill) {
+        int burst_stacks = get_status_stacks(state_.player.statuses, "burst");
+        if (burst_stacks > 0) {
+            execute_times = 2;                                           // 爆发：下一张技能额外执行 1 次
+            reduce_status_stacks(state_.player.statuses, "burst", 1);   // 消耗 1 层爆发
+        }
+    }
+    for (int i = 0; i < execute_times; ++i) {
+        card_system_->execute_effect(played_id, ctx);                    // 执行卡牌效果
+    }
  
      if (cd && cd->retain) {                                            // 若为保留牌
          card_system_->add_to_hand(played);                              // 放回手牌
@@ -244,9 +265,13 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
          "card_010", "card_010+", "card_011", "card_011+", "card_012", "card_012+",
          "card_013", "card_013+", "card_014", "card_014+", "card_016", "card_016+",
          "card_017", "card_017+", "card_018", "card_018+",
-         "card_015", "card_015+", "card_019", "card_019+", "card_020", "card_020+",
-         "card_021", "card_021+", "card_022", "card_022+", "card_023", "card_023+",
-         "card_024", "card_024+"
+        "card_015", "card_015+", "card_019", "card_019+", "card_020", "card_020+",
+        "card_021", "card_021+", "card_022", "card_022+", "card_023", "card_023+",
+        "card_024", "card_024+",
+        "feed", "feed+", "fiend_fire", "fiend_fire+", "whirlwind", "whirlwind+",
+        "burst", "burst+", "corpse_explosion", "corpse_explosion+", "after_image", "after_image+",
+        "wraith_form", "wraith_form+", "apotheosis", "apotheosis+", "master_of_strategy", "master_of_strategy+",
+        "the_bomb", "the_bomb+"
      };
      std::vector<CardId> result;
      if (count <= 0 || reward_pool.empty()) return result;
@@ -326,7 +351,10 @@ void BattleEngine::apply_damage_to_player(DamagePacket& dmg) {         // 对玩
 
     // modifiers_.on_monster_deal_damage(dmg, state_);                    // 广播：怪物造成伤害前（虚弱、易伤等）
 
-     int totalDamage = dmg.modified_amount;                              // 总伤害（含被格挡部分）
+    int totalDamage = dmg.modified_amount;                              // 总伤害（含被格挡部分）
+    if (get_status_stacks(state_.player.statuses, "intangible") > 0 && totalDamage > 1) {
+        totalDamage = 1;                                                // 无实体：伤害最多为 1
+    }
      if (totalDamage < 0) totalDamage = 0;                               // 确保非负
 
      int hpDamage = totalDamage;                                         // 实际扣血量
@@ -369,7 +397,10 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
 
      auto& m = state_.monsters[static_cast<size_t>(idx)];               // 目标怪物引用
 
-     int totalDamage = dmg.modified_amount;                             // 总伤害（含被格挡部分）
+    int totalDamage = dmg.modified_amount;                             // 总伤害（含被格挡部分）
+    if (get_status_stacks(m.statuses, "intangible") > 0 && totalDamage > 1) {
+        totalDamage = 1;                                               // 无实体：伤害最多为 1
+    }
      if (totalDamage < 0) totalDamage = 0;                             // 确保非负
 
      int hpDamage = totalDamage;                                        // 实际扣血量
@@ -426,7 +457,19 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
                  card_system_->add_to_discard(c);                        // 否则加入弃牌堆
          }
      }
-     modifiers_.on_turn_end_player(state_);                              // 广播：玩家回合结束（金属化加格挡等）
+    PlayerTurnEndContext end_ctx{
+        [this](int monster_index, int amount) {
+            if (amount <= 0 || monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return;
+            DamagePacket dmg;
+            dmg.modified_amount = amount;
+            dmg.ignore_block = true;
+            dmg.can_be_reduced = true;
+            dmg.source_type = DamagePacket::SourceType::Status;
+            dmg.target_monster_index = monster_index;
+            apply_damage_to_monster(dmg);
+        }
+    };
+    modifiers_.on_turn_end_player(state_, &end_ctx);                    // 广播：玩家回合结束（金属化、炸弹等）
  }
  
  void BattleEngine::handle_enemy_turn_start() {                         // 敌方回合开始
@@ -618,12 +661,18 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  int EffectContext::get_status_stacks_on_player(const StatusId& id) const {  // 玩家某状态层数
      return engine_ ? engine_->get_status_stacks_on_player_impl(id) : 0;
  }
+int EffectContext::get_monster_current_hp(int monster_index) const {
+    return engine_ ? engine_->get_monster_current_hp_impl(monster_index) : 0;
+}
  void EffectContext::apply_status_to_all_monsters(StatusId id, int stacks, int duration) {  // 对全体怪物施加状态
      if (engine_) engine_->apply_status_to_all_monsters_impl(std::move(id), stacks, duration);
  }
  void EffectContext::deal_damage_to_all_monsters(int base_damage) {     // 对全体怪物造成伤害
      if (engine_) engine_->deal_damage_to_all_monsters_impl(base_damage);
  }
+void EffectContext::add_player_max_hp(int amount) {
+    if (engine_) engine_->add_player_max_hp_impl(amount);
+}
  int EffectContext::get_player_block() const {                          // 获取玩家格挡
      return engine_ ? engine_->get_player_block_impl() : 0;
  }
@@ -636,6 +685,12 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  int EffectContext::get_draw_pile_size() const {                       // 抽牌堆张数
      return engine_ ? engine_->get_draw_pile_size_impl() : 0;
  }
+int EffectContext::exhaust_all_hand_cards() {                         // 消耗全部手牌
+    return engine_ ? engine_->exhaust_all_hand_cards_impl() : 0;
+}
+int EffectContext::upgrade_all_cards_in_combat() {                    // 升级战斗内全部牌
+    return engine_ ? engine_->upgrade_all_cards_in_combat_impl() : 0;
+}
 
  // --- BattleEngine 内部实现 ---
  void BattleEngine::add_block_to_player_impl(int amount) {               // 给玩家加格挡
@@ -683,6 +738,10 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  int BattleEngine::get_status_stacks_on_player_impl(const StatusId& id) const {  // 玩家某状态层数
      return get_status_stacks(state_.player.statuses, id);
  }
+int BattleEngine::get_monster_current_hp_impl(int monster_index) const {
+    if (monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return 0;
+    return state_.monsters[static_cast<size_t>(monster_index)].currentHp;
+}
 static void add_or_merge_status(std::vector<StatusInstance>& list, StatusId id, int stacks, int duration) {
     for (auto& s : list) {
         if (s.id == id) {
@@ -748,6 +807,18 @@ void BattleEngine::set_monster_status_stacks_impl(int monster_index, StatusId id
  int BattleEngine::get_draw_pile_size_impl() const {                    // 抽牌堆张数
      return card_system_ ? card_system_->get_deck_size() : 0;
  }
+int BattleEngine::exhaust_all_hand_cards_impl() {
+    return card_system_ ? card_system_->exhaust_all_hand_cards() : 0;
+}
+int BattleEngine::upgrade_all_cards_in_combat_impl() {
+    return card_system_ ? card_system_->upgrade_all_cards_in_combat() : 0;
+}
+void BattleEngine::add_player_max_hp_impl(int amount) {
+    if (amount <= 0) return;
+    state_.player.maxHp += amount;
+    state_.player.currentHp += amount;
+    if (state_.player.currentHp > state_.player.maxHp) state_.player.currentHp = state_.player.maxHp;
+}
 
  // --- 金手指接口 ---
  void BattleEngine::cheat_set_player_hp(int hp) {

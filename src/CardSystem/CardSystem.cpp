@@ -9,6 +9,14 @@
 
 namespace tce {
 
+namespace {
+bool can_upgrade_card_id(const CardSystem::GetCardByIdFn& get_card_by_id, const CardId& id) {
+    if (id.empty() || id.back() == '+') return false;
+    CardId upgraded = id + "+";
+    return get_card_by_id ? (get_card_by_id(upgraded) != nullptr) : true;
+}
+} // namespace
+
 // 构造：注入 get_card_by_id（数据层只读查询）
 CardSystem::CardSystem(GetCardByIdFn get_card_by_id)
     : get_card_by_id_(std::move(get_card_by_id)) {}
@@ -62,7 +70,8 @@ bool CardSystem::upgrade_card_in_master_deck(InstanceId instance_id) {
     auto it = std::find_if(master_deck_.begin(), master_deck_.end(),
                            [instance_id](const CardInstance& c) { return c.instanceId == instance_id; });
     if (it == master_deck_.end()) return false;
-    if (!it->id.empty() && it->id.back() != '+') it->id += "+";
+    if (!can_upgrade_card_id(get_card_by_id_, it->id)) return false;
+    it->id += "+";
     return true;
 }
 
@@ -235,12 +244,38 @@ bool CardSystem::upgrade_card_in_deck(InstanceId instance_id) {
     for (auto* pile : {&hand_, &draw_pile_, &discard_pile_}) {
         auto it = std::find_if(pile->begin(), pile->end(), pred);
         if (it != pile->end()) {
-            if (!it->id.empty() && it->id.back() != '+')
-                it->id += "+";
+            if (!can_upgrade_card_id(get_card_by_id_, it->id)) return false;
+            it->id += "+";
             return true;
         }
     }
     return false;
+}
+
+int CardSystem::upgrade_all_cards_in_combat() {
+    int upgraded = 0;
+    auto upgrade_in_pile = [this, &upgraded](std::vector<CardInstance>& pile) {
+        for (auto& c : pile) {
+            if (can_upgrade_card_id(get_card_by_id_, c.id)) {
+                c.id += "+";
+                ++upgraded;
+            }
+        }
+    };
+    upgrade_in_pile(hand_);
+    upgrade_in_pile(draw_pile_);
+    upgrade_in_pile(discard_pile_);
+    upgrade_in_pile(exhaust_pile_);
+    return upgraded;
+}
+
+int CardSystem::exhaust_all_hand_cards() {
+    int n = static_cast<int>(hand_.size());
+    for (int i = n - 1; i >= 0; --i) {
+        auto c = remove_from_hand(i);
+        add_to_exhaust(std::move(c));
+    }
+    return n;
 }
 
 // 注册卡牌效果函数（CardId → EffectFn）

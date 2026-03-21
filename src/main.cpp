@@ -75,13 +75,19 @@ static void runMapUITest(sf::RenderWindow& window);
      player.gold       = 99;                                // 金币
      player.cardsToDrawPerTurn = 5;                         // 每回合抽牌数
  
-    // 初始牌组：包含已实现效果、便于测试的若干卡牌（每种一张基础版 + 一张升级版）
-    card_system.init_master_deck({
-        "dodge_and_roll", "dodge_and_roll+", "power_through", "power_through+",
-        "shiv", "shiv+",
-        "cloak_and_dagger", "cloak_and_dagger+", "blade_dance", "blade_dance+",
-        "limit_break", "limit_break+",
-    });
+   // 初始牌组：改为当前待测卡牌（每种一张基础版 + 一张升级版）
+   card_system.init_master_deck({
+       "feed", "feed+",
+       "fiend_fire", "fiend_fire+",
+       "whirlwind", "whirlwind+",
+       "burst", "burst+",
+       "corpse_explosion", "corpse_explosion+",
+       "after_image", "after_image+",
+       "wraith_form", "wraith_form+",
+       "apotheosis", "apotheosis+",
+       "master_of_strategy", "master_of_strategy+",
+       "the_bomb", "the_bomb+",
+   });
      // 普通关 1-3 只怪随机，从邪教徒池中抽取
      static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
      int monsterCount = 1 + static_cast<int>(rng() % 3);   // 1~3 只
@@ -92,13 +98,24 @@ static void runMapUITest(sf::RenderWindow& window);
      // 遗物：燃烧之血为铁甲战士角色初始遗物，其余为测试用
      std::vector<RelicId> relics = {"burning_blood", "marble_bag"};  // 燃烧之血+弹珠袋
  
-     // Mock：玩家初始获得 6 层金属化（在开战前加入状态）
-     player.statuses.push_back(StatusInstance{"metallicize", 6, 3});  // 金属化：回合末加格挡，持续 3 回合
- 
-     // Mock：药水栏（含毒药水，需点击怪物指定目标）
-     player.potions = {"poison_potion", "block_potion", "strength_potion"};  // 毒药水、格挡药水、力量药水
- 
-     engine.start_battle(monsters, player, card_system.get_master_deck_card_ids(), relics);  // 开始战斗
+    // 测试注入：每次开战前都执行，确保能持续影响主流程（而不是只在首战生效一次）
+    auto apply_battle_test_mock = [](PlayerBattleState& p, std::vector<RelicId>& rs) {
+        // 保留初始测试遗物（若后续流程已携带遗物则不重复添加）
+        if (std::find(rs.begin(), rs.end(), "burning_blood") == rs.end()) rs.push_back("burning_blood");
+        if (std::find(rs.begin(), rs.end(), "marble_bag") == rs.end()) rs.push_back("marble_bag");
+        p.relics = rs;
+
+        // 回合内测试状态：每场战斗都重置注入一次
+        p.statuses.erase(std::remove_if(p.statuses.begin(), p.statuses.end(),
+            [](const StatusInstance& s) { return s.id == "metallicize"; }), p.statuses.end());
+        p.statuses.push_back(StatusInstance{"metallicize", 6, 3});  // 金属化：回合末加格挡，持续 3 回合
+
+        // 测试药水：每场战斗重置一组固定药水
+        p.potions = {"poison_potion", "block_potion", "strength_potion"};
+    };
+
+    apply_battle_test_mock(player, relics);
+    engine.start_battle(monsters, player, card_system.get_master_deck_card_ids(), relics);  // 开始战斗
 
     CheatEngine cheat(&engine, &card_system);  // 金手指引擎（独立于主逻辑）
     CheatPanel cheat_panel(&cheat, static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
@@ -324,8 +341,10 @@ static void runMapUITest(sf::RenderWindow& window);
                  player.maxHp = curState.player.maxHp;
                  player.potions = curState.player.potions;
                  player.statuses = curState.player.statuses;
-                 player.relics = curState.player.relics;
-                 engine.start_battle(nextMonsters, player, card_system.get_master_deck_card_ids(), player.relics);
+                player.relics = curState.player.relics;
+                std::vector<RelicId> nextRelics = player.relics;
+                apply_battle_test_mock(player, nextRelics);
+                engine.start_battle(nextMonsters, player, card_system.get_master_deck_card_ids(), nextRelics);
                  ui.setBattleBackground(battleIndex);  // 切换本场战斗背景
                  for (const auto& mid : nextMonsters) tryLoadMonster(mid);
              }

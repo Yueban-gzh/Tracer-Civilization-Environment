@@ -193,7 +193,7 @@ public:
         if (ctx && ctx->is_attack)
             attacked_this_turn_ = true;             // 打出攻击牌，标记本回合已攻击
     }
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
         if (!attacked_this_turn_)
             next_turn_extra_energy_ = true;          // 本回合未打攻击，下回合获得 1 能量
@@ -240,7 +240,7 @@ public:
 
 class OrichalcumRelic : public IBattleModifier {  // 奥利哈钢：回合结束时若没有任何格挡，获得 6 点格挡
 public:
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
         if (state.player.block > 0) return;         // 已有格挡则不触发
         state.player.block += 6;                    // 获得 6 点格挡

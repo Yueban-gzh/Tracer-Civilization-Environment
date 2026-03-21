@@ -558,6 +558,82 @@ void effect_limit_break(EffectContext& ctx, bool /*is_upgraded*/) {
     if (s > 0) ctx.apply_status_to_player("strength", s, -1);
 }
 
+// 狂宴：造成 10/12 点伤害；若击杀目标，永久获得 3/4 点最大生命
+void effect_feed(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int hp_before = ctx.get_monster_current_hp(ctx.target_monster_index);
+    if (hp_before <= 0) return;
+    int base = is_upgraded ? 12 : 10;
+    int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    int hp_after = ctx.get_monster_current_hp(ctx.target_monster_index);
+    if (hp_after <= 0) {
+        ctx.add_player_max_hp(is_upgraded ? 4 : 3);
+    }
+}
+
+// 恶魔之焰：消耗所有手牌；每张被消耗的牌造成 7/10 伤害
+void effect_fiend_fire(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int hits = ctx.exhaust_all_hand_cards();
+    if (hits <= 0) return;
+    int base = is_upgraded ? 10 : 7;
+    for (int i = 0; i < hits; ++i) {
+        int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+        if (dmg > 0) ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 旋风斩：对所有敌人造成 5/8 点伤害 X 次（X 由 BattleEngine 在 X 费结算时写入）
+void effect_whirlwind(EffectContext& ctx, bool is_upgraded) {
+    int x = ctx.x_cost_spent;
+    if (x <= 0) return;
+    int base = is_upgraded ? 8 : 5;
+    for (int i = 0; i < x; ++i) ctx.deal_damage_to_all_monsters(base);
+}
+
+// 爆发：本回合下一张/下两张技能额外执行一次（由 BattleEngine::play_card 消费 burst 状态）
+void effect_burst(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("burst", is_upgraded ? 2 : 1, 1);
+}
+
+// 尸爆术：给予目标 6/9 层中毒与 1 层尸体爆炸
+void effect_corpse_explosion(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int poison = is_upgraded ? 9 : 6;
+    ctx.apply_status_to_monster(ctx.target_monster_index, "poison", poison, poison);
+    ctx.apply_status_to_monster(ctx.target_monster_index, "corpse_explosion", 1, -1);
+}
+
+// 余像：每打出一张牌获得 1 点格挡（由 PlayerAfterimageModifier 处理）
+void effect_after_image(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("after_image", 1, -1);
+}
+
+// 幽魂形态：获得 2/3 层无实体，并附加 wraith_form 标记
+void effect_wraith_form(EffectContext& ctx, bool is_upgraded) {
+    int n = is_upgraded ? 3 : 2;
+    ctx.apply_status_to_player("intangible", n, n);
+    ctx.apply_status_to_player("wraith_form", 1, -1);
+}
+
+// 神化：在本场战斗中升级所有牌
+void effect_apotheosis(EffectContext& ctx, bool is_upgraded) {
+    (void)is_upgraded;
+    ctx.upgrade_all_cards_in_combat();
+}
+
+// 策略大师：抽 3/4 张牌，消耗
+void effect_master_of_strategy(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_cards(is_upgraded ? 4 : 3);
+}
+
+// 炸弹：3 回合后对所有敌人造成 40/50 伤害（由回合结束流程读取 the_bomb 状态触发）
+void effect_the_bomb(EffectContext& ctx, bool is_upgraded) {
+    int dmg = is_upgraded ? 50 : 40;
+    ctx.apply_status_to_player("the_bomb", dmg, 3);
+}
+
 } // namespace
 
 void register_all_card_effects(CardSystem& card_system) {
@@ -696,6 +772,27 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("blade_dance+", [](EffectContext& c) { effect_blade_dance(c, true); });
     card_system.register_card_effect("limit_break", [](EffectContext& c) { effect_limit_break(c, false); });
     card_system.register_card_effect("limit_break+", [](EffectContext& c) { effect_limit_break(c, true); });
+    // 新增一批可制作卡牌
+    card_system.register_card_effect("feed", [](EffectContext& c) { effect_feed(c, false); });
+    card_system.register_card_effect("feed+", [](EffectContext& c) { effect_feed(c, true); });
+    card_system.register_card_effect("fiend_fire", [](EffectContext& c) { effect_fiend_fire(c, false); });
+    card_system.register_card_effect("fiend_fire+", [](EffectContext& c) { effect_fiend_fire(c, true); });
+    card_system.register_card_effect("whirlwind", [](EffectContext& c) { effect_whirlwind(c, false); });
+    card_system.register_card_effect("whirlwind+", [](EffectContext& c) { effect_whirlwind(c, true); });
+    card_system.register_card_effect("burst", [](EffectContext& c) { effect_burst(c, false); });
+    card_system.register_card_effect("burst+", [](EffectContext& c) { effect_burst(c, true); });
+    card_system.register_card_effect("corpse_explosion", [](EffectContext& c) { effect_corpse_explosion(c, false); });
+    card_system.register_card_effect("corpse_explosion+", [](EffectContext& c) { effect_corpse_explosion(c, true); });
+    card_system.register_card_effect("after_image", [](EffectContext& c) { effect_after_image(c, false); });
+    card_system.register_card_effect("after_image+", [](EffectContext& c) { effect_after_image(c, true); });
+    card_system.register_card_effect("wraith_form", [](EffectContext& c) { effect_wraith_form(c, false); });
+    card_system.register_card_effect("wraith_form+", [](EffectContext& c) { effect_wraith_form(c, true); });
+    card_system.register_card_effect("apotheosis", [](EffectContext& c) { effect_apotheosis(c, false); });
+    card_system.register_card_effect("apotheosis+", [](EffectContext& c) { effect_apotheosis(c, true); });
+    card_system.register_card_effect("master_of_strategy", [](EffectContext& c) { effect_master_of_strategy(c, false); });
+    card_system.register_card_effect("master_of_strategy+", [](EffectContext& c) { effect_master_of_strategy(c, true); });
+    card_system.register_card_effect("the_bomb", [](EffectContext& c) { effect_the_bomb(c, false); });
+    card_system.register_card_effect("the_bomb+", [](EffectContext& c) { effect_the_bomb(c, true); });
     // cards.json 诗词卡：与子同袍/大风起兮等 Attack 用打击效果，雨雪霏霏等 Skill 用防御效果
     card_system.register_card_effect("card_001", [](EffectContext& c) { effect_strike(c, false); });
     card_system.register_card_effect("card_001+", [](EffectContext& c) { effect_strike(c, true); });

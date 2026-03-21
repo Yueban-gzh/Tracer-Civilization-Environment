@@ -77,12 +77,12 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
  
  class PlayerCurseModifier : public IBattleModifier {};             // 诅咒（桩）
  class PlayerCannotBlockModifier : public IBattleModifier {};        // 无法格挡（桩）
- class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形态：回合开始敏捷归零
+class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形态：回合结束失去 1 点敏捷
  public:
-     void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
+   void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "wraith_form");
          if (stacks <= 0) return;
-         BattleEngine::reduce_status_stacks(state.player.statuses, "dexterity", stacks);  // 清空敏捷
+        BattleEngine::reduce_status_stacks(state.player.statuses, "dexterity", 1);
      }
  };
  
@@ -220,7 +220,7 @@ public:
 
  class RegenerateModifier : public IBattleModifier {                   // 再生（玩家）：其回合结束时回复 X 点生命，层数每回合 -1
     public:
-        void on_turn_end_player(BattleState& state) override {
+       void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
             int stacks = BattleEngine::get_status_stacks(state.player.statuses, "regeneration");
             if (stacks <= 0) return;                                      // 无再生层数则跳过
             state.player.currentHp += stacks;                             // 回复生命（层数 = 回复量）
@@ -254,7 +254,7 @@ public:
 
 class StrengthBoostModifier : public IBattleModifier {                 // 力量增益：每回合结束时获得 X 点力量
 public:
-    void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
         int stacks = BattleEngine::get_status_stacks(state.player.statuses, "strength_boost");
         if (stacks <= 0) return;
         add_strength_stacks(state.player.statuses, stacks);
@@ -329,17 +329,31 @@ public:
      }
  };
  class BarricadeModifier : public IBattleModifier {};                // 壁垒（桩）
- class IntangibleModifier : public IBattleModifier {};               //  intangible（桩）
+class IntangibleModifier : public IBattleModifier {                // 无实体：受到伤害时最多为 1
+public:
+    void on_monster_deal_damage(DamagePacket& dmg, const BattleState& state) override {  // 怪物打玩家
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "intangible");
+        if (stacks <= 0) return;
+        if (dmg.modified_amount > 1) dmg.modified_amount = 1;
+    }
+    void on_player_deal_damage(DamagePacket& dmg, const BattleState& state) override {   // 玩家打怪物
+        int idx = dmg.target_monster_index;
+        if (idx < 0 || static_cast<size_t>(idx) >= state.monsters.size()) return;
+        int stacks = BattleEngine::get_status_stacks(state.monsters[static_cast<size_t>(idx)].statuses, "intangible");
+        if (stacks <= 0) return;
+        if (dmg.modified_amount > 1) dmg.modified_amount = 1;
+    }
+};
  class MetallicizeModifier : public IBattleModifier {                // 金属化：玩家回合结束加格挡
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "metallicize");
          if (stacks > 0) state.player.block += stacks;
      }
  };
  class MultiArmorModifier : public IBattleModifier {                 // 多层护甲：回合结束加格挡（玩家+怪物）
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "multi_armor");
          if (stacks > 0) state.player.block += stacks;
      }
@@ -352,7 +366,7 @@ public:
  };
  class RitualModifier : public IBattleModifier {                     // 仪式：回合结束加力量（玩家+怪物）
  public:
-     void on_turn_end_player(BattleState& state) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "ritual");
          if (stacks <= 0) return;
          add_strength_stacks(state.player.statuses, stacks);
@@ -428,7 +442,14 @@ public:
  class PlayerMantraModifier : public IBattleModifier {};              // 真言（桩）
  class PlayerAccuracyModifier : public IBattleModifier {};           // 精准（桩）
  class PlayerAmplifyModifier : public IBattleModifier {};             // 增幅（桩）
- class PlayerAfterimageModifier : public IBattleModifier {};         // 残像（桩）
+class PlayerAfterimageModifier : public IBattleModifier {           // 残像：每打出一张牌获得 1 点格挡/层
+public:
+    void on_card_played(BattleState& state, CardId /*card_id*/, int /*target_monster_index*/, CardPlayContext* /*ctx*/) override {
+        int stacks = BattleEngine::get_status_stacks(state.player.statuses, "after_image");
+        if (stacks <= 0) return;
+        state.player.block += stacks;
+    }
+};
  class PlayerBattleHymnModifier : public IBattleModifier {};          // 战歌（桩）
  class PlayerBlasphemyModifier : public IBattleModifier {};          // 渎神（桩）
  class PlayerShadowModifier : public IBattleModifier {};              // 暗影（桩）
@@ -503,7 +524,23 @@ public:
  class StaticDischargeModifier : public IBattleModifier {};         // 静电释放（桩）
  class CrueltyModifier : public IBattleModifier {};                  // 残忍（桩）
  class StudyModifier : public IBattleModifier {};                    // 学习（桩）
- class BombModifier : public IBattleModifier {};                     // 炸弹（桩）
+class BombModifier : public IBattleModifier {                      // 炸弹：玩家回合结束时，倒计时到 1 则对全体造成 X 伤害
+public:
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* ctx) override {
+        if (!ctx || !ctx->deal_damage_to_monster_ignoring_block) return;
+        int bomb_damage = 0;
+        for (const auto& s : state.player.statuses) {
+            if (s.id == "the_bomb" && s.duration == 1) {
+                bomb_damage += s.stacks;
+            }
+        }
+        if (bomb_damage <= 0) return;
+        for (size_t i = 0; i < state.monsters.size(); ++i) {
+            if (state.monsters[i].currentHp <= 0) continue;
+            ctx->deal_damage_to_monster_ignoring_block(static_cast<int>(i), bomb_damage);
+        }
+    }
+};
  class MeleeModifier : public IBattleModifier {};                    // 近战（桩）
  class LingchiModifier : public IBattleModifier {};                  // 凌迟（桩）
  class EssentialToolsModifier : public IBattleModifier {};           // 必备工具（桩）
@@ -529,7 +566,7 @@ public:
             if (s.duration > 0) {                                // 每回合 -1，仅对 duration>0 的生效
                 --s.duration;
                 // 对于虚弱/易伤/脆弱这类「层数 = 持续时间」的减益，层数也同步递减，
-                if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+               if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail" || s.id == "intangible") && s.stacks > 0) {
                     --s.stacks;
                 }
             }
@@ -545,7 +582,7 @@ public:
             for (auto& s : m.statuses) {
                 if (s.duration > 0) {                             // 每回合 -1
                     --s.duration;
-                    if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail") && s.stacks > 0) {
+                   if ((s.id == "weak" || s.id == "vulnerable" || s.id == "frail" || s.id == "intangible") && s.stacks > 0) {
                         --s.stacks;
                     }
                 }
