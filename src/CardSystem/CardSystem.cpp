@@ -158,6 +158,12 @@ const std::vector<CardInstance>& CardSystem::get_hand() const {
     return hand_;
 }
 
+void CardSystem::add_combat_cost_discount_to_hand_index(int hand_index, int delta) {
+    if (delta <= 0) return;
+    if (hand_index < 0 || static_cast<size_t>(hand_index) >= hand_.size()) return;
+    hand_[static_cast<size_t>(hand_index)].combatCostDiscount += delta;
+}
+
 // 从手牌按下标移除并返回（出牌/弃牌均可用；去向由调用方决定）
 CardInstance CardSystem::remove_from_hand(int hand_index) {
     CardInstance c = hand_.at(static_cast<size_t>(hand_index));

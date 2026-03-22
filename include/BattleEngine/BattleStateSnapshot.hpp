@@ -21,8 +21,6 @@ struct BattleStateSnapshot {
     int                      energy;
     int                      maxEnergy;
     Stance                   stance;
-    int                      orbSlotCount;
-    std::vector<OrbSlot>     orbSlots;
     int                      potionSlotCount = 3;
     std::vector<PotionId>    potions;
     std::vector<RelicId>     relics;

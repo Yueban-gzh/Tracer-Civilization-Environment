@@ -137,11 +137,13 @@ public:
 
     static int  get_status_stacks(const std::vector<StatusInstance>& list, const StatusId& id);
     static void reduce_status_stacks(std::vector<StatusInstance>& list, const StatusId& id, int amount);
+    /** 与 apply_status 相同的叠层/持续规则；modifier 在无引擎回调时写入状态列表用 */
+    static void merge_status_into_list(std::vector<StatusInstance>& list, StatusId id, int stacks, int duration);
 
     // --- 供 EffectContext 调用的内部接口（CardEffects 兼容）---
     void add_block_to_player_impl(int amount);
     void add_block_to_monster_impl(int monster_index, int amount);
-    int get_effective_damage_dealt_by_player_impl(int base_damage, int target_monster_index) const;
+    int get_effective_damage_dealt_by_player_impl(int base_damage, int target_monster_index, bool from_attack) const;
     int get_effective_block_for_player_impl(int base_block) const;
     void generate_to_discard_pile_impl(CardId id);
     void generate_to_draw_pile_impl(CardId id);

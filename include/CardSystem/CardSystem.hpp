@@ -19,6 +19,8 @@ struct CardInstance {
     // 战斗中临时生成的牌（如“复制/生成到手牌”）应标记为 temporary，
     // 以便“牌组(Deck)”视图只展示玩家真实牌组（不包含临时生成牌）。
     bool       temporary = false;
+    /** 本场战斗累计减费（确立基础等），与 CardData::cost 相减，不低于 0 */
+    int        combatCostDiscount = 0;
 };
 
 class CardSystem {
@@ -58,6 +60,8 @@ public:
     void draw_cards(int n);
     /** 获取当前手牌列表（只读引用）。 */
     const std::vector<CardInstance>& get_hand() const;
+    /** 为手牌指定下标增加本场减费累计（确立基础等）；下标须在范围内。 */
+    void add_combat_cost_discount_to_hand_index(int hand_index, int delta);
     /** 从手牌按下标移除并返回该牌实例（出牌/弃牌都用它），后续去向由调用方决定。 */
     CardInstance remove_from_hand(int hand_index);
     /** 将牌实例加入手牌：若 instanceId 为 0 则分配新实例 id；若手牌已满则直接进入弃牌堆。 */

@@ -22,8 +22,6 @@
      s.energy      = p.energy;                           // 当前能量
      s.maxEnergy   = p.maxEnergy;                        // 最大能量
      s.stance      = p.stance;                           // 姿态
-     s.orbSlotCount = p.orbSlotCount;                   // 充能球槽位数
-     s.orbSlots    = p.orbSlots;                        // 充能球槽位
      s.potionSlotCount = p.potionSlotCount;             // 药水槽位数
      s.potions     = p.potions;                         // 药水列表
      s.relics      = p.relics;                           // 遗物列表

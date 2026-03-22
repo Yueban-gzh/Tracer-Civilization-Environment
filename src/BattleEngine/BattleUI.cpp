@@ -3,6 +3,7 @@
  */
 #include "BattleEngine/BattleUI.hpp"               // BattleUI 类声明
 #include "BattleEngine/BattleStateSnapshot.hpp"    // 战斗状态快照结构
+#include "CardSystem/CardSystem.hpp"               // CardInstance（本场减费展示）
 #include "BattleCoreRefactor/PotionEffects.hpp"    // 药水需目标判断
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
 #include <SFML/Graphics.hpp>                       // 图形绘制
@@ -69,7 +70,7 @@ namespace tce {
                 {"burning_blood", {L"燃烧之血", L"战斗胜利时回复 6 点生命"}},
                 {"marble_bag", {L"弹珠袋", L"战斗开始时给所有敌人 1 层易伤"}},
                 {"small_blood_vial", {L"小血瓶", L"战斗开始时回复 2 点生命"}},
-                {"copper_scales", {L"铜制鳞片", L"战斗开始时获得 3 点荆棘"}},
+                {"copper_scales", {L"铜制鳞片", L"（无战斗效果）"}},
                 {"smooth_stone", {L"意外光滑的石头", L"战斗开始时获得 1 点敏捷"}},
                 {"lantern", {L"灯笼", L"每场战斗第一回合获得 1 点能量"}},
                 {"happy_flower", {L"开心小花", L"每 3 回合获得 1 点能量"}},
@@ -124,6 +125,15 @@ namespace tce {
             // 数据层尚未填充时，对部分已知需目标牌按需目标处理
             if (id == "strike" || id == "bash") return true;
             return false;
+        }
+
+        /** 手牌/牌组视图：基础费 - 实例上的本场减费（确立基础等），X 费保持 -1 */
+        inline int effective_hand_card_energy_cost(const CardData* cd, const CardInstance& inst) {
+            if (!cd) return 0;
+            int c = cd->cost;
+            if (c < 0) return c;
+            int e = c - inst.combatCostDiscount;
+            return e < 0 ? 0 : e;
         }
 
         // 按像素宽度自动换行，超出行数用省略号截断，避免绘制出卡牌区域
@@ -298,10 +308,10 @@ namespace tce {
         if (!lastSnapshot_) return true;            // 没有快照时不拦截（允许）
         if (selectedHandIndex_ < 0 || static_cast<size_t>(selectedHandIndex_) >= lastSnapshot_->hand.size())
             return true;                           // 无选中牌时允许
-        const auto& id = lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id;
-        const CardData* cd = get_card_by_id(id);
-        int cost = cd ? cd->cost : 0;
-        return lastSnapshot_->energy >= cost;       // 当前能量是否足够支付该牌费用
+        const auto& inst = lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)];
+        const CardData* cd = get_card_by_id(inst.id);
+        const int cost = effective_hand_card_energy_cost(cd, inst);
+        return lastSnapshot_->energy >= cost;       // 当前能量是否足够支付该牌费用（含确立基础减费）
     }
 
     void BattleUI::draw_center_tip(sf::RenderWindow& window) {
@@ -1139,7 +1149,7 @@ namespace tce {
             costCircle.setOutlineColor(sf::Color(255, 190, 90));
             costCircle.setOutlineThickness(2.f);
             window.draw(costCircle);
-            int cost = cd ? cd->cost : 1;
+            const int cost = effective_hand_card_energy_cost(cd, inst);
             if (cost == -1) {
                 std::snprintf(buf, sizeof(buf), "X");
             } else {
@@ -1330,7 +1340,16 @@ namespace tce {
                 || id == "multi_armor"
                 || id == "barricade"
                 || id == "artifact"
-                || id == "thorns"
+                || id == "poison_cloud"
+                || id == "double_damage"
+                || id == "double_tap"
+                || id == "demon_form"
+                || id == "heat_sink"
+                || id == "hello"
+                || id == "unstoppable"
+                || id == "establishment"
+                || id == "equilibrium"
+                || id == "free_attack"
                 || id == "wraith_form"
                 || id == "buffer"
                 || id == "draw_up"
@@ -1338,10 +1357,15 @@ namespace tce {
                 || id == "block_up"
                 || id == "vigor"
                 || id == "combust"
-                || id == "rupture";
+                || id == "rupture"
+                || id == "flight"
+                || id == "indestructible"
+                || id == "curiosity"
+                || id == "anger"
+                || id == "curl_up";
             };
         auto has_stack_number_ui = [](const std::string& id) {  // 是否显示层数下标
-            return id != "barricade";  // 壁垒等不显示
+            return id != "barricade" && id != "blasphemy";  // 壁垒、渎神标记等不显示层数下标
             };
 
         for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
@@ -1645,6 +1669,10 @@ namespace tce {
                 name = L"脆弱";
                 line2 = L"在" + std::to_wstring(st.duration) + L"回合内,从卡牌中获得的格挡减少 25%";
             }
+            else if (id == "blasphemy") {
+                name = L"渎神";
+                line2 = L"在你的回合开始时立即死亡";
+            }
             else if (id == "entangle") {
                 name = L"缠绕";
                 line2 = L"在你的回合结束时，受到" + std::to_wstring(n) + L"点伤害";
@@ -1685,9 +1713,69 @@ namespace tce {
                 name = L"中毒";
                 line2 = L"在回合开始时，受到 " + std::to_wstring(n) + L" 点伤害，然后中毒层数减少 1";
             }
+            else if (id == "death_rhythm") {
+                name = L"死亡律动";
+                line2 = L"你每打出一张牌，受到等同于场上所有存活敌人该效果层数之和的伤害；本图标为这名敌人提供的 " + std::to_wstring(n) + L" 层";
+            }
+            else if (id == "curiosity") {
+                name = L"好奇";
+                line2 = L"你每打出一张能力牌，该敌人获得 " + std::to_wstring(n) + L" 点力量";
+            }
+            else if (id == "anger") {
+                name = L"生气";
+                line2 = L"每当受到攻击伤害，获得 " + std::to_wstring(n) + L" 点力量";
+            }
+            else if (id == "curl_up") {
+                name = L"蜷身";
+                line2 = L"当受到攻击伤害时，获得 " + std::to_wstring(n) + L" 点格挡；每场战斗仅触发一次";
+            }
+            else if (id == "vanish") {
+                name = L"消逝";
+                line2 = L"层数每回合减少 1（敌方回合结束时）；降至 0 时立即死亡。当前剩余 " + std::to_wstring(n) + L" 回合";
+            }
             else if (id == "metallicize") {
                 name = L"金属化";
                 line2 = L"在你的回合结束时，获得 " + std::to_wstring(n) + L" 点格挡";
+            }
+            else if (id == "poison_cloud") {
+                name = L"毒雾";
+                line2 = L"在你的回合开始时，给予所有敌人 " + std::to_wstring(n) + L" 层中毒";
+            }
+            else if (id == "double_damage") {
+                name = L"双倍伤害";
+                line2 = L"攻击造成的伤害翻倍；剩余 " + std::to_wstring(n) + L" 回合";
+            }
+            else if (id == "double_tap") {
+                name = L"双发";
+                line2 = L"本回合再打出的下 " + std::to_wstring(n) + L" 张攻击牌会打出两次";
+            }
+            else if (id == "demon_form") {
+                name = L"恶魔形态";
+                line2 = L"在你的回合开始时，获得 " + std::to_wstring(n) + L" 点力量";
+            }
+            else if (id == "heat_sink") {
+                name = L"散热";
+                line2 = L"你每打出一张能力牌，抽 " + std::to_wstring(n) + L" 张牌";
+            }
+            else if (id == "hello") {
+                name = L"你好";
+                line2 = L"在你的回合开始时，将 " + std::to_wstring(n) + L" 张随机普通稀有度的牌置入手牌（本场临时牌）";
+            }
+            else if (id == "unstoppable") {
+                name = L"势不可挡";
+                line2 = L"每当你获得格挡时，对一名随机敌人造成 " + std::to_wstring(n) + L" 点伤害";
+            }
+            else if (id == "establishment") {
+                name = L"确立基础";
+                line2 = L"每当有卡牌因「保留」留在手牌或打出后回到手牌，该牌本场耗能额外减少 " + std::to_wstring(n) + L" 点";
+            }
+            else if (id == "equilibrium") {
+                name = L"均衡";
+                line2 = L"接下来 " + std::to_wstring(n) + L" 个你的回合结束时，手牌保留在手中（虚无牌仍会消耗）";
+            }
+            else if (id == "free_attack") {
+                name = L"免费攻击";
+                line2 = L"再打出的下 " + std::to_wstring(n) + L" 张攻击牌耗能为 0";
             }
             else if (id == "ritual") {
                 name = L"仪式";
@@ -1705,9 +1793,13 @@ namespace tce {
                 name = L"无实体";
                 line2 = L"在本回合内，将该单位每次受到的伤害和生命减少效果降为 1";
             }
-            else if (id == "thorns") {
-                name = L"荆棘";
-                line2 = L"每受到一次攻击，对攻击者造成 " + std::to_wstring(n) + L" 点反伤";
+            else if (id == "flight") {
+                name = L"飞行";
+                line2 = L"从攻击受到的伤害减半；在本玩家回合内累计受到 " + std::to_wstring(n) + L" 次攻击伤害后失去该状态";
+            }
+            else if (id == "indestructible") {
+                name = L"坚不可摧";
+                line2 = L"从本次玩家回合开始，累计最多再失去 " + std::to_wstring(n) + L" 点生命（仅统计实际扣血，格挡吸收不计入上限）";
             }
             else if (id == "artifact") {
                 name = L"人工制品";
@@ -1972,9 +2064,9 @@ namespace tce {
             if (hoverIndex >= 0 && selectedHandIndex_ < 0 && sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
                 // 能量不足时直接在中央弹出提示，不进入瞄准/选牌
                 if (lastSnapshot_) {
-                    const auto& id = s.hand[static_cast<size_t>(hoverIndex)].id;
-                    const CardData* cd = get_card_by_id(id);
-                    int cost = cd ? cd->cost : 0;
+                    const auto& inst = s.hand[static_cast<size_t>(hoverIndex)];
+                    const CardData* cd = get_card_by_id(inst.id);
+                    const int cost = effective_hand_card_energy_cost(cd, inst);
                     if (lastSnapshot_->energy < cost) {
                         show_center_tip(L"能量不足", 1.2f);
                         return;
@@ -2118,8 +2210,9 @@ namespace tce {
             costCircle.setOutlineThickness(2.f);
             window.draw(costCircle, states);
 
-            const CardData* cd = get_card_by_id(s.hand[idx].id);
-            int cost = cd ? cd->cost : 1;
+            const CardInstance& inst = s.hand[idx];
+            const CardData* cd = get_card_by_id(inst.id);
+            const int cost = effective_hand_card_energy_cost(cd, inst);
             if (cost == -1) {
                 std::snprintf(buf, sizeof(buf), "X");
             } else {

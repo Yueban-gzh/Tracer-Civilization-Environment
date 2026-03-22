@@ -17,12 +17,6 @@ struct StatusInstance {
     int      duration = 0;  // 持续回合(-1永久)
 };
 
-// 充能球槽位（占位：未来可扩展宝珠/充能系统）
-struct OrbSlot {
-    std::string orbId;
-    int         stacks = 0;
-};
-
 // 玩家战斗状态（纯数据）
 struct PlayerBattleState {
     std::string playerName;
@@ -33,8 +27,6 @@ struct PlayerBattleState {
     int energy         = 0;
     int maxEnergy      = 0;
     Stance stance      = Stance::Neutral;
-    int orbSlotCount   = 0;
-    std::vector<OrbSlot>        orbSlots;
     int gold            = 0;
     int potionSlotCount = 3;
     std::vector<PotionId>       potions;
@@ -60,6 +52,12 @@ struct MonsterInBattle {
     int block     = 0;
     MonsterIntent currentIntent;
     std::vector<StatusInstance> statuses;
+    /** 当前玩家回合内已结算的玩家攻击伤害次数（用于飞行：层数 X = 本回合内第 X 次此类伤害后移除） */
+    int flightAttackHitsThisTurn = 0;
+    /** 从上次玩家回合开始起，该怪物已累计失去的生命值（用于坚不可摧：层数 X = 本回合最多再扣多少 HP） */
+    int indestructibleDamageTakenThisTurn = 0;
+    /** 蜷身：本场战斗是否已因受玩家攻击伤害触发过（每场战斗仅一次） */
+    bool curlUpUsedThisBattle = false;
 };
 
 } // namespace tce
