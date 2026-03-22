@@ -57,10 +57,13 @@ void CardSystem::add_to_master_deck(CardId id) {
 }
 
 // 从 master deck 删除一张牌（按实例 id）
-bool CardSystem::remove_from_master_deck(InstanceId instance_id) {
+bool CardSystem::remove_from_master_deck(InstanceId instance_id, CardId* out_removed_id) {
     auto it = std::find_if(master_deck_.begin(), master_deck_.end(),
                            [instance_id](const CardInstance& c) { return c.instanceId == instance_id; });
     if (it == master_deck_.end()) return false;
+    const CardData* cd = get_card_by_id_ ? get_card_by_id_(it->id) : nullptr;
+    if (cd && cd->irremovableFromDeck) return false;
+    if (out_removed_id) *out_removed_id = it->id;
     master_deck_.erase(it);
     return true;
 }
@@ -85,9 +88,14 @@ void CardSystem::generate_to_hand(CardId id) {
 
 // 生成临时牌到抽牌堆（洗入 draw pile；temporary=true）
 void CardSystem::generate_to_draw_pile(CardId id) {
+    generate_to_draw_pile(std::move(id), false);
+}
+
+void CardSystem::generate_to_draw_pile(CardId id, bool combat_cost_zero_skill) {
     CardInstance c;
     c.id = std::move(id);
     c.temporary = true;
+    c.combat_cost_zero = combat_cost_zero_skill;
     add_to_deck(c);
 }
 
@@ -187,10 +195,15 @@ void CardSystem::add_to_discard(CardInstance card) {
 
 // 加入消耗堆：如 instanceId==0 则分配新实例；消耗堆不参与洗牌与抽牌
 void CardSystem::add_to_exhaust(CardInstance card) {
+    const CardId exhausted_id = card.id;
     if (card.instanceId == 0) {
         card.instanceId = ++next_instance_id_;
     }
-    exhaust_pile_.push_back(card);
+    exhaust_pile_.push_back(std::move(card));
+    // 死灵诅咒（尖塔）：每次被消耗时在弃牌堆生成一张复制，诅咒阴魂不散
+    if (get_card_by_id_ && (exhausted_id == "necronomicurse" || exhausted_id == "necronomicurse+")) {
+        generate_to_discard_pile(exhausted_id);
+    }
 }
 
 // 洗弃牌入抽牌堆：把弃牌堆全部移入抽牌堆并打乱；清空弃牌堆
@@ -367,6 +380,70 @@ int CardSystem::exhaust_non_attack_hand_cards() {
         ++moved;
     }
     return moved;
+}
+
+int CardSystem::draw_random_attack_cards_from_draw_pile(int max_count) {
+    if (max_count <= 0) return 0;
+    int drawn = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    while (drawn < max_count) {
+        if (draw_pile_.empty()) {
+            shuffle_discard_into_draw();
+            if (draw_pile_.empty()) break;
+        }
+        std::vector<size_t> attack_idx;
+        attack_idx.reserve(draw_pile_.size());
+        for (size_t i = 0; i < draw_pile_.size(); ++i) {
+            const CardData* cd = get_card_by_id_ ? get_card_by_id_(draw_pile_[i].id) : nullptr;
+            if (cd && cd->cardType == CardType::Attack) attack_idx.push_back(i);
+        }
+        if (attack_idx.empty()) break;
+        std::uniform_int_distribution<size_t> dist(0, attack_idx.size() - 1);
+        const size_t pick = attack_idx[dist(gen)];
+        CardInstance c = std::move(draw_pile_[pick]);
+        draw_pile_.erase(draw_pile_.begin() + static_cast<std::ptrdiff_t>(pick));
+        add_to_hand(std::move(c));
+        ++drawn;
+    }
+    return drawn;
+}
+
+int CardSystem::draw_random_skill_cards_from_draw_pile(int max_count) {
+    if (max_count <= 0) return 0;
+    int drawn = 0;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    while (drawn < max_count) {
+        if (draw_pile_.empty()) {
+            shuffle_discard_into_draw();
+            if (draw_pile_.empty()) break;
+        }
+        std::vector<size_t> skill_idx;
+        skill_idx.reserve(draw_pile_.size());
+        for (size_t i = 0; i < draw_pile_.size(); ++i) {
+            const CardData* cd = get_card_by_id_ ? get_card_by_id_(draw_pile_[i].id) : nullptr;
+            if (cd && cd->cardType == CardType::Skill) skill_idx.push_back(i);
+        }
+        if (skill_idx.empty()) break;
+        std::uniform_int_distribution<size_t> dist(0, skill_idx.size() - 1);
+        const size_t pick = skill_idx[dist(gen)];
+        CardInstance c = std::move(draw_pile_[pick]);
+        draw_pile_.erase(draw_pile_.begin() + static_cast<std::ptrdiff_t>(pick));
+        add_to_hand(std::move(c));
+        ++drawn;
+    }
+    return drawn;
+}
+
+bool CardSystem::move_exhaust_card_to_hand(InstanceId instance_id) {
+    auto it = std::find_if(exhaust_pile_.begin(), exhaust_pile_.end(),
+                           [instance_id](const CardInstance& c) { return c.instanceId == instance_id; });
+    if (it == exhaust_pile_.end()) return false;
+    CardInstance c = std::move(*it);
+    exhaust_pile_.erase(it);
+    add_to_hand(std::move(c));
+    return true;
 }
 
 int CardSystem::upgrade_random_cards_in_hand(int count) {

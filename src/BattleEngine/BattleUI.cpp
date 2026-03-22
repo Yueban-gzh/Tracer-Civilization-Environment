@@ -18,6 +18,15 @@
 
 namespace tce {
 
+    /** 快照中玩家某状态总层数（用于 UI 与引擎规则对齐，如腐化） */
+    inline int snapshot_player_status_stacks(const BattleStateSnapshot& s, const std::string& statusId) {
+        int t = 0;
+        for (const auto& st : s.playerStatuses) {
+            if (st.id == statusId) t += st.stacks;
+        }
+        return t;
+    }
+
     /** 当前能量与数据层标记下，该手牌下标是否可「打出」（普通出牌；选牌弃牌/消耗不限） */
     inline bool hand_index_playable_now(const BattleStateSnapshot& s, int handIdx) {
         if (handIdx < 0 || static_cast<size_t>(handIdx) >= s.hand.size()) return false;
@@ -26,6 +35,40 @@ namespace tce {
         if (cd->unplayable) return false;
         if (cd->cost == -2) return false;
         if (cd->cost == -1) return true; // X 费：0 能量也可打出（效果层按支付 0 处理）
+        // 凡庸：手牌中有凡庸时本回合最多打出 3 张牌
+        {
+            bool has_normality = false;
+            for (const auto& hc : s.hand) {
+                if (hc.id == "normality" || hc.id == "normality+") {
+                    has_normality = true;
+                    break;
+                }
+            }
+            if (has_normality && s.cardsPlayedThisTurn >= 3)
+                return false;
+        }
+        // 华丽收场：仅当抽牌堆为空（与 BattleEngine::play_card 一致）
+        {
+            const std::string& hid = s.hand[static_cast<size_t>(handIdx)].id;
+            if (hid == "grand_finale" || hid == "grand_finale+") {
+                if (s.drawPileSize > 0) return false;
+            }
+        }
+        // 腐化：技能牌视为 0 费（与 BattleEngine::play_card 一致）
+        if (cd->cardType == CardType::Skill && snapshot_player_status_stacks(s, "corruption") > 0)
+            return true;
+        // 结茧：本场战斗该实例技能牌耗能 0
+        if (cd->cardType == CardType::Skill && s.hand[static_cast<size_t>(handIdx)].combat_cost_zero)
+            return true;
+        // 内脏切除：本回合每弃 1 张牌耗能 -1
+        {
+            const std::string& hid = s.hand[static_cast<size_t>(handIdx)].id;
+            if (hid == "eviscerate" || hid == "eviscerate+") {
+                const int disc = snapshot_player_status_stacks(s, "discarded_this_turn");
+                const int need = std::max(0, cd->cost - disc);
+                return s.energy >= need;
+            }
+        }
         return s.energy >= cd->cost;
     }
 
@@ -1789,26 +1832,16 @@ namespace tce {
         window.draw(title);
 
         if (!card_select_use_hand_area_) {
+            // 弹窗网格：与奖励/牌组视图一致，绘制完整卡牌（用于消耗堆/弃牌等选牌）
             for (size_t i = 0; i < card_select_rects_.size() && i < card_select_ids_.size(); ++i) {
                 const auto& r = card_select_rects_[i];
-                sf::RectangleShape cardBg(sf::Vector2f(CARD_W, CARD_H));
-                cardBg.setPosition(sf::Vector2f(r.position));
-                cardBg.setFillColor(sf::Color(55, 50, 48));
-                bool selected = std::find(card_select_selected_indices_.begin(), card_select_selected_indices_.end(), static_cast<int>(i)) != card_select_selected_indices_.end();
-                cardBg.setOutlineColor(selected ? sf::Color(100, 220, 120) : (r.contains(mousePos_) ? sf::Color(230, 200, 120) : sf::Color(180, 50, 45)));
-                cardBg.setOutlineThickness(4.f);
-                window.draw(cardBg);
-
-                const CardData* cd = get_card_by_id(card_select_ids_[i]);
-                sf::String cardName = (cd && !cd->name.empty())
-                    ? sf::String::fromUtf8(cd->name.begin(), cd->name.end())
-                    : sf::String(card_select_ids_[i]);
-                sf::Text nameText(fontForChinese(), cardName, 22);
-                nameText.setFillColor(sf::Color::White);
-                const sf::FloatRect nb = nameText.getLocalBounds();
-                nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, 0.f));
-                nameText.setPosition(sf::Vector2f(r.position.x + CARD_W * 0.5f, r.position.y + 20.f));
-                window.draw(nameText);
+                const bool selected =
+                    std::find(card_select_selected_indices_.begin(), card_select_selected_indices_.end(), static_cast<int>(i)) !=
+                    card_select_selected_indices_.end();
+                const sf::Color outline =
+                    selected ? sf::Color(100, 220, 120)
+                             : (r.contains(mousePos_) ? sf::Color(230, 200, 120) : sf::Color(180, 50, 45));
+                drawDetailedCardAt(window, card_select_ids_[i], r.position.x, r.position.y, CARD_W, CARD_H, outline, 4.f);
             }
         } else {
             // 与手牌/牌组视图同规格；从手牌扇区插值飞到中央，已选牌不再画在底部扇形里
@@ -2049,6 +2082,8 @@ namespace tce {
                 || id == "ritual"
                 || id == "multi_armor"
                 || id == "barricade"
+                || id == "accuracy"
+                || id == "panache"
                 || id == "artifact"
                 || id == "thorns"
                 || id == "wraith_form"
@@ -2420,6 +2455,18 @@ namespace tce {
             else if (id == "barricade") {
                 name = L"壁垒";
                 line2 = L"格挡不会在其回合开始时消失";
+            }
+            else if (id == "accuracy") {
+                name = L"精准";
+                line2 = L"小刀造成的伤害增加 " + std::to_wstring(n);
+            }
+            else if (id == "panache") {
+                name = L"神气制胜";
+                line2 = L"每打出 5 张牌，对所有敌人造成 " + std::to_wstring(n) + L" 点伤害";
+            }
+            else if (id == "panache_counter") {
+                name = L"神气进度";
+                line2 = L"本回合已打出牌数计数（接近 5 时触发神气制胜）";
             }
             else if (id == "intangible") {
                 name = L"无实体";

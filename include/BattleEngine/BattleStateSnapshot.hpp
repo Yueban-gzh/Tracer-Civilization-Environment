@@ -20,6 +20,8 @@ struct BattleStateSnapshot {
     int                      gold;
     int                      energy;
     int                      maxEnergy;
+    /** 本回合已打出牌数（与凡庸等规则对齐） */
+    int                      cardsPlayedThisTurn = 0;
     Stance                   stance;
     int                      orbSlotCount;
     std::vector<OrbSlot>     orbSlots;

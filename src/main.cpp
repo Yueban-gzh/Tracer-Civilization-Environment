@@ -78,6 +78,7 @@ static void runMapUITest(sf::RenderWindow& window);
   // 初始牌组：改为当前新做的红绿卡（每种一张基础版）
    card_system.init_master_deck({
       "armaments",
+      "exhume",
       "burning_pact",
       "true_grit",
       "survivor",
@@ -285,65 +286,105 @@ static void runMapUITest(sf::RenderWindow& window);
             const auto& handNow = card_system.get_hand();
             if (handIndex >= 0 && static_cast<size_t>(handIndex) < handNow.size()) {
                 const CardId& id = handNow[static_cast<size_t>(handIndex)].id;
-                const bool needSelect = (id == "survivor" || id == "survivor+" ||
-                                         id == "true_grit" || id == "true_grit+" ||
-                                         id == "burning_pact" || id == "burning_pact+" ||
-                                         id == "concentrate" || id == "concentrate+" ||
-                                         id == "all_out_attack" || id == "all_out_attack+" ||
-                                         id == "acrobatics" || id == "acrobatics+" ||
-                                         id == "prepared" || id == "prepared+");
-                if (needSelect) {
-                    std::vector<std::string> candidates;
-                    std::vector<InstanceId> candidateIids;
-                    std::vector<int> candidateHandIdx;
-                    candidates.reserve(handNow.size());
-                    candidateIids.reserve(handNow.size());
-                    candidateHandIdx.reserve(handNow.size());
-                    for (size_t i = 0; i < handNow.size(); ++i) {
-                        if (static_cast<int>(i) == handIndex) continue;  // 不可选择正在打出的那张牌
-                        candidates.push_back(handNow[i].id);
-                        candidateIids.push_back(handNow[i].instanceId);
-                        candidateHandIdx.push_back(static_cast<int>(i));
-                    }
-                    if (!candidates.empty()) {
+
+                // 发掘：从消耗堆选 1 张入手牌（弹窗网格）；消耗堆为空则提示且不打出
+                if (id == "exhume" || id == "exhume+") {
+                    const auto& exPile = card_system.get_exhaust_pile();
+                    if (exPile.empty()) {
+                        ui.showTip(L"消耗堆为空", 1.5f);
+                    } else {
+                        std::vector<std::string> candidates;
+                        std::vector<InstanceId> candidateIids;
+                        candidates.reserve(exPile.size());
+                        candidateIids.reserve(exPile.size());
+                        for (const auto& c : exPile) {
+                            candidates.push_back(c.id);
+                            candidateIids.push_back(c.instanceId);
+                        }
                         pendingSelectPlay.active = true;
                         pendingSelectPlay.playHandIndex = handIndex;
                         pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
-                        pendingSelectPlay.requiredCount =
-                            (id == "concentrate+") ? 2 :
-                            (id == "concentrate") ? 3 :
-                            (id == "prepared+") ? 2 :
-                            (id == "prepared") ? 1 :
-                            1;
-                        if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
-                            pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
-                        if (pendingSelectPlay.requiredCount <= 0) {
-                            engine.play_card(handIndex, targetMonsterIndex);
-                        } else {
-                            pendingSelectPlay.selectedInstanceIds.clear();
-                            pendingSelectPlay.candidateInstanceIds = candidateIids;
-                            if (id == "true_grit" || id == "true_grit+" ||
-                                id == "burning_pact" || id == "burning_pact+") {
-                                pendingSelectPlay.title = L"选择要消耗的手牌";
+                        pendingSelectPlay.requiredCount = 1;
+                        pendingSelectPlay.title = L"选择一张已消耗的牌";
+                        pendingSelectPlay.candidateInstanceIds = candidateIids;
+                        pendingSelectPlay.selectedInstanceIds.clear();
+                        std::vector<int> noHandIdx;
+                        ui.set_card_select_data(
+                            pendingSelectPlay.title,
+                            std::move(candidates),
+                            true,
+                            false,
+                            std::vector<InstanceId>(pendingSelectPlay.candidateInstanceIds),
+                            1,
+                            std::move(noHandIdx),
+                            -1);
+                        ui.set_card_select_active(true);
+                    }
+                } else {
+                    const bool needSelect =
+                        (id == "armaments" ||
+                         id == "survivor" || id == "survivor+" ||
+                         id == "true_grit+" ||
+                         id == "burning_pact" || id == "burning_pact+" ||
+                         id == "concentrate" || id == "concentrate+" ||
+                         id == "all_out_attack" || id == "all_out_attack+" ||
+                         id == "acrobatics" || id == "acrobatics+" ||
+                         id == "prepared" || id == "prepared+");
+                    if (needSelect) {
+                        std::vector<std::string> candidates;
+                        std::vector<InstanceId> candidateIids;
+                        std::vector<int> candidateHandIdx;
+                        candidates.reserve(handNow.size());
+                        candidateIids.reserve(handNow.size());
+                        candidateHandIdx.reserve(handNow.size());
+                        for (size_t i = 0; i < handNow.size(); ++i) {
+                            if (static_cast<int>(i) == handIndex) continue;  // 不可选择正在打出的那张牌
+                            candidates.push_back(handNow[i].id);
+                            candidateIids.push_back(handNow[i].instanceId);
+                            candidateHandIdx.push_back(static_cast<int>(i));
+                        }
+                        if (!candidates.empty()) {
+                            pendingSelectPlay.active = true;
+                            pendingSelectPlay.playHandIndex = handIndex;
+                            pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
+                            pendingSelectPlay.requiredCount =
+                                (id == "concentrate+") ? 2 :
+                                (id == "concentrate") ? 3 :
+                                (id == "prepared+") ? 2 :
+                                (id == "prepared") ? 1 :
+                                1;
+                            if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
+                                pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
+                            if (pendingSelectPlay.requiredCount <= 0) {
+                                engine.play_card(handIndex, targetMonsterIndex);
                             } else {
-                                pendingSelectPlay.title = L"选择要丢弃的手牌";
+                                pendingSelectPlay.selectedInstanceIds.clear();
+                                pendingSelectPlay.candidateInstanceIds = candidateIids;
+                                if (id == "armaments") {
+                                    pendingSelectPlay.title = L"选择要升级的手牌";
+                                } else if (id == "true_grit+" ||
+                                    id == "burning_pact" || id == "burning_pact+") {
+                                    pendingSelectPlay.title = L"选择要消耗的手牌";
+                                } else {
+                                    pendingSelectPlay.title = L"选择要丢弃的手牌";
+                                }
+                                ui.set_card_select_data(
+                                    pendingSelectPlay.title,
+                                    std::move(candidates),
+                                    true,
+                                    true,
+                                    std::move(candidateIids),
+                                    pendingSelectPlay.requiredCount,
+                                    std::move(candidateHandIdx),
+                                    handIndex);
+                                ui.set_card_select_active(true);
                             }
-                            ui.set_card_select_data(
-                                pendingSelectPlay.title,
-                                std::move(candidates),
-                                true,
-                                true,
-                                std::move(candidateIids),
-                                pendingSelectPlay.requiredCount,
-                                std::move(candidateHandIdx),
-                                handIndex);
-                            ui.set_card_select_active(true);
+                        } else {
+                            engine.play_card(handIndex, targetMonsterIndex);
                         }
                     } else {
                         engine.play_card(handIndex, targetMonsterIndex);
                     }
-                } else {
-                    engine.play_card(handIndex, targetMonsterIndex);
                 }
             } else {
                 engine.play_card(handIndex, targetMonsterIndex);
@@ -461,6 +502,7 @@ static void runMapUITest(sf::RenderWindow& window);
                  player.maxHp = curState.player.maxHp;
                  player.potions = curState.player.potions;
                  player.statuses = curState.player.statuses;
+                 player.ritualDaggerRunBonus = curState.player.ritualDaggerRunBonus;  // 仪式匕首跨战斗加成
                 player.relics = curState.player.relics;
                 std::vector<RelicId> nextRelics = player.relics;
                 apply_battle_test_mock(player, nextRelics);

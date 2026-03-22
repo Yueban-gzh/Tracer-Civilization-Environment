@@ -41,16 +41,29 @@ public:
     int get_effective_block_for_player(int base_block) const;
     void generate_to_discard_pile(CardId id);
     void generate_to_draw_pile(CardId id);
+    /** 结茧：生成到抽牌堆并标记本场战斗中该牌作为技能时耗能 0。 */
+    void generate_to_draw_pile_combat_zero_skill(CardId id);
     /** 生成一张临时牌并加入手牌（手牌已满时按 CardSystem 规则落入弃牌堆） */
     void generate_to_hand(CardId id);
     void draw_cards(int n);
+    /** 暴力：从抽牌堆随机取攻击牌入手。 */
+    int draw_random_attack_cards_from_draw_pile(int max_count);
+    /** 秘密技法：从抽牌堆随机取技能牌入手。 */
+    int draw_random_skill_cards_from_draw_pile(int max_count);
+    /** 仪式匕首：本局累计加伤（跨战斗）。 */
+    int get_ritual_dagger_run_bonus() const;
+    void add_ritual_dagger_run_bonus(int amount);
     void add_energy_to_player(int amount);
     int get_status_stacks_on_monster(int monster_index, const StatusId& id) const;
     int get_status_stacks_on_player(const StatusId& id) const;
     int get_monster_current_hp(int monster_index) const;
+    /** 当前战斗中怪物槽数量（下标合法范围为 0 .. count-1）。 */
+    int get_monster_count() const;
     void apply_status_to_all_monsters(StatusId id, int stacks, int duration);
     void deal_damage_to_all_monsters(int base_damage);
     void add_player_max_hp(int amount);
+    /** 回复玩家生命（不超过最大生命）。 */
+    void heal_player(int amount);
     int get_player_block() const;
     /** 当前能量（用于如双倍能量等效果） */
     int get_player_energy() const;
@@ -58,6 +71,12 @@ public:
     int get_discard_pile_size() const;
     /** 抽牌堆张数（用于如汇集等效果） */
     int get_draw_pile_size() const;
+    /** 当前手牌张数（用于逃脱计划等） */
+    int get_hand_card_count() const;
+    /** 弃牌堆洗入抽牌堆并打乱（深呼吸等） */
+    void shuffle_discard_into_draw();
+    /** 刚加入手牌的最后一张是否为技能牌（抽牌后检查） */
+    bool was_last_hand_card_skill() const;
     /** 将手牌全部移入消耗堆，返回消耗张数（如恶魔之焰）。 */
     int exhaust_all_hand_cards();
     /** 随机弃掉手牌中的 n 张，返回实际弃牌张数。 */
@@ -78,12 +97,18 @@ public:
     int upgrade_all_cards_in_hand();
     /** 升级当前战斗中的全部牌（手/抽/弃/消耗），返回升级张数（如神化）。 */
     int upgrade_all_cards_in_combat();
+    /** 按预选实例升级手牌中的牌（武装）；无法升级的实例跳过，返回成功升级张数。 */
+    int upgrade_selected_cards_in_hand(int n);
+    /** 将预选实例对应消耗堆中的牌移入手牌（发掘）；返回实际张数。 */
+    int add_exhaust_selected_to_hand(int n);
     /** 是否存在任意存活怪物，其当前意图为攻击。 */
     bool any_monster_intends_attack() const;
     /** 当前出牌目标（target_monster_index）是否为存活怪物且意图为攻击（用于看破弱点）。 */
     bool target_monster_intends_attack() const;
     /** 获得一瓶随机药水（药水槽已满时返回空串）。 */
     PotionId grant_random_potion();
+    /** 战斗中增加金币（贪婪之手等）。 */
+    void add_gold_to_player(int amount);
 
 private:
     friend class BattleEngine;
@@ -168,12 +193,18 @@ public:
     int get_effective_block_for_player_impl(int base_block) const;
     void generate_to_discard_pile_impl(CardId id);
     void generate_to_draw_pile_impl(CardId id);
+    void generate_to_draw_pile_impl(CardId id, bool combat_cost_zero_skill);
     void generate_to_hand_impl(CardId id);
     void draw_cards_impl(int n);
+    int draw_random_attack_cards_from_draw_pile_impl(int max_count);
+    int draw_random_skill_cards_from_draw_pile_impl(int max_count);
+    int get_ritual_dagger_run_bonus_impl() const;
+    void add_ritual_dagger_run_bonus_impl(int amount);
     void add_energy_to_player_impl(int amount);
     int get_status_stacks_on_monster_impl(int monster_index, const StatusId& id) const;
     int get_status_stacks_on_player_impl(const StatusId& id) const;
     int get_monster_current_hp_impl(int monster_index) const;
+    int get_monster_count_impl() const;
     void apply_status_to_player_impl(StatusId id, int stacks, int duration);
     void apply_status_to_monster_impl(int monster_index, StatusId id, int stacks, int duration);
     void set_monster_status_stacks_impl(int monster_index, StatusId id, int stacks);
@@ -183,6 +214,9 @@ public:
     int get_player_energy_impl() const;
     int get_discard_pile_size_impl() const;
     int get_draw_pile_size_impl() const;
+    int get_hand_card_count_impl() const;
+    void shuffle_discard_into_draw_impl();
+    bool was_last_hand_card_skill_impl() const;
     int exhaust_all_hand_cards_impl();
     int discard_random_hand_cards_impl(int n);
     int discard_all_hand_cards_impl();
@@ -191,8 +225,10 @@ public:
     int exhaust_selected_hand_cards_impl(int n);
     int exhaust_non_attack_hand_cards_impl();
     int upgrade_random_cards_in_hand_impl(int n);
+    int upgrade_selected_cards_in_hand_impl(int n);
     int upgrade_all_cards_in_hand_impl();
     int upgrade_all_cards_in_combat_impl();
+    int add_exhaust_selected_to_hand_impl(int n);
     bool any_monster_intends_attack_impl() const;
     /** 指定下标的存活怪物当前意图是否为攻击。 */
     bool monster_intends_attack_impl(int monster_index) const;
@@ -202,6 +238,10 @@ public:
 private:
     std::deque<InstanceId> effect_selected_instance_ids_;
     void add_player_max_hp_impl(int amount);
+    void heal_player_impl(int amount);
+    void add_gold_to_player_impl(int amount);
+    /** 神气制胜：每打出 5 张牌对全体造成伤害一次 */
+    void panache_on_any_card_played();
 
 private:
     BattleState           state_;
@@ -216,6 +256,8 @@ private:
 
     void handle_player_turn_start();
     void handle_player_turn_end();
+    /** 回合弃牌前：结算仍在手牌中的诅咒（腐朽/疑虑/悔恨/羞耻/傲慢等）。 */
+    void apply_curse_hand_effects_before_turn_end_discard();
     void handle_enemy_turn_start();
     void handle_enemy_turn_actions();
     void handle_enemy_turn_end();
@@ -225,6 +267,8 @@ private:
 
     void build_modifiers_from_state();
     void fill_effect_context(EffectContext& ctx);
+    /** 手牌进入消耗堆时触发：黑暗之拥抽牌、无惧疼痛格挡（每场战斗内的消耗联动）。 */
+    void apply_exhaust_passives_from_hand(int count);
 };
 
 } // namespace tce

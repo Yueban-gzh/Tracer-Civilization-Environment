@@ -39,6 +39,10 @@ struct PlayerBattleState {
     int potionSlotCount = 3;
     std::vector<PotionId>       potions;
     int cardsToDrawPerTurn      = 5;
+    /** 本回合已成功打出的牌张数（凡庸：手牌中有凡庸时最多再打 3 张）。回合开始在战斗引擎中清零。 */
+    int cardsPlayedThisTurn     = 0;
+    /** 仪式匕首：本局游戏中所有仪式匕首基础伤害累计加值（斩杀后永久 +3/+5，跨战斗保留）。 */
+    int ritualDaggerRunBonus    = 0;
     std::vector<StatusInstance> statuses;
     std::vector<RelicId>        relics;
 };

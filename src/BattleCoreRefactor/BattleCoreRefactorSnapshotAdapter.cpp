@@ -21,6 +21,7 @@
      s.gold        = p.gold;                             // 金币
      s.energy      = p.energy;                           // 当前能量
      s.maxEnergy   = p.maxEnergy;                        // 最大能量
+     s.cardsPlayedThisTurn = p.cardsPlayedThisTurn;      // 本回合已打出牌数（凡庸等）
      s.stance      = p.stance;                           // 姿态
      s.orbSlotCount = p.orbSlotCount;                   // 充能球槽位数
      s.orbSlots    = p.orbSlots;                        // 充能球槽位

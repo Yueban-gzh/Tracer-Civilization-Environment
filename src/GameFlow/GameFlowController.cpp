@@ -53,7 +53,15 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
     , eventEngine_(
         [this](EventEngine::EventId id) { return dataLayer_.get_event_by_id(id); },
         [this](CardId id) { cardSystem_.add_to_master_deck(id); },
-        [this](InstanceId id) { return cardSystem_.remove_from_master_deck(id); },
+        [this](InstanceId id) {
+            CardId removed;
+            if (!cardSystem_.remove_from_master_deck(id, &removed)) return false;
+            if (removed == "parasite" || removed == "parasite+") {
+                playerState_.maxHp = std::max(1, playerState_.maxHp - 3);
+                if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+            }
+            return true;
+        },
         [this](InstanceId id) { return cardSystem_.upgrade_card_in_master_deck(id); })
     , rng_(static_cast<unsigned>(std::time(nullptr))) {}
 
@@ -75,6 +83,7 @@ bool GameFlowController::initialize() {
 
     cardSystem_.init_master_deck({
         "armaments",
+        "exhume",
         "burning_pact",
         "true_grit",
         "survivor",
@@ -309,57 +318,93 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             const auto& handNow = cardSystem_.get_hand();
             if (handIndex >= 0 && static_cast<size_t>(handIndex) < handNow.size()) {
                 const CardId& id = handNow[static_cast<size_t>(handIndex)].id;
-                bool needSelect = (id == "survivor" || id == "survivor+" ||
-                                   id == "true_grit" || id == "true_grit+" ||
-                                   id == "burning_pact" || id == "burning_pact+" ||
-                                   id == "concentrate" || id == "concentrate+" ||
-                                   id == "all_out_attack" || id == "all_out_attack+" ||
-                                   id == "acrobatics" || id == "acrobatics+" ||
-                                   id == "prepared" || id == "prepared+");
-                if (needSelect) {
-                    std::vector<std::string> candidates;
-                    std::vector<InstanceId> candidateIids;
-                    std::vector<int> candidateHandIdx;
-                    for (size_t i = 0; i < handNow.size(); ++i) {
-                        if (static_cast<int>(i) == handIndex) continue;
-                        candidates.push_back(handNow[i].id);
-                        candidateIids.push_back(handNow[i].instanceId);
-                        candidateHandIdx.push_back(static_cast<int>(i));
-                    }
-                    if (!candidates.empty()) {
+
+                if (id == "exhume" || id == "exhume+") {
+                    const auto& exPile = cardSystem_.get_exhaust_pile();
+                    if (exPile.empty()) {
+                        ui.showTip(L"消耗堆为空", 1.5f);
+                    } else {
+                        std::vector<std::string> candidates;
+                        std::vector<InstanceId> candidateIids;
+                        for (const auto& c : exPile) {
+                            candidates.push_back(c.id);
+                            candidateIids.push_back(c.instanceId);
+                        }
                         pendingSelectPlay.active = true;
                         pendingSelectPlay.playHandIndex = handIndex;
                         pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
-                        pendingSelectPlay.requiredCount =
-                            (id == "concentrate+") ? 2 :
-                            (id == "concentrate") ? 3 :
-                            (id == "prepared+") ? 2 :
-                            (id == "prepared") ? 1 :
-                            1;
-                        if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
-                            pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
-                        if (pendingSelectPlay.requiredCount <= 0) {
-                            battleEngine_.play_card(handIndex, targetMonsterIndex);
-                            continue;
-                        }
-                        pendingSelectPlay.selectedInstanceIds.clear();
-                        if (id == "true_grit" || id == "true_grit+" ||
-                            id == "burning_pact" || id == "burning_pact+") {
-                            pendingSelectPlay.title = L"选择要消耗的手牌";
-                        } else {
-                            pendingSelectPlay.title = L"选择要丢弃的手牌";
-                        }
+                        pendingSelectPlay.requiredCount = 1;
+                        pendingSelectPlay.title = L"选择一张已消耗的牌";
                         pendingSelectPlay.candidateInstanceIds = candidateIids;
+                        pendingSelectPlay.selectedInstanceIds.clear();
+                        std::vector<int> noHandIdx;
                         ui.set_card_select_data(
                             pendingSelectPlay.title,
-                            std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx),
-                            handIndex);
+                            std::move(candidates),
+                            true,
+                            false,
+                            std::vector<InstanceId>(pendingSelectPlay.candidateInstanceIds),
+                            1,
+                            std::move(noHandIdx),
+                            -1);
                         ui.set_card_select_active(true);
+                    }
+                } else {
+                    bool needSelect = (id == "armaments" ||
+                                       id == "survivor" || id == "survivor+" ||
+                                       id == "true_grit+" ||
+                                       id == "burning_pact" || id == "burning_pact+" ||
+                                       id == "concentrate" || id == "concentrate+" ||
+                                       id == "all_out_attack" || id == "all_out_attack+" ||
+                                       id == "acrobatics" || id == "acrobatics+" ||
+                                       id == "prepared" || id == "prepared+");
+                    if (needSelect) {
+                        std::vector<std::string> candidates;
+                        std::vector<InstanceId> candidateIids;
+                        std::vector<int> candidateHandIdx;
+                        for (size_t i = 0; i < handNow.size(); ++i) {
+                            if (static_cast<int>(i) == handIndex) continue;
+                            candidates.push_back(handNow[i].id);
+                            candidateIids.push_back(handNow[i].instanceId);
+                            candidateHandIdx.push_back(static_cast<int>(i));
+                        }
+                        if (!candidates.empty()) {
+                            pendingSelectPlay.active = true;
+                            pendingSelectPlay.playHandIndex = handIndex;
+                            pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
+                            pendingSelectPlay.requiredCount =
+                                (id == "concentrate+") ? 2 :
+                                (id == "concentrate") ? 3 :
+                                (id == "prepared+") ? 2 :
+                                (id == "prepared") ? 1 :
+                                1;
+                            if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
+                                pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
+                            if (pendingSelectPlay.requiredCount <= 0) {
+                                battleEngine_.play_card(handIndex, targetMonsterIndex);
+                                continue;
+                            }
+                            pendingSelectPlay.selectedInstanceIds.clear();
+                            if (id == "armaments") {
+                                pendingSelectPlay.title = L"选择要升级的手牌";
+                            } else if (id == "true_grit+" ||
+                                id == "burning_pact" || id == "burning_pact+") {
+                                pendingSelectPlay.title = L"选择要消耗的手牌";
+                            } else {
+                                pendingSelectPlay.title = L"选择要丢弃的手牌";
+                            }
+                            pendingSelectPlay.candidateInstanceIds = candidateIids;
+                            ui.set_card_select_data(
+                                pendingSelectPlay.title,
+                                std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx),
+                                handIndex);
+                            ui.set_card_select_active(true);
+                        } else {
+                            battleEngine_.play_card(handIndex, targetMonsterIndex);
+                        }
                     } else {
                         battleEngine_.play_card(handIndex, targetMonsterIndex);
                     }
-                } else {
-                    battleEngine_.play_card(handIndex, targetMonsterIndex);
                 }
             } else {
                 battleEngine_.play_card(handIndex, targetMonsterIndex);
@@ -727,7 +772,12 @@ bool GameFlowController::runShopScene() {
         // 删除牌
         InstanceId removeId = 0;
         if (ui.pollShopRemoveCard(removeId)) {
-            if (removeId > 0 && cardSystem_.remove_from_master_deck(removeId)) {
+            CardId removedId;
+            if (removeId > 0 && cardSystem_.remove_from_master_deck(removeId, &removedId)) {
+                if (removedId == "parasite" || removedId == "parasite+") {
+                    playerState_.maxHp = std::max(1, playerState_.maxHp - 3);
+                    if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+                }
                 auto& list = shop.deckForRemove;
                 list.erase(std::remove_if(list.begin(), list.end(),
                                           [removeId](const MasterDeckCardDisplay& d) {

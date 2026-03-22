@@ -4,6 +4,9 @@
 #include "../../include/Effects/CardEffects.hpp"
 #include "../../include/CardSystem/CardSystem.hpp"
 #include "../../include/BattleEngine/BattleEngine.hpp"
+#include <algorithm>
+#include <random>
+#include <vector>
 
 namespace tce {
 
@@ -499,12 +502,20 @@ void effect_inflame(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("strength", is_upgraded ? 3 : 2, -1);
 }
 
-// 武装：获得 5 点格挡；未升级随机升级手牌 1 张，升级版升级手牌全部
+// 武装：获得 5 点格挡；未升级由玩家选手牌升级 1 张（无预选则随机 1 张），升级版升级手牌全部
 void effect_armaments(EffectContext& ctx, bool is_upgraded) {
     int block = ctx.get_effective_block_for_player(5);
     ctx.add_block_to_player(block);
     if (is_upgraded) ctx.upgrade_all_cards_in_hand();
-    else ctx.upgrade_random_cards_in_hand(1);
+    else {
+        int u = ctx.upgrade_selected_cards_in_hand(1);
+        if (u <= 0) ctx.upgrade_random_cards_in_hand(1);
+    }
+}
+
+// 发掘：将玩家所选消耗堆中的一张牌移入手牌（预选由 UI 注入）；消耗堆无匹配则无事发生
+void effect_exhume(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.add_exhaust_selected_to_hand(1);
 }
 
 // 燃烧契约：随机消耗 1 张手牌；抽 2/3 张牌
@@ -515,12 +526,16 @@ void effect_burning_pact(EffectContext& ctx, bool is_upgraded) {
     ctx.draw_cards(is_upgraded ? 3 : 2);
 }
 
-// 坚毅：获得 7/9 点格挡；随机消耗 1 张手牌
+// 坚毅：获得 7/9 点格挡；未升级随机消耗 1 张手牌，升级版由玩家选择 1 张消耗（UI 注入预选）
 void effect_true_grit(EffectContext& ctx, bool is_upgraded) {
     int block = ctx.get_effective_block_for_player(is_upgraded ? 9 : 7);
     ctx.add_block_to_player(block);
-    int exhausted = ctx.exhaust_selected_hand_cards(1);
-    if (exhausted <= 0) ctx.exhaust_random_hand_cards(1);
+    if (is_upgraded) {
+        int exhausted = ctx.exhaust_selected_hand_cards(1);
+        if (exhausted <= 0) ctx.exhaust_random_hand_cards(1);
+    } else {
+        ctx.exhaust_random_hand_cards(1);
+    }
 }
 
 // 生存者：获得 8/11 点格挡；随机弃掉 1 张手牌
@@ -545,7 +560,7 @@ void effect_flame_barrier(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("flame_barrier", is_upgraded ? 6 : 4, 1);
 }
 
-// 斗魂：消耗手牌中所有非攻击牌；每张获得 5/7 点格挡
+// 重振精神：消耗手牌中所有非攻击牌；每张获得 5/7 点格挡
 void effect_second_wind(EffectContext& ctx, bool is_upgraded) {
     int exhausted = ctx.exhaust_non_attack_hand_cards();
     if (exhausted <= 0) return;
@@ -559,6 +574,50 @@ void effect_spot_weakness(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index < 0) return;
     if (!ctx.target_monster_intends_attack()) return;
     ctx.apply_status_to_player("strength", is_upgraded ? 4 : 3, -1);
+}
+
+// 噬咬：造成 7/8 伤害，回复 2/3 生命
+void effect_bite(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int base = is_upgraded ? 8 : 7;
+    int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    ctx.heal_player(is_upgraded ? 3 : 2);
+}
+
+// 亮剑：造成 3/6 伤害，抽 1 张牌
+void effect_flash_of_steel(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int base = is_upgraded ? 6 : 3;
+    int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    ctx.draw_cards(1);
+}
+
+// 妙计：获得 2/4 格挡，抽 1 张牌
+void effect_finesse(EffectContext& ctx, bool is_upgraded) {
+    int block = ctx.get_effective_block_for_player(is_upgraded ? 4 : 2);
+    ctx.add_block_to_player(block);
+    ctx.draw_cards(1);
+}
+
+// 缴械：目标本场战斗永久失去 2/3 点力量
+void effect_disarm(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int n = is_upgraded ? 3 : 2;
+    ctx.apply_status_to_monster(ctx.target_monster_index, "strength_down", n, -1);
+}
+
+// 黑暗镣铐：目标本回合失去 9/15 点力量
+void effect_dark_shackles(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    int n = is_upgraded ? 15 : 9;
+    ctx.apply_status_to_monster(ctx.target_monster_index, "strength_down", n, 1);
+}
+
+// 万能药：获得 1/2 层人工制品
+void effect_panacea(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("artifact", is_upgraded ? 2 : 1, -1);
 }
 
 // 预谋：抽 1/2，随后随机弃 1/2（当前 UI 未支持手选弃牌）
@@ -603,6 +662,83 @@ void effect_sneaky_strike(EffectContext& ctx, bool is_upgraded) {
     ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
     if (ctx.get_status_stacks_on_player("discarded_this_turn") > 0)
         ctx.add_energy_to_player(2);
+}
+
+// 逃脱计划：抽 1 张；若抽到技能牌，获得有效格挡 3/5
+void effect_escape_plan(EffectContext& ctx, bool is_upgraded) {
+    const int before = ctx.get_hand_card_count();
+    ctx.draw_cards(1);
+    if (ctx.get_hand_card_count() <= before) return;
+    if (ctx.was_last_hand_card_skill()) {
+        int block = ctx.get_effective_block_for_player(is_upgraded ? 5 : 3);
+        ctx.add_block_to_player(block);
+    }
+}
+
+// 华丽收场：仅当抽牌堆为空时可打出（BattleEngine::play_card）；对全体造成 50/60
+void effect_grand_finale(EffectContext& ctx, bool is_upgraded) {
+    ctx.deal_damage_to_all_monsters(is_upgraded ? 60 : 50);
+}
+
+// 深呼吸：弃牌堆洗入抽牌堆后抽 1/2 张
+void effect_deep_breath(EffectContext& ctx, bool is_upgraded) {
+    ctx.shuffle_discard_into_draw();
+    ctx.draw_cards(is_upgraded ? 2 : 1);
+}
+
+// 内脏切除：对目标造成 7/9 点伤害三次（本回合弃牌减费由 BattleEngine::play_card 处理）
+void effect_eviscerate(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    const int hit = is_upgraded ? 9 : 7;
+    for (int k = 0; k < 3; ++k) {
+        int dmg = ctx.get_effective_damage_dealt_by_player(hit, ctx.target_monster_index);
+        if (dmg > 0) ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 终结技：本回合每打出过一张攻击牌，对目标造成 6/8 点伤害一次（次数含本牌，由 attacks_played_this_turn 统计）
+void effect_finisher(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    const int n = ctx.get_status_stacks_on_player("attacks_played_this_turn");
+    const int per = is_upgraded ? 8 : 6;
+    for (int i = 0; i < n; ++i) {
+        int dmg = ctx.get_effective_damage_dealt_by_player(per, ctx.target_monster_index);
+        if (dmg > 0) ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 弹跳药瓶：随机对存活敌人施加 3 层中毒，共 3/4 次
+void effect_bouncing_flask(EffectContext& ctx, bool is_upgraded) {
+    const int times = is_upgraded ? 4 : 3;
+    const int mc = ctx.get_monster_count();
+    if (mc <= 0) return;
+    std::vector<int> alive;
+    alive.reserve(static_cast<size_t>(mc));
+    for (int i = 0; i < mc; ++i)
+        if (ctx.get_monster_current_hp(i) > 0) alive.push_back(i);
+    if (alive.empty()) return;
+    static std::mt19937 gen{std::random_device{}()};
+    std::uniform_int_distribution<int> dist(0, static_cast<int>(alive.size()) - 1);
+    for (int t = 0; t < times; ++t) {
+        const int idx = alive[static_cast<size_t>(dist(gen))];
+        ctx.apply_status_to_monster(idx, "poison", 3, 3);
+    }
+}
+
+// 贪婪之手：造成伤害；若击杀目标获得 20/25 金币
+void effect_hand_of_greed(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    const int base = is_upgraded ? 25 : 20;
+    const int hp_before = ctx.get_monster_current_hp(ctx.target_monster_index);
+    const int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    const int hp_after = ctx.get_monster_current_hp(ctx.target_monster_index);
+    if (hp_before > 0 && hp_after <= 0) ctx.add_gold_to_player(is_upgraded ? 25 : 20);
+}
+
+// 神气制胜：能力层数存伤害值；每打出 5 张牌对全体造成该伤害（BattleEngine::panache_on_any_card_played）
+void effect_panache(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("panache", is_upgraded ? 14 : 10, -1);
 }
 
 // 炼制药水：获得一瓶随机药水（药水栏满则无效果）
@@ -735,6 +871,11 @@ void effect_footwork(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("dexterity", is_upgraded ? 3 : 2, -1);
 }
 
+// 精准：小刀基础伤害增加 4/6（层数叠加，见 effect_shiv）
+void effect_accuracy(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("accuracy", is_upgraded ? 6 : 4, -1);
+}
+
 // 闪躲翻滚：获得 4/6 格挡，下回合获得等量格挡（block_up 在回合开始时加格挡并消耗）
 void effect_dodge_and_roll(EffectContext& ctx, bool is_upgraded) {
     int n = is_upgraded ? 6 : 4;
@@ -751,10 +892,11 @@ void effect_power_through(EffectContext& ctx, bool is_upgraded) {
     ctx.generate_to_hand("card_025");
 }
 
-// 小刀：造成 4/6 点伤害，消耗
+// 小刀：造成 4/6 点伤害，消耗；精准：每层 accuracy 为固定加伤（可叠加）
 void effect_shiv(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index < 0) return;
-    int base = is_upgraded ? 6 : 4;
+    const int acc = ctx.get_status_stacks_on_player("accuracy");
+    int base = (is_upgraded ? 6 : 4) + acc;
     int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
     ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
 }
@@ -813,6 +955,23 @@ void effect_whirlwind(EffectContext& ctx, bool is_upgraded) {
     for (int i = 0; i < x; ++i) ctx.deal_damage_to_all_monsters(base);
 }
 
+// 死亡收割：对所有敌人造成 4/5 点伤害；按实际扣血之和回复生命。消耗。
+void effect_reaper(EffectContext& ctx, bool is_upgraded) {
+    int base = is_upgraded ? 5 : 4;
+    int total_heal = 0;
+    const int n = ctx.get_monster_count();
+    for (int i = 0; i < n; ++i) {
+        int hp_before = ctx.get_monster_current_hp(i);
+        if (hp_before <= 0) continue;
+        int dmg = ctx.get_effective_damage_dealt_by_player(base, i);
+        if (dmg <= 0) continue;
+        ctx.deal_damage_to_monster(i, dmg);
+        int hp_after = ctx.get_monster_current_hp(i);
+        total_heal += hp_before - hp_after;
+    }
+    if (total_heal > 0) ctx.heal_player(total_heal);
+}
+
 // 爆发：本回合下一张/下两张技能额外执行一次（由 BattleEngine::play_card 消费 burst 状态）
 void effect_burst(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("burst", is_upgraded ? 2 : 1, 1);
@@ -853,6 +1012,114 @@ void effect_master_of_strategy(EffectContext& ctx, bool is_upgraded) {
 void effect_the_bomb(EffectContext& ctx, bool is_upgraded) {
     int dmg = is_upgraded ? 50 : 40;
     ctx.apply_status_to_player("the_bomb", dmg, 3);
+}
+
+// 壁垒：格挡不在回合开始时清空（StatusModifiers 读取 barricade）
+void effect_barricade(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("barricade", 1, -1);
+}
+
+// 腐化：技能 0 费且打出时消耗（BattleEngine::play_card）
+void effect_corruption(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("corruption", 1, -1);
+}
+
+// 黑暗之拥：每消耗一张牌抽 1（层数可叠加；apply_exhaust_passives_from_hand）
+void effect_dark_embrace(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("dark_embrace", 1, -1);
+}
+
+// 进化：抽到状态牌时再抽 1/2 张（draw_cards_impl）
+void effect_evolve(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("evolve", is_upgraded ? 2 : 1, -1);
+}
+
+// 无惧疼痛：每消耗一张牌获得 3/4 格挡（经有效格挡修正）
+void effect_feel_no_pain(EffectContext& ctx, bool is_upgraded) {
+    ctx.apply_status_to_player("feel_no_pain", is_upgraded ? 4 : 3, -1);
+}
+
+// 灭除之刃：对目标造成 9/15 点伤害 X 次（X 费）
+void effect_expunger(EffectContext& ctx, bool is_upgraded) {
+    const int x = ctx.x_cost_spent;
+    if (x <= 0 || ctx.target_monster_index < 0) return;
+    const int base = is_upgraded ? 15 : 9;
+    for (int i = 0; i < x; ++i) {
+        const int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+        if (dmg > 0) ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    }
+}
+
+// 净化：随机消耗手牌中最多 3/5 张（打出后结算，不含本牌）
+void effect_purity(EffectContext& ctx, bool is_upgraded) {
+    const int cap = is_upgraded ? 5 : 3;
+    const int n = std::min(cap, ctx.get_hand_card_count());
+    if (n > 0) ctx.exhaust_random_hand_cards(n);
+}
+
+// 暴力：从抽牌堆随机将 3/4 张攻击牌入手
+void effect_violence(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_random_attack_cards_from_draw_pile(is_upgraded ? 4 : 3);
+}
+
+// J.A.X.：失去 3 生命，获得 2/3 力量
+void effect_jax(EffectContext& ctx, bool is_upgraded) {
+    ctx.deal_damage_to_player(3);
+    ctx.apply_status_to_player("strength", is_upgraded ? 3 : 2, -1);
+}
+
+// 洞见：抽 2/3 张牌（保留/消耗由数据层与 BattleEngine 处理）
+void effect_insight(EffectContext& ctx, bool is_upgraded) {
+    ctx.draw_cards(is_upgraded ? 3 : 2);
+}
+
+// 结茧：将 3/5 张随机技能牌洗入抽牌堆，本场战斗这些实例作为技能时耗能 0
+// 仪式匕首：15 + 本局累计加成；斩杀则永久增加本局加成 +3/+5（跨战斗保存在 PlayerBattleState）
+void effect_ritual_dagger(EffectContext& ctx, bool is_upgraded) {
+    if (ctx.target_monster_index < 0) return;
+    const int bonus = ctx.get_ritual_dagger_run_bonus();
+    const int base = 15 + bonus;
+    const int hp_before = ctx.get_monster_current_hp(ctx.target_monster_index);
+    const int dmg = ctx.get_effective_damage_dealt_by_player(base, ctx.target_monster_index);
+    ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    const int hp_after = ctx.get_monster_current_hp(ctx.target_monster_index);
+    if (hp_before > 0 && hp_after <= 0) ctx.add_ritual_dagger_run_bonus(is_upgraded ? 5 : 3);
+}
+
+// 秘密技法：从抽牌堆随机 1 张技能牌入手（与尖塔「随机」一致时可改为顶牌序）
+void effect_secret_technique(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.draw_random_skill_cards_from_draw_pile(1);
+}
+
+// 灵体：获得 1 层无实体（持续 1 回合），虚无/消耗由数据层处理
+void effect_ghostly(EffectContext& ctx, bool /*is_upgraded*/) {
+    ctx.apply_status_to_player("intangible", 1, 1);
+}
+
+void effect_chrysalis(EffectContext& ctx, bool is_upgraded) {
+    static const std::vector<CardId> pool = {
+        "defend", "defend+", "survivor", "survivor+", "shrug_it_off", "shrug_it_off+", "backflip", "backflip+",
+        "deadly_poison", "deadly_poison+", "piercing_wail", "piercing_wail+", "prepared", "prepared+",
+        "escape_plan", "escape_plan+", "finesse", "finesse+", "deep_breath", "deep_breath+",
+        "true_grit", "true_grit+", "burning_pact", "burning_pact+", "flame_barrier", "flame_barrier+",
+        "spot_weakness", "spot_weakness+", "acrobatics", "acrobatics+", "concentrate", "concentrate+",
+        "second_wind", "second_wind+", "disarm", "disarm+", "charge_battery", "charge_battery+",
+        "skim", "skim+", "leap", "leap+", "dark_shackles", "dark_shackles+", "panacea", "panacea+",
+        "master_of_strategy", "master_of_strategy+", "boot_sequence", "boot_sequence+", "turbo", "turbo+",
+        "steam_power", "steam_power+", "dodge_and_roll", "dodge_and_roll+", "power_through", "power_through+",
+        "auto_shields", "auto_shields+", "stack", "stack+", "aggregate", "aggregate+",
+        "card_007", "card_007+", "card_008", "card_008+", "card_009", "card_009+", "card_010", "card_010+",
+        "card_012", "card_012+", "card_013", "card_013+", "card_014", "card_014+", "card_016", "card_016+",
+        "card_018", "card_018+",
+    };
+    const int times = is_upgraded ? 5 : 3;
+    if (pool.empty()) return;
+    static std::mt19937 gen{std::random_device{}()};
+    std::uniform_int_distribution<size_t> dist(0, pool.size() - 1);
+    for (int i = 0; i < times; ++i) {
+        const CardId& id = pool[dist(gen)];
+        ctx.generate_to_draw_pile_combat_zero_skill(id);
+    }
 }
 
 } // namespace
@@ -975,8 +1242,38 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("crippling_poison+", [](EffectContext& c) { effect_crippling_poison(c, true); });
     card_system.register_card_effect("inflame", [](EffectContext& c) { effect_inflame(c, false); });
     card_system.register_card_effect("inflame+", [](EffectContext& c) { effect_inflame(c, true); });
+    card_system.register_card_effect("barricade", [](EffectContext& c) { effect_barricade(c, false); });
+    card_system.register_card_effect("barricade+", [](EffectContext& c) { effect_barricade(c, true); });
+    card_system.register_card_effect("corruption", [](EffectContext& c) { effect_corruption(c, false); });
+    card_system.register_card_effect("corruption+", [](EffectContext& c) { effect_corruption(c, true); });
+    card_system.register_card_effect("dark_embrace", [](EffectContext& c) { effect_dark_embrace(c, false); });
+    card_system.register_card_effect("dark_embrace+", [](EffectContext& c) { effect_dark_embrace(c, true); });
+    card_system.register_card_effect("evolve", [](EffectContext& c) { effect_evolve(c, false); });
+    card_system.register_card_effect("evolve+", [](EffectContext& c) { effect_evolve(c, true); });
+    card_system.register_card_effect("feel_no_pain", [](EffectContext& c) { effect_feel_no_pain(c, false); });
+    card_system.register_card_effect("feel_no_pain+", [](EffectContext& c) { effect_feel_no_pain(c, true); });
+    card_system.register_card_effect("expunger", [](EffectContext& c) { effect_expunger(c, false); });
+    card_system.register_card_effect("expunger+", [](EffectContext& c) { effect_expunger(c, true); });
+    card_system.register_card_effect("purity", [](EffectContext& c) { effect_purity(c, false); });
+    card_system.register_card_effect("purity+", [](EffectContext& c) { effect_purity(c, true); });
+    card_system.register_card_effect("violence", [](EffectContext& c) { effect_violence(c, false); });
+    card_system.register_card_effect("violence+", [](EffectContext& c) { effect_violence(c, true); });
+    card_system.register_card_effect("jax", [](EffectContext& c) { effect_jax(c, false); });
+    card_system.register_card_effect("jax+", [](EffectContext& c) { effect_jax(c, true); });
+    card_system.register_card_effect("insight", [](EffectContext& c) { effect_insight(c, false); });
+    card_system.register_card_effect("insight+", [](EffectContext& c) { effect_insight(c, true); });
+    card_system.register_card_effect("chrysalis", [](EffectContext& c) { effect_chrysalis(c, false); });
+    card_system.register_card_effect("chrysalis+", [](EffectContext& c) { effect_chrysalis(c, true); });
+    card_system.register_card_effect("ritual_dagger", [](EffectContext& c) { effect_ritual_dagger(c, false); });
+    card_system.register_card_effect("ritual_dagger+", [](EffectContext& c) { effect_ritual_dagger(c, true); });
+    card_system.register_card_effect("secret_technique", [](EffectContext& c) { effect_secret_technique(c, false); });
+    card_system.register_card_effect("secret_technique+", [](EffectContext& c) { effect_secret_technique(c, true); });
+    card_system.register_card_effect("ghostly", [](EffectContext& c) { effect_ghostly(c, false); });
+    card_system.register_card_effect("ghostly+", [](EffectContext& c) { effect_ghostly(c, true); });
     card_system.register_card_effect("armaments", [](EffectContext& c) { effect_armaments(c, false); });
     card_system.register_card_effect("armaments+", [](EffectContext& c) { effect_armaments(c, true); });
+    card_system.register_card_effect("exhume", [](EffectContext& c) { effect_exhume(c, false); });
+    card_system.register_card_effect("exhume+", [](EffectContext& c) { effect_exhume(c, true); });
     card_system.register_card_effect("burning_pact", [](EffectContext& c) { effect_burning_pact(c, false); });
     card_system.register_card_effect("burning_pact+", [](EffectContext& c) { effect_burning_pact(c, true); });
     card_system.register_card_effect("true_grit", [](EffectContext& c) { effect_true_grit(c, false); });
@@ -991,6 +1288,18 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("second_wind+", [](EffectContext& c) { effect_second_wind(c, true); });
     card_system.register_card_effect("spot_weakness", [](EffectContext& c) { effect_spot_weakness(c, false); });
     card_system.register_card_effect("spot_weakness+", [](EffectContext& c) { effect_spot_weakness(c, true); });
+    card_system.register_card_effect("bite", [](EffectContext& c) { effect_bite(c, false); });
+    card_system.register_card_effect("bite+", [](EffectContext& c) { effect_bite(c, true); });
+    card_system.register_card_effect("flash_of_steel", [](EffectContext& c) { effect_flash_of_steel(c, false); });
+    card_system.register_card_effect("flash_of_steel+", [](EffectContext& c) { effect_flash_of_steel(c, true); });
+    card_system.register_card_effect("finesse", [](EffectContext& c) { effect_finesse(c, false); });
+    card_system.register_card_effect("finesse+", [](EffectContext& c) { effect_finesse(c, true); });
+    card_system.register_card_effect("disarm", [](EffectContext& c) { effect_disarm(c, false); });
+    card_system.register_card_effect("disarm+", [](EffectContext& c) { effect_disarm(c, true); });
+    card_system.register_card_effect("dark_shackles", [](EffectContext& c) { effect_dark_shackles(c, false); });
+    card_system.register_card_effect("dark_shackles+", [](EffectContext& c) { effect_dark_shackles(c, true); });
+    card_system.register_card_effect("panacea", [](EffectContext& c) { effect_panacea(c, false); });
+    card_system.register_card_effect("panacea+", [](EffectContext& c) { effect_panacea(c, true); });
     card_system.register_card_effect("prepared", [](EffectContext& c) { effect_prepared(c, false); });
     card_system.register_card_effect("prepared+", [](EffectContext& c) { effect_prepared(c, true); });
     card_system.register_card_effect("all_out_attack", [](EffectContext& c) { effect_all_out_attack(c, false); });
@@ -1003,6 +1312,22 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("piercing_wail+", [](EffectContext& c) { effect_piercing_wail(c, true); });
     card_system.register_card_effect("sneaky_strike", [](EffectContext& c) { effect_sneaky_strike(c, false); });
     card_system.register_card_effect("sneaky_strike+", [](EffectContext& c) { effect_sneaky_strike(c, true); });
+    card_system.register_card_effect("escape_plan", [](EffectContext& c) { effect_escape_plan(c, false); });
+    card_system.register_card_effect("escape_plan+", [](EffectContext& c) { effect_escape_plan(c, true); });
+    card_system.register_card_effect("grand_finale", [](EffectContext& c) { effect_grand_finale(c, false); });
+    card_system.register_card_effect("grand_finale+", [](EffectContext& c) { effect_grand_finale(c, true); });
+    card_system.register_card_effect("deep_breath", [](EffectContext& c) { effect_deep_breath(c, false); });
+    card_system.register_card_effect("deep_breath+", [](EffectContext& c) { effect_deep_breath(c, true); });
+    card_system.register_card_effect("eviscerate", [](EffectContext& c) { effect_eviscerate(c, false); });
+    card_system.register_card_effect("eviscerate+", [](EffectContext& c) { effect_eviscerate(c, true); });
+    card_system.register_card_effect("finisher", [](EffectContext& c) { effect_finisher(c, false); });
+    card_system.register_card_effect("finisher+", [](EffectContext& c) { effect_finisher(c, true); });
+    card_system.register_card_effect("bouncing_flask", [](EffectContext& c) { effect_bouncing_flask(c, false); });
+    card_system.register_card_effect("bouncing_flask+", [](EffectContext& c) { effect_bouncing_flask(c, true); });
+    card_system.register_card_effect("hand_of_greed", [](EffectContext& c) { effect_hand_of_greed(c, false); });
+    card_system.register_card_effect("hand_of_greed+", [](EffectContext& c) { effect_hand_of_greed(c, true); });
+    card_system.register_card_effect("panache", [](EffectContext& c) { effect_panache(c, false); });
+    card_system.register_card_effect("panache+", [](EffectContext& c) { effect_panache(c, true); });
     card_system.register_card_effect("venomology", [](EffectContext& c) { effect_venomology(c, false); });
     card_system.register_card_effect("venomology+", [](EffectContext& c) { effect_venomology(c, true); });
     card_system.register_card_effect("noxious_fumes", [](EffectContext& c) { effect_noxious_fumes(c, false); });
@@ -1045,6 +1370,8 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("metallicize+", [](EffectContext& c) { effect_metallicize(c, true); });
     card_system.register_card_effect("footwork", [](EffectContext& c) { effect_footwork(c, false); });
     card_system.register_card_effect("footwork+", [](EffectContext& c) { effect_footwork(c, true); });
+    card_system.register_card_effect("accuracy", [](EffectContext& c) { effect_accuracy(c, false); });
+    card_system.register_card_effect("accuracy+", [](EffectContext& c) { effect_accuracy(c, true); });
     card_system.register_card_effect("dodge_and_roll", [](EffectContext& c) { effect_dodge_and_roll(c, false); });
     card_system.register_card_effect("dodge_and_roll+", [](EffectContext& c) { effect_dodge_and_roll(c, true); });
     card_system.register_card_effect("power_through", [](EffectContext& c) { effect_power_through(c, false); });
@@ -1064,6 +1391,8 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("fiend_fire+", [](EffectContext& c) { effect_fiend_fire(c, true); });
     card_system.register_card_effect("whirlwind", [](EffectContext& c) { effect_whirlwind(c, false); });
     card_system.register_card_effect("whirlwind+", [](EffectContext& c) { effect_whirlwind(c, true); });
+    card_system.register_card_effect("reaper", [](EffectContext& c) { effect_reaper(c, false); });
+    card_system.register_card_effect("reaper+", [](EffectContext& c) { effect_reaper(c, true); });
     card_system.register_card_effect("burst", [](EffectContext& c) { effect_burst(c, false); });
     card_system.register_card_effect("burst+", [](EffectContext& c) { effect_burst(c, true); });
     card_system.register_card_effect("corpse_explosion", [](EffectContext& c) { effect_corpse_explosion(c, false); });
@@ -1129,6 +1458,12 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("card_023+", effect_power_noop);
     card_system.register_card_effect("card_024", effect_power_noop);
     card_system.register_card_effect("card_024+", effect_power_noop);
+    // 诅咒：傲慢可打出，效果为空（消耗由引擎按 CardData 处理）
+    card_system.register_card_effect("pride", effect_power_noop);
+    card_system.register_card_effect("pride+", effect_power_noop);
+    // 状态：黏液打出无额外效果，消耗由 CardData 处理
+    card_system.register_card_effect("slimed", effect_power_noop);
+    card_system.register_card_effect("slimed+", effect_power_noop);
     // 后续在此追加：card_system.register_card_effect("poison_stab", effect_poison_stab); 等
 }
 

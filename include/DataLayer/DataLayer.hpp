@@ -32,11 +32,13 @@
      bool       ethereal   = false;              // 虚无：回合末未打出则消耗
      bool       innate     = false;              // 固有：开局必在手牌
      bool       retain     = false;              // 保留：回合末不弃牌
-     bool       unplayable = false;              // 不可打出
-     // 是否需要确认目标：true 时需要外部提供具体目标（如敌人）；
-     // false 时使用默认目标（通常是玩家自身或全体）
-     bool       requiresTarget = false;          // 是否需要选择目标
- };
+    bool       unplayable = false;              // 不可打出
+    // 是否需要确认目标：true 时需要外部提供具体目标（如敌人）；
+    // false 时使用默认目标（通常是玩家自身或全体）
+    bool       requiresTarget = false;          // 是否需要选择目标
+    /** 不可从永久牌组移除（商店删牌、事件移除等）；进阶之灾、铃铛诅咒、死灵诅咒等 */
+    bool       irremovableFromDeck = false;
+};
  
  struct MonsterData {                            // 怪物静态数据（仅属性，不含行为逻辑）
      MonsterId  id;                              // 怪物 ID

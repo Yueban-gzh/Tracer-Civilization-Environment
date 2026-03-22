@@ -62,20 +62,70 @@ void BattleEngine::tick_damage_displays() {                            // 每帧
     }), list.end());
 }
  
-bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打出卡牌
+namespace {
+bool hand_contains_normality_card(const std::vector<CardInstance>& hand) {
+    for (const auto& c : hand) {
+        if (c.id == "normality" || c.id == "normality+") return true;
+    }
+    return false;
+}
+int count_pain_in_hand_excluding_index(const std::vector<CardInstance>& hand, int exclude_index) {
+    int n = 0;
+    for (int i = 0; i < static_cast<int>(hand.size()); ++i) {
+        if (i == exclude_index) continue;
+        const CardId& hid = hand[static_cast<size_t>(i)].id;
+        if (hid == "pain" || hid == "pain+") ++n;
+    }
+    return n;
+}
+bool is_decay_id(const CardId& id) { return id == "decay" || id == "decay+"; }
+bool is_doubt_id(const CardId& id) { return id == "doubt" || id == "doubt+"; }
+bool is_regret_id(const CardId& id) { return id == "regret" || id == "regret+"; }
+bool is_shame_id(const CardId& id) { return id == "shame" || id == "shame+"; }
+bool is_pride_id(const CardId& id) { return id == "pride" || id == "pride+"; }
+/** 灼伤：回合结束时仍在手牌则受到对应伤害（与腐朽等同一时机） */
+int burn_end_turn_damage_for_id(const CardId& id) {
+    if (id == "card_026") return 2;
+    if (id == "card_026+") return 4;
+    return 0;
+}
+} // namespace
+
+ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打出卡牌
     if (!card_system_) return false;                                   // 无卡牌系统则失败
     const auto& hand = card_system_->get_hand();                        // 获取手牌
     if (hand_index < 0 || static_cast<size_t>(hand_index) >= hand.size()) return false;  // 下标越界
-    const CardData* cd = get_card_by_id_ ? get_card_by_id_(hand[static_cast<size_t>(hand_index)].id) : nullptr;  // 卡牌数据
+    const CardInstance& inst_played = hand[static_cast<size_t>(hand_index)];
+    const CardData* cd = get_card_by_id_ ? get_card_by_id_(inst_played.id) : nullptr;  // 卡牌数据
     if (cd && cd->unplayable) return false;                            // 不可打出则失败
+
+    const CardId played_id = inst_played.id;
+    const bool combat_zero_skill = inst_played.combat_cost_zero;
+    if (played_id == "grand_finale" || played_id == "grand_finale+") {
+        if (get_draw_pile_size_impl() > 0) return false;               // 华丽收场：仅当抽牌堆为空
+    }
+
+    const bool corruption_active =
+        cd && cd->cardType == CardType::Skill && get_status_stacks(state_.player.statuses, "corruption") > 0;
 
     int cost = cd ? cd->cost : 0;                                      // 费用
     const bool is_x_cost = (cost == -1);
     int x_spent = 0;
     if (is_x_cost) {
-        x_spent = state_.player.energy;
+        if (corruption_active)
+            x_spent = 0;                                                 // 腐化：技能 X 费视为支付 0
+        else
+            x_spent = state_.player.energy;
     } else {
-        if (state_.player.energy < cost) return false;                 // 能量不足
+        int eff_cost = cost;
+        if (corruption_active) eff_cost = 0;                           // 腐化：技能耗能变为 0
+        else if (combat_zero_skill && cd && cd->cardType == CardType::Skill)
+            eff_cost = 0;                                                // 结茧：本场战斗该实例技能耗能 0
+        else if (played_id == "eviscerate" || played_id == "eviscerate+") {
+            int disc = get_status_stacks(state_.player.statuses, "discarded_this_turn");
+            eff_cost = std::max(0, cost - disc);                         // 内脏切除：本回合每弃 1 张牌耗能 -1
+        }
+        if (state_.player.energy < eff_cost) return false;               // 能量不足
     }
 
     // 仅当 requiresTarget 为 true 时需选目标（群伤牌为 false，不需选目标）
@@ -87,18 +137,42 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
             return false;  // 目标已死
     }
 
+    // 凡庸：手牌中有凡庸时，本回合最多打出 3 张牌
+    if (hand_contains_normality_card(hand) && state_.player.cardsPlayedThisTurn >= 3)
+        return false;
+
     // 打出前：缠身等 modifier 可禁止打出（如禁止攻击牌）
-    CardId played_id = hand[static_cast<size_t>(hand_index)].id;
     CanPlayCardContext can_ctx{state_, played_id, cd && cd->cardType == CardType::Attack, target_monster_index, false};
     modifiers_.on_can_play_card(can_ctx);
     if (can_ctx.blocked) return false;  // 缠身等禁止打出
     if (!card_system_->has_effect_registered(played_id)) return false;  // 未注册效果则不打出（避免消耗能量无效果）
+
+    const int pain_triggers = count_pain_in_hand_excluding_index(hand, hand_index);  // 疼痛：打出前统计其余手牌中的疼痛张数
     CardInstance played = card_system_->remove_from_hand(hand_index);    // 从手牌移除
+
+    if (pain_triggers > 0) {                                             // 疼痛：每有一张，失去 1 生命（无视格挡）
+        DamagePacket pain_dmg;
+        pain_dmg.modified_amount = pain_triggers;
+        pain_dmg.ignore_block    = true;
+        pain_dmg.can_be_reduced  = true;
+        pain_dmg.source_type     = DamagePacket::SourceType::Status;
+        apply_damage_to_player(pain_dmg);
+    }
  
     if (is_x_cost) {
-        state_.player.energy = 0;                                      // X 费：消耗全部当前能量
+        if (corruption_active)
+            /* x_spent 已为 0，不扣能量 */ ;
+        else
+            state_.player.energy = 0;                                  // X 费：消耗全部当前能量
     } else {
-        state_.player.energy -= cost;                                  // 扣除能量
+        int eff_cost = cost;
+        if (corruption_active) eff_cost = 0;
+        else if (combat_zero_skill && cd && cd->cardType == CardType::Skill) eff_cost = 0;
+        else if (played_id == "eviscerate" || played_id == "eviscerate+") {
+            int disc = get_status_stacks(state_.player.statuses, "discarded_this_turn");
+            eff_cost = std::max(0, cost - disc);
+        }
+        state_.player.energy -= eff_cost;                              // 扣除能量（腐化下技能为 0）
     }
  
      EffectContext ctx;                                                 // 效果上下文
@@ -121,6 +195,9 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
          (cd && cd->cardType == CardType::Attack)                        // 是否为攻击牌（双截棍等用）
      };
      modifiers_.on_card_played(state_, played_id, target_monster_index, &card_ctx);  // 广播：打出卡牌（勒脖等）
+
+    if (cd && cd->cardType == CardType::Attack)
+        apply_status_to_player_impl("attacks_played_this_turn", 1, -1);  // 终结技等：本回合打出攻击牌次数
  
     int execute_times = 1;
     if (cd && cd->cardType == CardType::Skill) {
@@ -134,15 +211,27 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
         card_system_->execute_effect(played_id, ctx);                    // 执行卡牌效果
     }
  
-     if (cd && cd->retain) {                                            // 若为保留牌
-         card_system_->add_to_hand(played);                              // 放回手牌
-     } else if (cd && cd->exhaust) {                                    // 若为消耗牌
-         card_system_->add_to_exhaust(played);                           // 加入消耗堆
-     } else {                                                           // 否则
-         card_system_->add_to_discard(played);                           // 加入弃牌堆
+     const bool force_exhaust = corruption_active;                       // 腐化：打出的技能进入消耗堆
+     if ((cd && cd->exhaust) || force_exhaust) {
+         card_system_->add_to_exhaust(played);                          // 消耗 / 腐化技能
+         apply_exhaust_passives_from_hand(1);
+     } else if (cd && cd->retain) {
+         card_system_->add_to_hand(played);                              // 保留：仅当未消耗时回到手牌
+     } else {
+         card_system_->add_to_discard(played);                          // 加入弃牌堆
      }
+    panache_on_any_card_played();                                        // 神气制胜：每 5 张牌触发一次
+    ++state_.player.cardsPlayedThisTurn;                                 // 本回合成功打出计数（凡庸）
      return true;                                                       // 打出成功
  }
+
+void BattleEngine::apply_exhaust_passives_from_hand(int count) {
+    if (count <= 0) return;
+    const int de = get_status_stacks(state_.player.statuses, "dark_embrace");
+    if (de > 0) draw_cards_impl(de * count);
+    const int fnp = get_status_stacks(state_.player.statuses, "feel_no_pain");
+    if (fnp > 0) add_block_to_player_impl(get_effective_block_for_player_impl(fnp * count));
+}
  
  void BattleEngine::end_turn() {                                        // 结束回合
      if (state_.phase != BattleState::TurnPhase::Idle) return;          // 非空闲阶段则忽略
@@ -269,15 +358,19 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
         "card_021", "card_021+", "card_022", "card_022+", "card_023", "card_023+",
         "card_024", "card_024+",
         "feed", "feed+", "fiend_fire", "fiend_fire+", "whirlwind", "whirlwind+",
+        "reaper", "reaper+",
         "burst", "burst+", "corpse_explosion", "corpse_explosion+", "after_image", "after_image+",
        "wraith_form", "wraith_form+", "apotheosis", "apotheosis+", "master_of_strategy", "master_of_strategy+",
-       "armaments", "armaments+", "burning_pact", "burning_pact+",
+       "armaments", "armaments+", "burning_pact", "burning_pact+", "exhume", "exhume+",
        "true_grit", "true_grit+", "survivor", "survivor+", "acrobatics", "acrobatics+",
        "flame_barrier", "flame_barrier+", "second_wind", "second_wind+",
        "spot_weakness", "spot_weakness+", "prepared", "prepared+",
        "all_out_attack", "all_out_attack+", "calculated_gamble", "calculated_gamble+",
        "concentrate", "concentrate+", "piercing_wail", "piercing_wail+",
-       "sneaky_strike", "sneaky_strike+", "venomology", "venomology+",
+        "sneaky_strike", "sneaky_strike+",         "escape_plan", "escape_plan+",
+        "eviscerate", "eviscerate+", "finisher", "finisher+",
+        "bouncing_flask", "bouncing_flask+",
+        "grand_finale", "grand_finale+", "venomology", "venomology+",
        "noxious_fumes", "noxious_fumes+", "reflex", "reflex+", "tactician", "tactician+",
        "tools_of_the_trade", "tools_of_the_trade+", "well_laid_plans", "well_laid_plans+",
        "sweeping_beam", "sweeping_beam+", "leap", "leap+",
@@ -286,8 +379,20 @@ bool BattleEngine::play_card(int hand_index, int target_monster_index) {  // 打
        "beam_cell", "beam_cell+", "core_surge", "core_surge+",
        "turbo", "turbo+", "auto_shields", "auto_shields+",
        "rebound", "rebound+", "double_energy", "double_energy+",
-       "stack", "stack+", "aggregate", "aggregate+",
-        "the_bomb", "the_bomb+"
+        "stack", "stack+", "aggregate", "aggregate+",
+        "footwork", "footwork+", "accuracy", "accuracy+",
+        "bite", "bite+", "flash_of_steel", "flash_of_steel+", "finesse", "finesse+",
+        "hand_of_greed", "hand_of_greed+", "panache", "panache+",
+        "deep_breath", "deep_breath+",
+        "disarm", "disarm+", "dark_shackles", "dark_shackles+",
+        "panacea", "panacea+",
+        "the_bomb", "the_bomb+",
+        "barricade", "barricade+", "corruption", "corruption+",
+        "dark_embrace", "dark_embrace+", "evolve", "evolve+",
+        "feel_no_pain", "feel_no_pain+",
+        "expunger", "expunger+", "purity", "purity+", "violence", "violence+",
+        "jax", "jax+", "insight", "insight+", "chrysalis", "chrysalis+",
+        "ritual_dagger", "ritual_dagger+", "secret_technique", "secret_technique+", "ghostly", "ghostly+"
      };
      std::vector<CardId> result;
      if (count <= 0 || reward_pool.empty()) return result;
@@ -438,6 +543,8 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  
  void BattleEngine::handle_player_turn_start() {                        // 玩家回合开始
     reduce_status_stacks(state_.player.statuses, "discarded_this_turn", 9999);  // 新回合重置“本回合已弃牌”计数
+    reduce_status_stacks(state_.player.statuses, "attacks_played_this_turn", 9999);
+    reduce_status_stacks(state_.player.statuses, "panache_counter", 9999);
      int draw_count = state_.player.cardsToDrawPerTurn;                 // 本回合抽牌数
      int energy      = state_.player.maxEnergy;                         // 本回合能量
     if (state_.turnNumber == 1 && card_system_) {
@@ -464,7 +571,7 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
      modifiers_.on_turn_start_player(state_, &ctx);                      // 广播：玩家回合开始（中毒扣血、抽牌修改等）
      state_.player.energy = energy;                                    // 应用能量（modifier 可能已修改，如 4/3）
      if (draw_count < 0) draw_count = 0;                                // 抽牌数不低于 0
-     if (card_system_) card_system_->draw_cards(draw_count);            // 抽牌
+     draw_cards_impl(draw_count);                                         // 抽牌（经引擎：虚空抽到时扣能量等）
     // 必备工具：回合开始额外抽 1 并弃 1（按层数重复）
     int tools = get_status_stacks(state_.player.statuses, "essential_tools");
     if (tools > 0) {
@@ -473,7 +580,57 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
     }
  }
  
+void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
+    if (!card_system_) return;
+    const auto& hand = card_system_->get_hand();
+    const int hand_n = static_cast<int>(hand.size());
+    int decay_n = 0, doubt_n = 0, regret_n = 0, shame_n = 0;
+    for (const auto& c : hand) {
+        if (is_decay_id(c.id)) ++decay_n;
+        else if (is_doubt_id(c.id)) ++doubt_n;
+        else if (is_regret_id(c.id)) ++regret_n;
+        else if (is_shame_id(c.id)) ++shame_n;
+    }
+    if (decay_n > 0) {
+        DamagePacket d;
+        d.modified_amount = decay_n * 2;
+        d.ignore_block    = true;
+        d.can_be_reduced  = true;
+        d.source_type     = DamagePacket::SourceType::Status;
+        apply_damage_to_player(d);
+    }
+    for (int i = 0; i < doubt_n; ++i)
+        apply_status_to_player_impl("weak", 1, 1);
+    if (regret_n > 0 && hand_n > 0) {
+        DamagePacket d;
+        d.modified_amount = regret_n * hand_n;
+        d.ignore_block    = true;
+        d.can_be_reduced  = true;
+        d.source_type     = DamagePacket::SourceType::Status;
+        apply_damage_to_player(d);
+    }
+    for (int i = 0; i < shame_n; ++i)
+        apply_status_to_player_impl("frail", 1, 1);
+    for (const auto& c : hand) {
+        if (is_pride_id(c.id))
+            generate_to_draw_pile_impl(c.id);                            // 傲慢：复制洗入抽牌堆顶（与抽牌从顶取一致）
+    }
+    int burn_total = 0;
+    for (const auto& c : hand) {
+        burn_total += burn_end_turn_damage_for_id(c.id);
+    }
+    if (burn_total > 0) {
+        DamagePacket bd;
+        bd.modified_amount = burn_total;
+        bd.ignore_block    = true;
+        bd.can_be_reduced  = true;
+        bd.source_type     = DamagePacket::SourceType::Status;
+        apply_damage_to_player(bd);
+    }
+}
+
  void BattleEngine::handle_player_turn_end() {                          // 玩家回合结束
+    apply_curse_hand_effects_before_turn_end_discard();                 // 诅咒：回合结束时仍在手牌则结算（在弃牌前）
      if (card_system_) {                                                // 若有卡牌系统
         int keep_quota = get_status_stacks(state_.player.statuses, "well_planned");  // 周密计划：额外保留张数
          const auto& hand = card_system_->get_hand();                    // 获取手牌
@@ -680,6 +837,21 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
  void EffectContext::generate_to_draw_pile(CardId id) {                 // 生成卡牌到抽牌堆
      if (engine_) engine_->generate_to_draw_pile_impl(std::move(id));
  }
+ void EffectContext::generate_to_draw_pile_combat_zero_skill(CardId id) {
+     if (engine_) engine_->generate_to_draw_pile_impl(std::move(id), true);
+ }
+ int EffectContext::draw_random_attack_cards_from_draw_pile(int max_count) {
+     return engine_ ? engine_->draw_random_attack_cards_from_draw_pile_impl(max_count) : 0;
+ }
+ int EffectContext::draw_random_skill_cards_from_draw_pile(int max_count) {
+     return engine_ ? engine_->draw_random_skill_cards_from_draw_pile_impl(max_count) : 0;
+ }
+ int EffectContext::get_ritual_dagger_run_bonus() const {
+     return engine_ ? engine_->get_ritual_dagger_run_bonus_impl() : 0;
+ }
+ void EffectContext::add_ritual_dagger_run_bonus(int amount) {
+     if (engine_) engine_->add_ritual_dagger_run_bonus_impl(amount);
+ }
  void EffectContext::generate_to_hand(CardId id) {                      // 生成卡牌到手牌（手牌满则入弃牌堆）
      if (engine_) engine_->generate_to_hand_impl(std::move(id));
  }
@@ -698,6 +870,9 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
 int EffectContext::get_monster_current_hp(int monster_index) const {
     return engine_ ? engine_->get_monster_current_hp_impl(monster_index) : 0;
 }
+int EffectContext::get_monster_count() const {
+    return engine_ ? engine_->get_monster_count_impl() : 0;
+}
  void EffectContext::apply_status_to_all_monsters(StatusId id, int stacks, int duration) {  // 对全体怪物施加状态
      if (engine_) engine_->apply_status_to_all_monsters_impl(std::move(id), stacks, duration);
  }
@@ -706,6 +881,9 @@ int EffectContext::get_monster_current_hp(int monster_index) const {
  }
 void EffectContext::add_player_max_hp(int amount) {
     if (engine_) engine_->add_player_max_hp_impl(amount);
+}
+void EffectContext::heal_player(int amount) {
+    if (engine_) engine_->heal_player_impl(amount);
 }
  int EffectContext::get_player_block() const {                          // 获取玩家格挡
      return engine_ ? engine_->get_player_block_impl() : 0;
@@ -718,6 +896,15 @@ void EffectContext::add_player_max_hp(int amount) {
  }
  int EffectContext::get_draw_pile_size() const {                       // 抽牌堆张数
      return engine_ ? engine_->get_draw_pile_size_impl() : 0;
+ }
+ int EffectContext::get_hand_card_count() const {
+     return engine_ ? engine_->get_hand_card_count_impl() : 0;
+ }
+ void EffectContext::shuffle_discard_into_draw() {
+     if (engine_) engine_->shuffle_discard_into_draw_impl();
+ }
+ bool EffectContext::was_last_hand_card_skill() const {
+     return engine_ && engine_->was_last_hand_card_skill_impl();
  }
 int EffectContext::exhaust_all_hand_cards() {                         // 消耗全部手牌
     return engine_ ? engine_->exhaust_all_hand_cards_impl() : 0;
@@ -743,6 +930,12 @@ int EffectContext::exhaust_non_attack_hand_cards() {                    // 消�
 int EffectContext::upgrade_random_cards_in_hand(int n) {               // 随机升级手牌
     return engine_ ? engine_->upgrade_random_cards_in_hand_impl(n) : 0;
 }
+int EffectContext::upgrade_selected_cards_in_hand(int n) {
+    return engine_ ? engine_->upgrade_selected_cards_in_hand_impl(n) : 0;
+}
+int EffectContext::add_exhaust_selected_to_hand(int n) {
+    return engine_ ? engine_->add_exhaust_selected_to_hand_impl(n) : 0;
+}
 int EffectContext::upgrade_all_cards_in_hand() {                       // 全部升级手牌
     return engine_ ? engine_->upgrade_all_cards_in_hand_impl() : 0;
 }
@@ -757,6 +950,9 @@ bool EffectContext::target_monster_intends_attack() const {
 }
 PotionId EffectContext::grant_random_potion() {
     return engine_ ? engine_->grant_reward_potion() : PotionId{};
+}
+void EffectContext::add_gold_to_player(int amount) {
+    if (engine_ && amount > 0) engine_->add_gold_to_player_impl(amount);
 }
 
  // --- BattleEngine 内部实现 ---
@@ -788,6 +984,23 @@ PotionId EffectContext::grant_random_potion() {
  void BattleEngine::generate_to_draw_pile_impl(CardId id) {              // 生成卡牌到抽牌堆
      if (card_system_) card_system_->generate_to_draw_pile(std::move(id));
  }
+ void BattleEngine::generate_to_draw_pile_impl(CardId id, bool combat_cost_zero_skill) {
+     if (card_system_) card_system_->generate_to_draw_pile(std::move(id), combat_cost_zero_skill);
+ }
+ int BattleEngine::draw_random_attack_cards_from_draw_pile_impl(int max_count) {
+     return card_system_ ? card_system_->draw_random_attack_cards_from_draw_pile(max_count) : 0;
+ }
+ int BattleEngine::draw_random_skill_cards_from_draw_pile_impl(int max_count) {
+     return card_system_ ? card_system_->draw_random_skill_cards_from_draw_pile(max_count) : 0;
+ }
+ int BattleEngine::get_ritual_dagger_run_bonus_impl() const {
+     return state_.player.ritualDaggerRunBonus;
+ }
+ void BattleEngine::add_ritual_dagger_run_bonus_impl(int amount) {
+     if (amount == 0) return;
+     state_.player.ritualDaggerRunBonus += amount;
+     if (state_.player.ritualDaggerRunBonus < 0) state_.player.ritualDaggerRunBonus = 0;
+ }
  void BattleEngine::generate_to_hand_impl(CardId id) {                   // 生成卡牌到手牌
      if (card_system_) card_system_->generate_to_hand(std::move(id));
  }
@@ -795,7 +1008,22 @@ PotionId EffectContext::grant_random_potion() {
     if (!card_system_ || n <= 0) return;
     // 战斗专注等效果：本回合内禁止再抽牌
     if (get_status_stacks(state_.player.statuses, "cannot_draw") > 0) return;
-    card_system_->draw_cards(n);
+    const int evolve_n = get_status_stacks(state_.player.statuses, "evolve");
+    int guard = 0;
+    while (n > 0 && ++guard < 600) {
+        const size_t hand_before = card_system_->get_hand().size();
+        card_system_->draw_cards(1);
+        --n;
+        if (card_system_->get_hand().size() <= hand_before) break;
+        const auto& drawn = card_system_->get_hand().back();
+        if (drawn.id == "void" || drawn.id == "void+") {                 // 虚空：抽到时失去 1 点能量
+            if (state_.player.energy > 0) --state_.player.energy;
+        }
+        if (evolve_n <= 0) continue;
+        const CardData* dcd = get_card_by_id_ ? get_card_by_id_(drawn.id) : nullptr;
+        if (dcd && dcd->cardType == CardType::Status)
+            n += evolve_n;                                             // 进化：抽到状态牌时再抽 evolve_n 张
+    }
  }
  void BattleEngine::add_energy_to_player_impl(int amount) {              // 给玩家加能量（如 3/3+2 → 5/3，当前可超过最大，UI 显示当前/最大）
      if (amount > 0)
@@ -811,6 +1039,9 @@ PotionId EffectContext::grant_random_potion() {
 int BattleEngine::get_monster_current_hp_impl(int monster_index) const {
     if (monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return 0;
     return state_.monsters[static_cast<size_t>(monster_index)].currentHp;
+}
+int BattleEngine::get_monster_count_impl() const {
+    return static_cast<int>(state_.monsters.size());
 }
 static void add_or_merge_status(std::vector<StatusInstance>& list, StatusId id, int stacks, int duration) {
     for (auto& s : list) {
@@ -877,8 +1108,23 @@ void BattleEngine::set_monster_status_stacks_impl(int monster_index, StatusId id
  int BattleEngine::get_draw_pile_size_impl() const {                    // 抽牌堆张数
      return card_system_ ? card_system_->get_deck_size() : 0;
  }
+ int BattleEngine::get_hand_card_count_impl() const {
+     return card_system_ ? static_cast<int>(card_system_->get_hand().size()) : 0;
+ }
+ void BattleEngine::shuffle_discard_into_draw_impl() {
+     if (card_system_) card_system_->shuffle_discard_into_draw();
+ }
+ bool BattleEngine::was_last_hand_card_skill_impl() const {
+     if (!card_system_ || card_system_->get_hand().empty()) return false;
+     const CardInstance& c = card_system_->get_hand().back();
+     const CardData* cd = get_card_by_id_ ? get_card_by_id_(c.id) : nullptr;
+     return cd && cd->cardType == CardType::Skill;
+ }
 int BattleEngine::exhaust_all_hand_cards_impl() {
-    return card_system_ ? card_system_->exhaust_all_hand_cards() : 0;
+    if (!card_system_) return 0;
+    const int r = card_system_->exhaust_all_hand_cards();
+    if (r > 0) apply_exhaust_passives_from_hand(r);
+    return r;
 }
 int BattleEngine::discard_random_hand_cards_impl(int n) {
    if (!card_system_ || n <= 0) return 0;
@@ -939,7 +1185,10 @@ int BattleEngine::discard_selected_hand_cards_impl(int n) {
    return discarded;
 }
 int BattleEngine::exhaust_random_hand_cards_impl(int n) {
-   return card_system_ ? card_system_->exhaust_random_hand_cards(n) : 0;
+   if (!card_system_ || n <= 0) return 0;
+   const int r = card_system_->exhaust_random_hand_cards(n);
+   if (r > 0) apply_exhaust_passives_from_hand(r);
+   return r;
 }
 int BattleEngine::exhaust_selected_hand_cards_impl(int n) {
    if (!card_system_ || n <= 0) return 0;
@@ -953,16 +1202,46 @@ int BattleEngine::exhaust_selected_hand_cards_impl(int n) {
            --n;
        }
    }
+   if (exhausted > 0) apply_exhaust_passives_from_hand(exhausted);
    return exhausted;
 }
 int BattleEngine::exhaust_non_attack_hand_cards_impl() {
-   return card_system_ ? card_system_->exhaust_non_attack_hand_cards() : 0;
+   if (!card_system_) return 0;
+   const int r = card_system_->exhaust_non_attack_hand_cards();
+   if (r > 0) apply_exhaust_passives_from_hand(r);
+   return r;
 }
 int BattleEngine::upgrade_random_cards_in_hand_impl(int n) {
    return card_system_ ? card_system_->upgrade_random_cards_in_hand(n) : 0;
 }
+int BattleEngine::upgrade_selected_cards_in_hand_impl(int n) {
+    if (!card_system_ || n <= 0) return 0;
+    int upgraded = 0;
+    while (n > 0 && !effect_selected_instance_ids_.empty()) {
+        InstanceId iid = effect_selected_instance_ids_.front();
+        effect_selected_instance_ids_.pop_front();
+        if (card_system_->upgrade_card_in_deck(iid)) {
+            ++upgraded;
+            --n;
+        }
+    }
+    return upgraded;
+}
 int BattleEngine::upgrade_all_cards_in_hand_impl() {
    return card_system_ ? card_system_->upgrade_all_cards_in_hand() : 0;
+}
+int BattleEngine::add_exhaust_selected_to_hand_impl(int n) {
+    if (!card_system_ || n <= 0) return 0;
+    int moved = 0;
+    while (n > 0 && !effect_selected_instance_ids_.empty()) {
+        InstanceId iid = effect_selected_instance_ids_.front();
+        effect_selected_instance_ids_.pop_front();
+        if (card_system_->move_exhaust_card_to_hand(iid)) {
+            ++moved;
+            --n;
+        }
+    }
+    return moved;
 }
 int BattleEngine::upgrade_all_cards_in_combat_impl() {
     return card_system_ ? card_system_->upgrade_all_cards_in_combat() : 0;
@@ -989,6 +1268,30 @@ void BattleEngine::add_player_max_hp_impl(int amount) {
     state_.player.maxHp += amount;
     state_.player.currentHp += amount;
     if (state_.player.currentHp > state_.player.maxHp) state_.player.currentHp = state_.player.maxHp;
+}
+
+void BattleEngine::heal_player_impl(int amount) {
+    if (amount <= 0) return;
+    state_.player.currentHp += amount;
+    if (state_.player.currentHp > state_.player.maxHp) state_.player.currentHp = state_.player.maxHp;
+}
+
+void BattleEngine::add_gold_to_player_impl(int amount) {
+    if (amount > 0) state_.player.gold += amount;
+}
+
+void BattleEngine::panache_on_any_card_played() {
+    int dmg = get_status_stacks(state_.player.statuses, "panache");
+    if (dmg <= 0) return;
+    int c = get_status_stacks(state_.player.statuses, "panache_counter") + 1;
+    if (c >= 5) {
+        deal_damage_to_all_monsters_impl(dmg);
+        c = 0;
+    }
+    auto& list = state_.player.statuses;
+    list.erase(std::remove_if(list.begin(), list.end(), [](const StatusInstance& s) { return s.id == "panache_counter"; }), list.end());
+    if (c > 0)
+        list.push_back(StatusInstance{StatusId{"panache_counter"}, c, -1});
 }
 
  // --- 金手指接口 ---

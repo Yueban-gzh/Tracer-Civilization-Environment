@@ -19,6 +19,8 @@ struct CardInstance {
     // 战斗中临时生成的牌（如“复制/生成到手牌”）应标记为 temporary，
     // 以便“牌组(Deck)”视图只展示玩家真实牌组（不包含临时生成牌）。
     bool       temporary = false;
+    // 结茧等：本场战斗中该实例的**技能牌**耗能视为 0（打出时由 BattleEngine 结算）。
+    bool       combat_cost_zero = false;
 };
 
 class CardSystem {
@@ -37,8 +39,8 @@ public:
     std::vector<CardId> get_master_deck_card_ids() const;
     /** 永久加入一张牌到 master deck（如战斗奖励选牌、商店买牌）。 */
     void add_to_master_deck(CardId id);
-    /** 从 master deck 移除指定实例（如商店删牌）；返回是否成功。 */
-    bool remove_from_master_deck(InstanceId instance_id);
+    /** 从 master deck 移除指定实例（如商店删牌）；返回是否成功。若 out_removed_id 非空则写入被删牌的 id。 */
+    bool remove_from_master_deck(InstanceId instance_id, CardId* out_removed_id = nullptr);
     /** 升级 master deck 中指定实例（如营火升级）；返回是否成功。 */
     bool upgrade_card_in_master_deck(InstanceId instance_id);
 
@@ -47,6 +49,8 @@ public:
     void generate_to_hand(CardId id);
     /** 生成一张临时牌并洗入抽牌堆（加入 draw pile）。 */
     void generate_to_draw_pile(CardId id);
+    /** 同上，并可标记本场战斗中技能耗能视为 0（结茧）。 */
+    void generate_to_draw_pile(CardId id, bool combat_cost_zero_skill);
     /** 生成一张临时牌并加入弃牌堆。 */
     void generate_to_discard_pile(CardId id);
     /** 生成一张临时牌并加入消耗堆。 */
@@ -103,6 +107,12 @@ public:
     int  exhaust_hand_card_by_instance_id(InstanceId instance_id);
     /** 消耗手牌中所有非攻击牌；返回实际消耗张数。 */
     int  exhaust_non_attack_hand_cards();
+    /** 从抽牌堆中随机将攻击牌移入手牌（抽牌堆空时会先洗弃牌入抽牌堆）；返回实际入手张数。 */
+    int  draw_random_attack_cards_from_draw_pile(int max_count);
+    /** 从抽牌堆中随机将技能牌（仅 Skill，不含 Power）移入手牌；返回实际入手张数。 */
+    int  draw_random_skill_cards_from_draw_pile(int max_count);
+    /** 牌堆间移动（统一视为「起点 pile → 终点 pile」）：消耗堆实例 → 手牌（发掘等）。 */
+    bool move_exhaust_card_to_hand(InstanceId instance_id);
     /** 随机升级手牌中的 count 张可升级卡；返回实际升级张数。 */
     int  upgrade_random_cards_in_hand(int count);
     /** 升级手牌中全部可升级卡；返回实际升级张数。 */
