@@ -1,6 +1,7 @@
 // src/MapEngine/MapEngine.cpp
 #include "../../include/MapEngine/MapEngine.hpp" 
 #include "../../include/MapEngine/MapConfig.hpp"
+#include "../../include/Common/RunRng.hpp"
 #include <queue>
 #include <stack>
 #include <set>
@@ -9,6 +10,24 @@
 #include <iostream>
 
 namespace MapEngine {
+
+namespace {
+
+int rand_int_fallback(tce::RunRng* rng, int lo, int hi) {
+    if (rng) return rng->uniform_int(lo, hi);
+    static thread_local std::mt19937 gen{std::random_device{}()};
+    return std::uniform_int_distribution<int>(lo, hi)(gen);
+}
+
+void shuffle_nodes_fallback(tce::RunRng* rng, std::vector<NodeId>& v) {
+    if (rng) std::shuffle(v.begin(), v.end(), *rng);
+    else {
+        static thread_local std::mt19937 gen{std::random_device{}()};
+        std::shuffle(v.begin(), v.end(), gen);
+    }
+}
+
+} // namespace
 
     // ==== ????????????????????? ====
     MapEngine::MapEngine()
@@ -24,11 +43,7 @@ namespace MapEngine {
     }
 
     NodeType MapEngine::random_node_type(int layer, int total_layers) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, 100);
-
-        int roll = dis(gen);
+        int roll = rand_int_fallback(run_rng_, 0, 100);
 
         if (layer == 0) {
             return NodeType::Enemy;
@@ -56,10 +71,7 @@ namespace MapEngine {
 
         // ??????????
         for (int layer = 0; layer < layers; ++layer) {
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::uniform_int_distribution<> dis(1, nodes_per_layer);
-            int node_count = dis(gen);
+            int node_count = rand_int_fallback(run_rng_, 1, nodes_per_layer);
 
             if (layer == 0 || layer == layers - 1) {
                 node_count = 1;
@@ -196,20 +208,16 @@ namespace MapEngine {
     }
 
     void MapEngine::build_connections() {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-
         for (int layer = 0; layer < total_layers_ - 1; ++layer) {
             const auto& current_layer_ids = layers_[layer];
             const auto& next_layer_ids = layers_[layer + 1];
 
             for (const auto& curr_id : current_layer_ids) {
-                std::uniform_int_distribution<> dis(1, 2);
-                int connection_count = std::min(dis(gen),
+                int connection_count = std::min(rand_int_fallback(run_rng_, 1, 2),
                     static_cast<int>(next_layer_ids.size()));
 
                 std::vector<NodeId> targets = next_layer_ids;
-                std::shuffle(targets.begin(), targets.end(), gen);
+                shuffle_nodes_fallback(run_rng_, targets);
 
                 for (int i = 0; i < connection_count; ++i) {
                     NodeId target_id = targets[i];
@@ -221,10 +229,9 @@ namespace MapEngine {
 
             for (const auto& next_id : next_layer_ids) {
                 if (nodes_[next_id].prev_nodes.empty()) {
-                    std::uniform_int_distribution<> dis(0,
+                    int random_idx = rand_int_fallback(run_rng_, 0,
                         static_cast<int>(current_layer_ids.size()) - 1);
-                    int random_idx = dis(gen);
-                    NodeId source_id = current_layer_ids[random_idx];
+                    NodeId source_id = current_layer_ids[static_cast<size_t>(random_idx)];
 
                     nodes_[source_id].next_nodes.push_back(next_id);
                     nodes_[next_id].prev_nodes.push_back(source_id);

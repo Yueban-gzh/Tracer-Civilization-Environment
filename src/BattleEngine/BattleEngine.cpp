@@ -6,21 +6,25 @@
 #include "../../include/BattleCoreRefactor/RelicModifiers.hpp"         // 遗物 modifier
 #include "../../include/BattleCoreRefactor/StatusModifiers.hpp"        // 状态 modifier
 #include "../../include/CardSystem/CardSystem.hpp"                      // 卡牌系统
+#include "../../include/Common/RunRng.hpp"
 #include "../../include/DataLayer/DataLayer.hpp"                        // 数据层
 #include "../../include/BattleEngine/MonsterBehaviors.hpp"             // 怪物行为
 #include <algorithm>                                                  // std::remove_if
-#include <random>                                                      // 随机奖励卡
+#include <cassert>
  
  namespace tce {
  
  BattleEngine::BattleEngine(CardSystem& card_system,                    // 构造函数
                             GetMonsterByIdFn get_monster,
                             GetCardByIdFn get_card,
-                            ExecuteMonsterActionFn execute_monster)
+                            ExecuteMonsterActionFn execute_monster,
+                            RunRng* run_rng)
      : card_system_(&card_system)                                       // 卡牌系统指针
+     , run_rng_(run_rng)                                                // 与 CardSystem/主流程同源
      , get_monster_by_id_(std::move(get_monster))                       // 获取怪物数据回调
      , get_card_by_id_(std::move(get_card))                             // 获取卡牌数据回调
      , execute_monster_action_(std::move(execute_monster)) {             // 怪物行动执行回调
+     assert(run_rng_);
  }
  
 void BattleEngine::start_battle(const std::vector<MonsterId>& monster_ids,  // 开始战斗
@@ -294,10 +298,7 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
              available.push_back(id);
      }
      if (available.empty()) return {};
-     std::random_device rd;
-     std::mt19937 gen(rd());
-     std::uniform_int_distribution<size_t> dist(0, available.size() - 1);
-     RelicId id = available[dist(gen)];
+     RelicId id = available[run_rng_->uniform_size(0, available.size() - 1)];
      state_.player.relics.push_back(id);
      apply_relic_pickup_effect(state_.player, id);                     // 统一处理拾起效果（草莓、药水腰带等）
      return id;
@@ -331,10 +332,7 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
              available.push_back(id);
      }
      if (available.empty()) return {};
-     std::random_device rd;
-     std::mt19937 gen(rd());
-     std::uniform_int_distribution<size_t> dist(0, available.size() - 1);
-     PotionId id = available[dist(gen)];
+     PotionId id = available[run_rng_->uniform_size(0, available.size() - 1)];
      state_.player.potions.push_back(id);
      return id;
  }
@@ -396,11 +394,8 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
      };
      std::vector<CardId> result;
      if (count <= 0 || reward_pool.empty()) return result;
-     std::random_device rd;
-     std::mt19937 gen(rd());
-     std::uniform_int_distribution<size_t> dist(0, reward_pool.size() - 1);
      for (int i = 0; i < count; ++i) {
-         result.push_back(reward_pool[dist(gen)]);
+         result.push_back(reward_pool[run_rng_->uniform_size(0, reward_pool.size() - 1)]);
      }
      return result;
  }
@@ -955,6 +950,24 @@ void EffectContext::add_gold_to_player(int amount) {
     if (engine_ && amount > 0) engine_->add_gold_to_player_impl(amount);
 }
 
+int EffectContext::uniform_int(int lo, int hi) {
+    return engine_ ? engine_->run_rng_uniform_int(lo, hi) : lo;
+}
+
+size_t EffectContext::uniform_size(size_t lo, size_t hi) {
+    return engine_ ? engine_->run_rng_uniform_size(lo, hi) : lo;
+}
+
+int BattleEngine::run_rng_uniform_int(int lo, int hi) {
+    if (!run_rng_) return lo;
+    return run_rng_->uniform_int(lo, hi);
+}
+
+size_t BattleEngine::run_rng_uniform_size(size_t lo, size_t hi) {
+    if (!run_rng_) return lo;
+    return run_rng_->uniform_size(lo, hi);
+}
+
  // --- BattleEngine 内部实现 ---
  void BattleEngine::add_block_to_player_impl(int amount) {               // 给玩家加格挡
      if (amount > 0) state_.player.block += amount;
@@ -1129,8 +1142,6 @@ int BattleEngine::exhaust_all_hand_cards_impl() {
 int BattleEngine::discard_random_hand_cards_impl(int n) {
    if (!card_system_ || n <= 0) return 0;
    int discarded = 0;
-   std::random_device rd;
-   std::mt19937 gen(rd());
    auto trigger_on_discard = [this](const CardId& id) {
        if (id == "reflex") draw_cards_impl(2);
        else if (id == "reflex+") draw_cards_impl(3);
@@ -1138,8 +1149,7 @@ int BattleEngine::discard_random_hand_cards_impl(int n) {
        else if (id == "tactician+") add_energy_to_player_impl(2);
    };
    while (n > 0 && !card_system_->get_hand().empty()) {
-       std::uniform_int_distribution<int> dist(0, static_cast<int>(card_system_->get_hand().size()) - 1);
-       int idx = dist(gen);
+       int idx = run_rng_->uniform_int(0, static_cast<int>(card_system_->get_hand().size()) - 1);
        CardInstance c = card_system_->remove_from_hand(idx);
        CardId id = c.id;
        card_system_->add_to_discard(std::move(c));

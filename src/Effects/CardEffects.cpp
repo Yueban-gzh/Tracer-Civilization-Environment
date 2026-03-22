@@ -5,7 +5,6 @@
 #include "../../include/CardSystem/CardSystem.hpp"
 #include "../../include/BattleEngine/BattleEngine.hpp"
 #include <algorithm>
-#include <random>
 #include <vector>
 
 namespace tce {
@@ -717,10 +716,9 @@ void effect_bouncing_flask(EffectContext& ctx, bool is_upgraded) {
     for (int i = 0; i < mc; ++i)
         if (ctx.get_monster_current_hp(i) > 0) alive.push_back(i);
     if (alive.empty()) return;
-    static std::mt19937 gen{std::random_device{}()};
-    std::uniform_int_distribution<int> dist(0, static_cast<int>(alive.size()) - 1);
     for (int t = 0; t < times; ++t) {
-        const int idx = alive[static_cast<size_t>(dist(gen))];
+        const int idx = alive[static_cast<size_t>(
+            ctx.uniform_int(0, static_cast<int>(alive.size()) - 1))];
         ctx.apply_status_to_monster(idx, "poison", 3, 3);
     }
 }
@@ -1114,10 +1112,8 @@ void effect_chrysalis(EffectContext& ctx, bool is_upgraded) {
     };
     const int times = is_upgraded ? 5 : 3;
     if (pool.empty()) return;
-    static std::mt19937 gen{std::random_device{}()};
-    std::uniform_int_distribution<size_t> dist(0, pool.size() - 1);
     for (int i = 0; i < times; ++i) {
-        const CardId& id = pool[dist(gen)];
+        const CardId& id = pool[ctx.uniform_size(0, pool.size() - 1)];
         ctx.generate_to_draw_pile_combat_zero_skill(id);
     }
 }

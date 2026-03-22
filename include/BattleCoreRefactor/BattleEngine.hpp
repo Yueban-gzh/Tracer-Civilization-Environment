@@ -16,6 +16,7 @@ struct CardData;
 struct MonsterData;
 class CardSystem;
 class BattleEngine;
+class RunRng;
 
 class EffectContext {
 public:
@@ -109,6 +110,9 @@ public:
     PotionId grant_random_potion();
     /** 战斗中增加金币（贪婪之手等）。 */
     void add_gold_to_player(int amount);
+    /** 与主流程 RunRng 同源的闭区间 [lo,hi] 整数随机（卡牌效果请用本接口，勿自建 mt19937）。 */
+    int    uniform_int(int lo, int hi);
+    size_t uniform_size(size_t lo, size_t hi);
 
 private:
     friend class BattleEngine;
@@ -126,7 +130,8 @@ public:
     BattleEngine(CardSystem& card_system,
                  GetMonsterByIdFn get_monster,
                  GetCardByIdFn get_card,
-                 ExecuteMonsterActionFn execute_monster = nullptr);
+                 ExecuteMonsterActionFn execute_monster,
+                 RunRng* run_rng);
 
     void start_battle(const std::vector<MonsterId>& monster_ids,
                       const PlayerBattleState&      player_state,
@@ -243,9 +248,13 @@ private:
     /** 神气制胜：每打出 5 张牌对全体造成伤害一次 */
     void panache_on_any_card_played();
 
+    int run_rng_uniform_int(int lo, int hi);
+    size_t run_rng_uniform_size(size_t lo, size_t hi);
+
 private:
     BattleState           state_;
     CardSystem*           card_system_ = nullptr;
+    RunRng*               run_rng_     = nullptr;
     GetMonsterByIdFn      get_monster_by_id_;
     GetCardByIdFn         get_card_by_id_;
     ExecuteMonsterActionFn execute_monster_action_;

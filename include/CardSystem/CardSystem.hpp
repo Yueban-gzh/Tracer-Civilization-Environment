@@ -12,6 +12,7 @@ namespace tce {
 
 struct CardData;
 class EffectContext;
+class RunRng;
 
 struct CardInstance {
     InstanceId instanceId = 0;
@@ -27,8 +28,8 @@ class CardSystem {
 public:
     using GetCardByIdFn = std::function<const CardData*(CardId)>;
 
-    /** 构造卡牌系统；通过回调从数据层按 id 获取 CardData（只读）。 */
-    explicit CardSystem(GetCardByIdFn get_card_by_id);
+    /** 构造卡牌系统；通过回调从数据层按 id 获取 CardData（只读）。run_rng 与主流程/存档同源，不可为空。 */
+    explicit CardSystem(GetCardByIdFn get_card_by_id, RunRng* run_rng);
 
     // --- 永久牌组（master deck，跨战斗持久化）---
     /** 初始化永久牌组（主流程/存档读取时调用）；会清空旧 master deck 并重新生成实例 id。 */
@@ -128,6 +129,7 @@ public:
 
 private:
     GetCardByIdFn get_card_by_id_;
+    RunRng*       rng_ = nullptr;
     int           next_instance_id_ = 0;
     static constexpr int hand_limit_ = 10;
 

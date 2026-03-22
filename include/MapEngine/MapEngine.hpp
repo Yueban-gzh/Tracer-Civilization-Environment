@@ -1,5 +1,10 @@
 //include/MapEngine/MapEngine.hpp
 #pragma once
+
+namespace tce {
+class RunRng;
+}
+
 #include "../Common/NodeTypes.hpp"
 #include <vector>
 #include <unordered_map>
@@ -39,11 +44,11 @@ namespace MapEngine {
 
     class MapEngine {
     public:
-        // 类型定义
+        // ???????
         using ContentIdGenerator = std::function<ContentId(NodeType type, int layer, int index)>;
         using NodeEnterCallback = std::function<void(const MapNode& node)>;
 
-        // 在 MapEngine 类的 public 部分添加
+        // ?? MapEngine ??? public ????????
         int get_current_layer() const {
             for (const auto& pair : nodes_) {
                 if (pair.second.is_current) {
@@ -56,43 +61,46 @@ namespace MapEngine {
         MapEngine();
         ~MapEngine();
 
-        // 核心接口
+        // ??????
         void init_map(int layers, int nodes_per_layer,
             const std::vector<NodeType>& layer_types = {});
-        void init_fixed_map(const class MapConfig& config);  // 需要前向声明 MapConfig
+        void init_fixed_map(const class MapConfig& config);  // ?????????? MapConfig
 
         std::vector<MapNode> get_nodes_at_layer(int layer) const;
         MapNode get_node_by_id(const NodeId& node_id) const;
         std::vector<MapNode> get_next_nodes(const NodeId& node_id) const;
         std::vector<MapNode> get_prev_nodes(const NodeId& node_id) const;
 
-        // 算法接口
+        // ?????
         bool is_reachable(const NodeId& from_node, const NodeId& to_node) const;
         std::vector<NodeId> find_shortest_path(const NodeId& from_node,
             const NodeId& to_node) const;
         std::vector<std::vector<NodeId>> find_all_paths_to_boss() const;
         MapSnapshot get_map_snapshot() const;
 
-        // 节点状态更新
+        // ?????????
         void set_node_visited(const NodeId& node_id);
         void set_current_node(const NodeId& node_id);
         void update_reachable_nodes();
 
-        // ==== 新增：检查是否有当前节点 ====
+        // ==== ???????????????????? ====
         bool hasCurrentNode() const;
 
-        // ==== 新增：设置回调函数 ====
+        // ==== ???????????????? ====
         void setContentIdGenerator(ContentIdGenerator generator) { m_contentIdGenerator = generator; }
         void setNodeEnterCallback(NodeEnterCallback callback) { m_nodeEnterCallback = callback; }
+        // Same RunRng as game flow; if unset, init_map/build_connections use local entropy.
+        void set_run_rng(tce::RunRng* rng) { run_rng_ = rng; }
 
     private:
         std::unordered_map<NodeId, MapNode> nodes_;
         std::unordered_map<int, std::vector<NodeId>> layers_;
         int total_layers_;
 
-        // ==== 新增：回调函数成员 ====
+        // ==== ???????????????? ====
         ContentIdGenerator m_contentIdGenerator;
         NodeEnterCallback m_nodeEnterCallback;
+        tce::RunRng*       run_rng_ = nullptr;
 
         NodeId generate_node_id(int layer, int index);
         NodeType random_node_type(int layer, int total_layers);

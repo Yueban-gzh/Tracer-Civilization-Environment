@@ -19,10 +19,9 @@
 namespace tce {
 
 namespace {
-int randomIndex(std::mt19937& rng, int boundExclusive) {
+int randomIndex(RunRng& rng, int boundExclusive) {
     if (boundExclusive <= 0) return 0;
-    std::uniform_int_distribution<int> dist(0, boundExclusive - 1);
-    return dist(rng);
+    return rng.uniform_int(0, boundExclusive - 1);
 }
 
 void applyBattleTestMock(PlayerBattleState& p) {
@@ -44,12 +43,14 @@ void applyBattleTestMock(PlayerBattleState& p) {
 
 GameFlowController::GameFlowController(sf::RenderWindow& window)
     : window_(window)
-    , cardSystem_([](CardId id) { return get_card_by_id(id); })
+    , runRng_(static_cast<uint64_t>(std::time(nullptr)))
+    , cardSystem_([](CardId id) { return get_card_by_id(id); }, &runRng_)
     , battleEngine_(
         cardSystem_,
         [](MonsterId id) { return get_monster_by_id(id); },
         [](CardId id) { return get_card_by_id(id); },
-        execute_monster_behavior)
+        execute_monster_behavior,
+        &runRng_)
     , eventEngine_(
         [this](EventEngine::EventId id) { return dataLayer_.get_event_by_id(id); },
         [this](CardId id) { cardSystem_.add_to_master_deck(id); },
@@ -62,8 +63,7 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
             }
             return true;
         },
-        [this](InstanceId id) { return cardSystem_.upgrade_card_in_master_deck(id); })
-    , rng_(static_cast<unsigned>(std::time(nullptr))) {}
+        [this](InstanceId id) { return cardSystem_.upgrade_card_in_master_deck(id); }) {}
 
 bool GameFlowController::initialize() {
     dataLayer_.load_cards("");
@@ -107,6 +107,7 @@ bool GameFlowController::initialize() {
 
     const MapEngine::MapConfig* config = mapConfigManager_.getCurrentConfig();
     if (!config) return false;
+    mapEngine_.set_run_rng(&runRng_);
     mapEngine_.init_fixed_map(*config);
 
     if (!mapUI_.initialize(&window_)) return false;
@@ -233,9 +234,9 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         monsters = { "fat_gremlin", "green_louse" };
     } else {
         static const std::vector<MonsterId> normalPool = { "cultist", "green_louse", "red_louse" };
-        const int count = 1 + randomIndex(rng_, 3);
+        const int count = 1 + randomIndex(runRng_, 3);
         for (int i = 0; i < count; ++i) {
-            monsters.push_back(normalPool[static_cast<size_t>(randomIndex(rng_, static_cast<int>(normalPool.size())))]);
+            monsters.push_back(normalPool[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(normalPool.size())))]);
         }
     }
 
@@ -489,7 +490,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         battleEngine_.grant_victory_gold();
         std::vector<CardId> rewards = battleEngine_.get_reward_cards(3);
         if (!rewards.empty()) {
-            const CardId picked = rewards[static_cast<size_t>(randomIndex(rng_, static_cast<int>(rewards.size())))];
+            const CardId picked = rewards[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(rewards.size())))];
             battleEngine_.add_card_to_master_deck(picked);
         }
         BattleState state = battleEngine_.get_battle_state();
@@ -527,7 +528,7 @@ void GameFlowController::resolveEvent(const std::string& contentId) {
     int safety = 0;
     while (const auto* e = eventEngine_.get_current_event()) {
         if (e->options.empty()) break;
-        const int pick = randomIndex(rng_, static_cast<int>(e->options.size()));
+        const int pick = randomIndex(runRng_, static_cast<int>(e->options.size()));
         if (!eventEngine_.choose_option(pick)) break;
         if (++safety > 8) break;
     }
@@ -671,14 +672,14 @@ void GameFlowController::resolveMerchant() {
         return;
     }
     static const std::vector<CardId> shopCards = { "iron_wave", "cleave", "shrug_it_off", "quick_slash" };
-    const CardId picked = shopCards[static_cast<size_t>(randomIndex(rng_, static_cast<int>(shopCards.size())))];
+    const CardId picked = shopCards[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(shopCards.size())))];
     cardSystem_.add_to_master_deck(picked);
     playerState_.gold -= 50;
     statusText_ = "商店购买 1 张牌（-50 金币）。";
 }
 
 void GameFlowController::resolveTreasure() {
-    const int gold = 40 + randomIndex(rng_, 61);
+    const int gold = 40 + randomIndex(runRng_, 61);
     playerState_.gold += gold;
     statusText_ = "宝箱节点：获得金币。";
 }

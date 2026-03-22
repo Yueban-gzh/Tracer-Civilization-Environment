@@ -3,9 +3,10 @@
  */
 #include "../../include/CardSystem/CardSystem.hpp"
 #include "../../include/BattleEngine/BattleEngine.hpp"
+#include "../../include/Common/RunRng.hpp"
 #include "../../include/DataLayer/DataLayer.hpp"
 #include <algorithm>
-#include <random>
+#include <cassert>
 
 namespace tce {
 
@@ -17,9 +18,12 @@ bool can_upgrade_card_id(const CardSystem::GetCardByIdFn& get_card_by_id, const 
 }
 } // namespace
 
-// 构造：注入 get_card_by_id（数据层只读查询）
-CardSystem::CardSystem(GetCardByIdFn get_card_by_id)
-    : get_card_by_id_(std::move(get_card_by_id)) {}
+// 构造：注入 get_card_by_id（数据层只读查询）与主流程同源 RunRng
+CardSystem::CardSystem(GetCardByIdFn get_card_by_id, RunRng* run_rng)
+    : get_card_by_id_(std::move(get_card_by_id))
+    , rng_(run_rng) {
+    assert(rng_);
+}
 
 // 初始化永久牌组（master deck）：通常由存档/主流程调用；不参与战斗洗抽弃逻辑
 void CardSystem::init_master_deck(const std::vector<CardId>& card_ids) {
@@ -144,9 +148,7 @@ void CardSystem::init_deck(const std::vector<CardId>& initial_card_ids) {
         else draw_pile_.push_back(c);
     }
     for (const auto& c : normal_cards) draw_pile_.push_back(c);
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(draw_pile_.begin(), draw_pile_.end(), g);
+    std::shuffle(draw_pile_.begin(), draw_pile_.end(), *rng_);
 }
 
 // 抽牌：从抽牌堆顶部抽 n 张进手牌；抽牌堆空则洗弃牌入抽牌堆再继续；手牌最多 hand_limit_
@@ -211,9 +213,7 @@ void CardSystem::shuffle_discard_into_draw() {
     for (auto& c : discard_pile_)
         draw_pile_.push_back(c);
     discard_pile_.clear();
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(draw_pile_.begin(), draw_pile_.end(), g);
+    std::shuffle(draw_pile_.begin(), draw_pile_.end(), *rng_);
 }
 
 // 加入抽牌堆（常用于“洗入抽牌堆”）：如 instanceId==0 则分配新实例
@@ -309,11 +309,8 @@ int CardSystem::exhaust_all_hand_cards() {
 int CardSystem::discard_random_hand_cards(int count) {
     if (count <= 0 || hand_.empty()) return 0;
     int moved = 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
     while (count > 0 && !hand_.empty()) {
-        std::uniform_int_distribution<int> dist(0, static_cast<int>(hand_.size()) - 1);
-        int idx = dist(gen);
+        int idx = rng_->uniform_int(0, static_cast<int>(hand_.size()) - 1);
         auto c = remove_from_hand(idx);
         add_to_discard(std::move(c));
         --count;
@@ -344,11 +341,8 @@ int CardSystem::discard_all_hand_cards() {
 int CardSystem::exhaust_random_hand_cards(int count) {
     if (count <= 0 || hand_.empty()) return 0;
     int moved = 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
     while (count > 0 && !hand_.empty()) {
-        std::uniform_int_distribution<int> dist(0, static_cast<int>(hand_.size()) - 1);
-        int idx = dist(gen);
+        int idx = rng_->uniform_int(0, static_cast<int>(hand_.size()) - 1);
         auto c = remove_from_hand(idx);
         add_to_exhaust(std::move(c));
         --count;
@@ -385,8 +379,6 @@ int CardSystem::exhaust_non_attack_hand_cards() {
 int CardSystem::draw_random_attack_cards_from_draw_pile(int max_count) {
     if (max_count <= 0) return 0;
     int drawn = 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
     while (drawn < max_count) {
         if (draw_pile_.empty()) {
             shuffle_discard_into_draw();
@@ -399,8 +391,7 @@ int CardSystem::draw_random_attack_cards_from_draw_pile(int max_count) {
             if (cd && cd->cardType == CardType::Attack) attack_idx.push_back(i);
         }
         if (attack_idx.empty()) break;
-        std::uniform_int_distribution<size_t> dist(0, attack_idx.size() - 1);
-        const size_t pick = attack_idx[dist(gen)];
+        const size_t pick = attack_idx[rng_->uniform_size(0, attack_idx.size() - 1)];
         CardInstance c = std::move(draw_pile_[pick]);
         draw_pile_.erase(draw_pile_.begin() + static_cast<std::ptrdiff_t>(pick));
         add_to_hand(std::move(c));
@@ -412,8 +403,6 @@ int CardSystem::draw_random_attack_cards_from_draw_pile(int max_count) {
 int CardSystem::draw_random_skill_cards_from_draw_pile(int max_count) {
     if (max_count <= 0) return 0;
     int drawn = 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
     while (drawn < max_count) {
         if (draw_pile_.empty()) {
             shuffle_discard_into_draw();
@@ -426,8 +415,7 @@ int CardSystem::draw_random_skill_cards_from_draw_pile(int max_count) {
             if (cd && cd->cardType == CardType::Skill) skill_idx.push_back(i);
         }
         if (skill_idx.empty()) break;
-        std::uniform_int_distribution<size_t> dist(0, skill_idx.size() - 1);
-        const size_t pick = skill_idx[dist(gen)];
+        const size_t pick = skill_idx[rng_->uniform_size(0, skill_idx.size() - 1)];
         CardInstance c = std::move(draw_pile_[pick]);
         draw_pile_.erase(draw_pile_.begin() + static_cast<std::ptrdiff_t>(pick));
         add_to_hand(std::move(c));
@@ -455,9 +443,7 @@ int CardSystem::upgrade_random_cards_in_hand(int count) {
             upgradable_indices.push_back(i);
     }
     if (upgradable_indices.empty()) return 0;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::shuffle(upgradable_indices.begin(), upgradable_indices.end(), gen);
+    std::shuffle(upgradable_indices.begin(), upgradable_indices.end(), *rng_);
     int upgraded = 0;
     int limit = std::min(count, static_cast<int>(upgradable_indices.size()));
     for (int i = 0; i < limit; ++i) {

@@ -12,7 +12,6 @@
 #include <ctime>
 #include <filesystem>
 #include <iostream>
-#include <random>
 #include <optional>
 #include <string>
 
@@ -37,6 +36,7 @@
 #include "MapEngine/MapConfig.hpp"
 #include "GameFlow/GameFlowController.hpp"
 #include "Common/NodeTypes.hpp"
+#include "Common/RunRng.hpp"
 
 static void runBattleUI(sf::RenderWindow& window);
 static void runEventShopRestUITest(sf::RenderWindow& window);
@@ -55,12 +55,14 @@ static void runMapUITest(sf::RenderWindow& window);
         std::cerr << "[启动] 警告：monsters.json 加载失败。\n";
     }
  
-     CardSystem card_system([](CardId id) { return get_card_by_id(id); });  // 卡牌系统，注入按 id 查卡回调
+     tce::RunRng run_rng(static_cast<uint64_t>(std::time(nullptr)));
+     CardSystem card_system([](CardId id) { return get_card_by_id(id); }, &run_rng);  // 卡牌系统，注入按 id 查卡回调
      BattleEngine engine(                                   // 战斗引擎
          card_system,                                       // 卡牌系统引用
          [](MonsterId id) { return get_monster_by_id(id); }, // 按 id 查怪物
          [](CardId id) { return get_card_by_id(id); },      // 按 id 查卡牌
-         execute_monster_behavior                           // 怪物行为执行函数
+         execute_monster_behavior,                          // 怪物行为执行函数
+         &run_rng
      );
  
      register_all_card_effects(card_system);                 // 注册所有卡牌效果（打击、防御等）
@@ -99,13 +101,12 @@ static void runMapUITest(sf::RenderWindow& window);
       "tools_of_the_trade",
       "well_laid_plans",
    });
-     // 普通关 1-3 只怪随机，从邪教徒池中抽取
-     static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
-     int monsterCount = 1 + static_cast<int>(rng() % 3);   // 1~3 只
+     // 普通关 1-3 只怪随机，从邪教徒池中抽取（与 run_rng 同源，便于 SL）
+     int monsterCount = 1 + run_rng.uniform_int(0, 2);   // 1~3 只
      static const std::vector<MonsterId> normalPool = {"cultist", "fat_gremlin", "green_louse", "red_louse"};
      std::vector<MonsterId> monsters;
      for (int i = 0; i < monsterCount; ++i)
-         monsters.push_back(normalPool[static_cast<size_t>(rng() % normalPool.size())]);
+         monsters.push_back(normalPool[run_rng.uniform_size(0, normalPool.size() - 1)]);
      // 遗物：燃烧之血为铁甲战士角色初始遗物，其余为测试用
      std::vector<RelicId> relics = {"burning_blood", "marble_bag"};  // 燃烧之血+弹珠袋
  
@@ -446,15 +447,15 @@ static void runMapUITest(sf::RenderWindow& window);
                     // 选牌必出；金币、遗物、药水各 40% 概率，互不冲突
                     constexpr int REWARD_CHANCE = 40;  // 40%
                     int victoryGold = 0;
-                    if ((rng() % 100) < REWARD_CHANCE) {
+                    if (run_rng.uniform_int(0, 99) < REWARD_CHANCE) {
                         engine.grant_victory_gold();
                         victoryGold = engine.get_victory_gold();
                     }
                     std::string relic_id;
-                    if ((rng() % 100) < REWARD_CHANCE)
+                    if (run_rng.uniform_int(0, 99) < REWARD_CHANCE)
                         relic_id = engine.grant_reward_relic();
                     std::string potion_id;
-                    if ((rng() % 100) < REWARD_CHANCE)
+                    if (run_rng.uniform_int(0, 99) < REWARD_CHANCE)
                         potion_id = engine.grant_reward_potion();
                     auto reward_cards = engine.get_reward_cards(3);  // 三选一（必出）
                     std::vector<std::string> card_ids(reward_cards.begin(), reward_cards.end());
@@ -492,11 +493,11 @@ static void runMapUITest(sf::RenderWindow& window);
                      {"green_louse", "red_louse"},                   // 虱虫
                      {"red_louse", "fat_gremlin", "green_louse"}     // 混合
                  };
-                 const auto& pool = battlePool[static_cast<size_t>(battleIndex)];
-                 int nextCount = 1 + static_cast<int>(rng() % 3);
-                 std::vector<MonsterId> nextMonsters;
-                 for (int i = 0; i < nextCount; ++i)
-                     nextMonsters.push_back(pool[static_cast<size_t>(rng() % pool.size())]);
+                const auto& pool = battlePool[static_cast<size_t>(battleIndex)];
+                int nextCount = 1 + run_rng.uniform_int(0, 2);
+                std::vector<MonsterId> nextMonsters;
+                for (int i = 0; i < nextCount; ++i)
+                    nextMonsters.push_back(pool[run_rng.uniform_size(0, pool.size() - 1)]);
                  player.gold = curState.player.gold;           // 继承金币
                  player.currentHp = curState.player.currentHp;  // 继承血量（可改为满血）
                  player.maxHp = curState.player.maxHp;
