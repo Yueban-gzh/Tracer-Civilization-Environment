@@ -42,7 +42,7 @@
 ----------------------------------------
 常用 id 示例
 ----------------------------------------
-状态：strength, strength+, vulnerable, weak, metallicize, thorns
+状态：strength, strength+, vulnerable, weak, metallicize
 遗物：vajra, burning_blood, marble_bag, centennial_puzzle
 药水：strength_potion, block_potion, poison_potion
 卡牌：strike, strike+, defend, iron_wave, bludgeon

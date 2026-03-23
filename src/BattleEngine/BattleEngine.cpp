@@ -99,35 +99,47 @@ int burn_end_turn_damage_for_id(const CardId& id) {
     if (!card_system_) return false;                                   // 无卡牌系统则失败
     const auto& hand = card_system_->get_hand();                        // 获取手牌
     if (hand_index < 0 || static_cast<size_t>(hand_index) >= hand.size()) return false;  // 下标越界
-    const CardInstance& inst_played = hand[static_cast<size_t>(hand_index)];
-    const CardData* cd = get_card_by_id_ ? get_card_by_id_(inst_played.id) : nullptr;  // 卡牌数据
+    const CardInstance& inst_in_hand = hand[static_cast<size_t>(hand_index)];
+    const CardData* cd = get_card_by_id_ ? get_card_by_id_(inst_in_hand.id) : nullptr;  // 卡牌数据
     if (cd && cd->unplayable) return false;                            // 不可打出则失败
 
-    const CardId played_id = inst_played.id;
-    const bool combat_zero_skill = inst_played.combat_cost_zero;
+    const CardId played_id = inst_in_hand.id;
+    const bool combat_zero_skill = inst_in_hand.combat_cost_zero;
     if (played_id == "grand_finale" || played_id == "grand_finale+") {
         if (get_draw_pile_size_impl() > 0) return false;               // 华丽收场：仅当抽牌堆为空
     }
 
+    const bool is_attack = cd && cd->cardType == CardType::Attack;
+    const bool use_free_attack = is_attack && get_status_stacks(state_.player.statuses, "free_attack") > 0;
+
     const bool corruption_active =
         cd && cd->cardType == CardType::Skill && get_status_stacks(state_.player.statuses, "corruption") > 0;
 
-    int cost = cd ? cd->cost : 0;                                      // 费用
-    const bool is_x_cost = (cost == -1);
+    const int raw_cost = cd ? cd->cost : 0;
+    const bool is_x_cost = (raw_cost == -1);
+    int adjusted_non_x = raw_cost;
+    if (raw_cost >= 0) {
+        adjusted_non_x = raw_cost - inst_in_hand.combatCostDiscount;
+        if (adjusted_non_x < 0) adjusted_non_x = 0;
+    }
+
     int x_spent = 0;
-    if (is_x_cost) {
+    if (use_free_attack) {
+        x_spent = 0;
+    } else if (is_x_cost) {
         if (corruption_active)
-            x_spent = 0;                                                 // 腐化：技能 X 费视为支付 0
+            x_spent = 0;
         else
             x_spent = state_.player.energy;
     } else {
-        int eff_cost = cost;
-        if (corruption_active) eff_cost = 0;                           // 腐化：技能耗能变为 0
+        int eff_cost = adjusted_non_x;
+        if (corruption_active && cd && cd->cardType == CardType::Skill)
+            eff_cost = 0;
         else if (combat_zero_skill && cd && cd->cardType == CardType::Skill)
-            eff_cost = 0;                                                // 结茧：本场战斗该实例技能耗能 0
+            eff_cost = 0;
         else if (played_id == "eviscerate" || played_id == "eviscerate+") {
             int disc = get_status_stacks(state_.player.statuses, "discarded_this_turn");
-            eff_cost = std::max(0, cost - disc);                         // 内脏切除：本回合每弃 1 张牌耗能 -1
+            eff_cost = std::max(0, raw_cost - disc - inst_in_hand.combatCostDiscount);
         }
         if (state_.player.energy < eff_cost) return false;               // 能量不足
     }
@@ -152,7 +164,7 @@ int burn_end_turn_damage_for_id(const CardId& id) {
     if (!card_system_->has_effect_registered(played_id)) return false;  // 未注册效果则不打出（避免消耗能量无效果）
 
     const int pain_triggers = count_pain_in_hand_excluding_index(hand, hand_index);  // 疼痛：打出前统计其余手牌中的疼痛张数
-    CardInstance played = card_system_->remove_from_hand(hand_index);    // 从手牌移除
+    CardInstance played = card_system_->remove_from_hand(hand_index);    // 从手牌移除（保留实例上的 combatCostDiscount）
 
     if (pain_triggers > 0) {                                             // 疼痛：每有一张，失去 1 生命（无视格挡）
         DamagePacket pain_dmg;
@@ -162,19 +174,21 @@ int burn_end_turn_damage_for_id(const CardId& id) {
         pain_dmg.source_type     = DamagePacket::SourceType::Status;
         apply_damage_to_player(pain_dmg);
     }
- 
-    if (is_x_cost) {
-        if (corruption_active)
-            /* x_spent 已为 0，不扣能量 */ ;
-        else
-            state_.player.energy = 0;                                  // X 费：消耗全部当前能量
+
+    if (use_free_attack) {
+        reduce_status_stacks(state_.player.statuses, "free_attack", 1);  // 消耗 1 次免费攻击
+    } else if (is_x_cost) {
+        if (!corruption_active)
+            state_.player.energy = 0;                                  // X 费：消耗全部当前能量（腐化下技能 X 不扣）
     } else {
-        int eff_cost = cost;
-        if (corruption_active) eff_cost = 0;
-        else if (combat_zero_skill && cd && cd->cardType == CardType::Skill) eff_cost = 0;
+        int eff_cost = adjusted_non_x;
+        if (corruption_active && cd && cd->cardType == CardType::Skill)
+            eff_cost = 0;
+        else if (combat_zero_skill && cd && cd->cardType == CardType::Skill)
+            eff_cost = 0;
         else if (played_id == "eviscerate" || played_id == "eviscerate+") {
             int disc = get_status_stacks(state_.player.statuses, "discarded_this_turn");
-            eff_cost = std::max(0, cost - disc);
+            eff_cost = std::max(0, raw_cost - disc - inst_in_hand.combatCostDiscount);
         }
         state_.player.energy -= eff_cost;                              // 扣除能量（腐化下技能为 0）
     }
@@ -196,7 +210,21 @@ int burn_end_turn_damage_for_id(const CardId& id) {
              dmg.target_monster_index = monster_index;                  // 目标怪物
              apply_damage_to_monster(dmg);                               // 施加伤害
          },
-         (cd && cd->cardType == CardType::Attack)                        // 是否为攻击牌（双截棍等用）
+         (cd && cd->cardType == CardType::Attack),                       // 是否为攻击牌（双截棍等用）
+         [this](int n) { draw_cards_impl(n); },  // 散热等：抽牌（尊重不能抽牌）
+         (cd && cd->cardType == CardType::Power),                        // 是否为能力牌
+         [this](int amount) {                                           // 死亡律动等：对玩家造成伤害（考虑格挡）
+             if (amount <= 0) return;                                    // 非正伤害跳过
+             DamagePacket dmg;                                           // 伤害包
+             dmg.raw_amount      = amount;                               // 原始数值
+             dmg.modified_amount = amount;                               // 结算用数值
+             dmg.ignore_block    = false;                                // 尊重玩家格挡
+             dmg.can_be_reduced  = true;                                 // 可无实体等减伤
+             dmg.source_type     = DamagePacket::SourceType::Status;     // 来源记为状态效果
+             dmg.from_attack     = false;                                // 非攻击牌伤害（不吃易伤/虚弱攻击修正）
+             apply_damage_to_player(dmg);                                // 走统一玩家受伤管线
+         },
+         [this](int b) { add_block_to_player_impl(b); }                  // 残像等：经统一入口叠格挡以触发势不可挡
      };
      modifiers_.on_card_played(state_, played_id, target_monster_index, &card_ctx);  // 广播：打出卡牌（勒脖等）
 
@@ -211,19 +239,36 @@ int burn_end_turn_damage_for_id(const CardId& id) {
             reduce_status_stacks(state_.player.statuses, "burst", 1);   // 消耗 1 层爆发
         }
     }
+    if (cd && cd->cardType == CardType::Attack) {
+        int dt = get_status_stacks(state_.player.statuses, "double_tap");
+        if (dt > 0) {                                                    // 双发：本回合下 X 张攻击牌各执行 2 次
+            execute_times *= 2;
+            reduce_status_stacks(state_.player.statuses, "double_tap", 1);
+        }
+    }
+    {                                                                    // 复制：层数 X = 接下来 X 张牌各打出 2 次（与爆发叠乘）
+        int dup = get_status_stacks(state_.player.statuses, "duplicate");
+        if (dup > 0) {
+            execute_times *= 2;
+            reduce_status_stacks(state_.player.statuses, "duplicate", 1);
+        }
+    }
     for (int i = 0; i < execute_times; ++i) {
         card_system_->execute_effect(played_id, ctx);                    // 执行卡牌效果
     }
  
-     const bool force_exhaust = corruption_active;                       // 腐化：打出的技能进入消耗堆
-     if ((cd && cd->exhaust) || force_exhaust) {
-         card_system_->add_to_exhaust(played);                          // 消耗 / 腐化技能
-         apply_exhaust_passives_from_hand(1);
-     } else if (cd && cd->retain) {
-         card_system_->add_to_hand(played);                              // 保留：仅当未消耗时回到手牌
-     } else {
-         card_system_->add_to_discard(played);                          // 加入弃牌堆
-     }
+    const bool force_exhaust = corruption_active;                       // 腐化：打出的技能进入消耗堆
+    if ((cd && cd->exhaust) || force_exhaust) {
+        card_system_->add_to_exhaust(played);                          // 消耗 / 腐化技能
+        apply_exhaust_passives_from_hand(1);
+    } else if (cd && cd->retain) {
+        const int est = get_status_stacks(state_.player.statuses, "establishment");  // 确立基础层数
+        if (est > 0)
+            played.combatCostDiscount += est;                          // 累加到该实例
+        card_system_->add_to_hand(played);                              // 保留：回到手牌
+    } else {
+        card_system_->add_to_discard(played);                          // 加入弃牌堆
+    }
     panache_on_any_card_played();                                        // 神气制胜：每 5 张牌触发一次
     ++state_.player.cardsPlayedThisTurn;                                 // 本回合成功打出计数（凡庸）
      return true;                                                       // 打出成功
@@ -480,24 +525,17 @@ void BattleEngine::apply_damage_to_player(DamagePacket& dmg) {         // 对玩
          hpDamage -= absorbed;                                          // 剩余伤害
      }
 
+    modifiers_.on_player_before_hp_loss(hpDamage, state_, dmg);          // 缓冲等：可令本次实际掉血为 0（任意来源）
+
     state_.player.currentHp -= hpDamage;                               // 扣血
     if (state_.player.currentHp < 0) state_.player.currentHp = 0;       // 不低于 0
-    if (totalDamage > 0) state_.pendingDamageDisplays.push_back(DamageDisplayEvent{true, -1, totalDamage, 180});
+    if (hpDamage > 0) state_.pendingDamageDisplays.push_back(DamageDisplayEvent{true, -1, hpDamage, 180});
 
-     DamageAppliedContext dmg_ctx;                                      // 伤害结算后上下文（荆棘反伤、百年积木抽牌用）
+     DamageAppliedContext dmg_ctx;                                      // 伤害结算后上下文（百年积木抽牌等）
      dmg_ctx.damage_to_player = true;                                   // 标记：伤害施加给玩家
      dmg_ctx.hp_damage_to_player = hpDamage;                            // 玩家实际扣血量（格挡后）
-     dmg_ctx.draw_cards = [this](int n) { if (card_system_) card_system_->draw_cards(n); };  // 抽牌回调
-     dmg_ctx.deal_damage_to_monster_ignoring_block = [this](int idx, int amount) {  // 反伤回调
-         if (amount <= 0 || idx < 0 || idx >= static_cast<int>(state_.monsters.size())) return;  // 参数校验
-         DamagePacket thorns;                                           // 荆棘伤害包
-         thorns.modified_amount = amount;                               // 伤害值
-         thorns.ignore_block    = true;                                 // 无视格挡
-         thorns.source_type     = DamagePacket::SourceType::Status;     // 来源：状态
-         thorns.target_monster_index = idx;                             // 目标怪物
-         apply_damage_to_monster(thorns);                                // 施加反伤
-     };
-     modifiers_.on_damage_applied(dmg, state_, &dmg_ctx);                 // 广播：伤害结算后（荆棘反伤等）
+     dmg_ctx.draw_cards = [this](int n) { draw_cards_impl(n); };  // 抽牌回调（尊重不能抽牌）
+     modifiers_.on_damage_applied(dmg, state_, &dmg_ctx);                 // 广播：伤害结算后
      if (state_.player.currentHp <= 0) {                                // 若玩家死亡
          on_player_just_died();                                          // 触发玩家死亡
      }
@@ -519,18 +557,24 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
     }
      if (totalDamage < 0) totalDamage = 0;                             // 确保非负
 
-     int hpDamage = totalDamage;                                        // 实际扣血量
+     int hpDamage = totalDamage;                                        // 格挡后拟扣生命
      if (!dmg.ignore_block) {                                           // 若不无视格挡
          int absorbed = (hpDamage < m.block) ? hpDamage : m.block;      // 格挡吸收量
          m.block -= absorbed;                                           // 减少格挡
          hpDamage -= absorbed;                                          // 剩余伤害
      }
 
+     const int hpAfterBlock = hpDamage;                                 // 坚不可摧等：在扣血前再修正
+     modifiers_.on_monster_before_hp_loss(hpDamage, state_, idx, dmg);
+     if (get_status_stacks(m.statuses, "indestructible") > 0)
+         m.indestructibleDamageTakenThisTurn += hpDamage;              // 统计本回合已实际失去的生命
+
     m.currentHp -= hpDamage;                                          // 扣血
     if (m.currentHp < 0) m.currentHp = 0;                              // 不低于 0
-    if (totalDamage > 0) state_.pendingDamageDisplays.push_back(DamageDisplayEvent{false, idx, totalDamage, 180});
+     const int damageDisplayAmount = (totalDamage - hpAfterBlock) + hpDamage;  // 格挡吸收 + 实际掉血（与飘字一致）
+     if (damageDisplayAmount > 0) state_.pendingDamageDisplays.push_back(DamageDisplayEvent{false, idx, damageDisplayAmount, 180});
 
-     modifiers_.on_damage_applied(dmg, state_, nullptr);                 // 广播：伤害施加给怪物，荆棘不触发
+     modifiers_.on_damage_applied(dmg, state_, nullptr);                 // 广播：伤害施加给怪物
      if (m.currentHp <= 0) {                                            // 若怪物死亡
          on_monster_just_died(idx);                                      // 触发怪物死亡（尸体爆炸等）
      }
@@ -540,6 +584,10 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
     reduce_status_stacks(state_.player.statuses, "discarded_this_turn", 9999);  // 新回合重置“本回合已弃牌”计数
     reduce_status_stacks(state_.player.statuses, "attacks_played_this_turn", 9999);
     reduce_status_stacks(state_.player.statuses, "panache_counter", 9999);
+    for (auto& m : state_.monsters) {                                 // 每玩家回合开始重置与「本回合」相关的怪物计数
+        m.flightAttackHitsThisTurn = 0;
+        m.indestructibleDamageTakenThisTurn = 0;
+    }
      int draw_count = state_.player.cardsToDrawPerTurn;                 // 本回合抽牌数
      int energy      = state_.player.maxEnergy;                         // 本回合能量
     if (state_.turnNumber == 1 && card_system_) {
@@ -560,13 +608,38 @@ void BattleEngine::apply_damage_to_monster(DamagePacket& dmg) {        // 对怪
              dmg.can_be_reduced  = true;
              dmg.source_type     = DamagePacket::SourceType::Status;
              apply_damage_to_player(dmg);
-         }
+         },
+         [this](CardId id) {                                              // 生成牌入手牌（其它效果用）
+             if (card_system_) card_system_->generate_to_hand(std::move(id));
+         },
+         [this]() {                                                       // 渎神者：直接致死并广播死亡（不经缓冲）
+             state_.player.currentHp = 0;                                // 当前生命置零
+             on_player_just_died();                                       // 触发玩家死亡 modifier 链
+         },
+         [this](int n) {                                                  // 你好：随机普通稀有度牌入手（临时牌）
+             if (n <= 0 || !card_system_) return;                         // 无效数量或无牌堆则跳过
+             std::vector<CardId> pool;                                   // 候选：全部已加载且稀有度为普通的卡
+             for (const CardId& cid : get_all_card_ids()) {               // 遍历数据层中的卡牌 id
+                 const CardData* cd = get_card_by_id_ ? get_card_by_id_(cid) : get_card_by_id(cid);  // 解析静态数据
+                 if (!cd || cd->rarity != Rarity::Common) continue;      // 仅保留普通稀有度
+                 pool.push_back(cid);                                     // 加入候选池
+             }
+             if (pool.empty()) return;                                    // 无可用卡则不做任何事
+             std::random_device rd;                                       // 非确定性种子（与战斗内洗牌相互独立）
+             std::mt19937 gen(rd());                                      // Mersenne Twister 生成器
+             std::uniform_int_distribution<std::size_t> dist(0, pool.size() - 1u);  // 闭区间下标
+             for (int i = 0; i < n; ++i)                                  // 独立随机 n 次（可重复抽到同 id）
+                 card_system_->generate_to_hand(pool[dist(gen)]);         // 临时生成并尝试置入手牌
+         },
+         [this](int b) { add_block_to_player_impl(b); }                   // 统一加格挡入口（下回合格挡+、势不可挡等）
      };
  
      modifiers_.on_turn_start_player(state_, &ctx);                      // 广播：玩家回合开始（中毒扣血、抽牌修改等）
+     if (state_.player.currentHp <= 0) return;                           // 渎神等已在回合初致死，不再抽牌/叠力量
+     build_modifiers_from_state();                                       // 回合开始可能改变力量等（恶魔形态等），重建以同步 StrengthModifier
      state_.player.energy = energy;                                    // 应用能量（modifier 可能已修改，如 4/3）
      if (draw_count < 0) draw_count = 0;                                // 抽牌数不低于 0
-     draw_cards_impl(draw_count);                                         // 抽牌（经引擎：虚空抽到时扣能量等）
+    draw_cards_impl(draw_count);                                         // 抽牌（经引擎：虚空抽到时扣能量等）
     // 必备工具：回合开始额外抽 1 并弃 1（按层数重复）
     int tools = get_status_stacks(state_.player.statuses, "essential_tools");
     if (tools > 0) {
@@ -626,12 +699,20 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
 
  void BattleEngine::handle_player_turn_end() {                          // 玩家回合结束
     apply_curse_hand_effects_before_turn_end_discard();                 // 诅咒：回合结束时仍在手牌则结算（在弃牌前）
+    bool skip_full_hand_discard = false;                               // 均衡等：本回合是否跳过「非保留牌入弃牌堆」
+    modifiers_.on_before_player_hand_discard(state_, skip_full_hand_discard);  // 询问 modifier（均衡会置 true 并扣层数）
      if (card_system_) {                                                // 若有卡牌系统
         int keep_quota = get_status_stacks(state_.player.statuses, "well_planned");  // 周密计划：额外保留张数
          const auto& hand = card_system_->get_hand();                    // 获取手牌
          for (int i = static_cast<int>(hand.size()) - 1; i >= 0; --i) {  // 从后往前遍历（避免下标错位）
              const CardData* cd = get_card_by_id_ ? get_card_by_id_(hand[static_cast<size_t>(i)].id) : nullptr;  // 卡牌数据
              if (cd && cd->retain) continue;                            // 保留牌不移除
+             if (skip_full_hand_discard) {                              // 均衡激活：整手视同保留，但虚无仍须消耗
+                 if (!cd || !cd->ethereal) continue;                    // 非虚无牌留在手上
+                 auto c = card_system_->remove_from_hand(i);             // 虚无牌从手牌移除
+                 card_system_->add_to_exhaust(c);                        // 送入消耗堆
+                 continue;                                               // 处理下一索引
+             }
             if (keep_quota > 0) {                                      // 周密计划：额外保留非保留牌
                 --keep_quota;
                 continue;
@@ -653,7 +734,28 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
             dmg.source_type = DamagePacket::SourceType::Status;
             dmg.target_monster_index = monster_index;
             apply_damage_to_monster(dmg);
-        }
+        },
+        [this](int amount) {                                              // 缠绕等：对玩家结算伤害（尊重格挡）
+            if (amount <= 0 || state_.player.currentHp <= 0) return;
+            DamagePacket dmg;
+            dmg.raw_amount      = amount;
+            dmg.modified_amount = amount;
+            dmg.ignore_block    = false;
+            dmg.can_be_reduced  = true;
+            dmg.source_type     = DamagePacket::SourceType::Status;
+            dmg.from_attack     = false;
+            apply_damage_to_player(dmg);
+        },
+        [this](int discount_delta) {                                     // 确立基础：给仍留在手上的保留牌叠减费
+            if (!card_system_ || discount_delta <= 0) return;          // 无牌堆或无效增量
+            const auto& h = card_system_->get_hand();                    // 弃牌后的当前手牌
+            for (int i = 0; i < static_cast<int>(h.size()); ++i) {     // 按索引遍历
+                const CardData* cd = get_card_by_id_ ? get_card_by_id_(h[static_cast<size_t>(i)].id) : nullptr;
+                if (cd && cd->retain)                                    // 仅处理带保留词条的牌
+                    card_system_->add_combat_cost_discount_to_hand_index(i, discount_delta);  // 叠加减费
+            }
+        },
+        [this](int b) { add_block_to_player_impl(b); }                   // 金属化、奥利哈钢等：统一加格挡
     };
     modifiers_.on_turn_end_player(state_, &end_ctx);                    // 广播：玩家回合结束（金属化、炸弹等）
  }
@@ -688,8 +790,15 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
  }
  
  void BattleEngine::handle_enemy_turn_end() {                           // 敌方回合结束
-     EnemyTurnContext ctx{};                                            // 空上下文
-     modifiers_.on_turn_end_monsters(state_, &ctx);                     // 广播：镣铐减力量、duration 递减等
+     EnemyTurnContext ctx{};                                            // 敌方回合结束上下文
+     ctx.kill_monster = [this](int idx) {                                // 消逝归零时由 modifier 调用
+         if (idx < 0 || static_cast<size_t>(idx) >= state_.monsters.size()) return;  // 下标无效
+         auto& m = state_.monsters[static_cast<size_t>(idx)];           // 目标怪物
+         if (m.currentHp <= 0) return;                                  // 已死不再处理
+         m.currentHp = 0;                                               // 生命清零
+         on_monster_just_died(idx);                                      // 触发尸体爆炸等死亡逻辑
+     };
+     modifiers_.on_turn_end_monsters(state_, &ctx);                     // 广播：镣铐减力量、duration 递减、消逝等
  }
  
  void BattleEngine::on_monster_just_died(int monsterIndex) {             // 怪物刚死亡时
@@ -715,11 +824,13 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
  
  void BattleEngine::build_modifiers_from_state() {                      // 根据战斗状态构建 modifier 列表
      modifiers_.clear();                                                // 清空现有 modifier
+     modifiers_.add_modifier(create_buffer_modifier(), MOD_PRIORITY_BUFFER_PRE);  // 缓冲：先于遗物，扣血前判定
      int idx = 0;                                                      // 遗物索引
      for (auto& m : create_relic_modifiers(state_.player.relics))      // 遗物 modifier
          modifiers_.add_modifier(std::move(m), MOD_PRIORITY_RELIC + (idx++));  // 按获得顺序
      for (auto& m : create_player_status_modifiers(state_.player))      // 玩家状态 modifier
          modifiers_.add_modifier(std::move(m), MOD_PRIORITY_PLAYER_ST);
+     modifiers_.add_modifier(create_blasphemy_modifier(), MOD_PRIORITY_PLAYER_ST + 1);  // 渎神须最后判定回合初处决
      for (auto& m : create_monster_status_modifiers(state_.monsters))   // 怪物状态 modifier
          modifiers_.add_modifier(std::move(m), MOD_PRIORITY_MONSTER_ST);
  }
@@ -746,6 +857,17 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
              return;
          }
      }
+ }
+
+ void BattleEngine::merge_status_into_list(std::vector<StatusInstance>& list, StatusId id, int stacks, int duration) {
+     for (auto& s : list) {
+         if (s.id == id) {
+             s.stacks += stacks;
+             if (duration >= 0) s.duration = duration;
+             return;
+         }
+     }
+     list.push_back(StatusInstance{std::move(id), stacks, duration});
  }
  
  void EffectContext::deal_damage_to_player(int amount) {                // 对玩家造成伤害（考虑格挡）
@@ -821,7 +943,7 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
      if (engine_) engine_->add_block_to_monster_impl(monster_index, amount);
  }
  int EffectContext::get_effective_damage_dealt_by_player(int base_damage, int target_monster_index) const {  // 玩家对怪物的有效伤害
-     return engine_ ? engine_->get_effective_damage_dealt_by_player_impl(base_damage, target_monster_index) : base_damage;
+     return engine_ ? engine_->get_effective_damage_dealt_by_player_impl(base_damage, target_monster_index, from_attack) : base_damage;
  }
  int EffectContext::get_effective_block_for_player(int base_block) const {  // 玩家有效格挡
      return engine_ ? engine_->get_effective_block_for_player_impl(base_block) : base_block;
@@ -970,19 +1092,44 @@ size_t BattleEngine::run_rng_uniform_size(size_t lo, size_t hi) {
 
  // --- BattleEngine 内部实现 ---
  void BattleEngine::add_block_to_player_impl(int amount) {               // 给玩家加格挡
-     if (amount > 0) state_.player.block += amount;
+     if (amount <= 0) return;                                            // 非正数不加
+     state_.player.block += amount;                                      // 先写入格挡
+     PlayerBlockGainedContext block_ctx;                                 // 势不可挡等用的上下文
+     block_ctx.deal_damage_to_random_living_monster = [this](int dmg) {  // 对随机存活敌人造成伤害
+         if (dmg <= 0) return;                                          // 无效伤害跳过
+         std::vector<int> alive;                                         // 存活敌人下标列表
+         for (int i = 0; i < static_cast<int>(state_.monsters.size()); ++i) {  // 遍历怪物
+             if (state_.monsters[static_cast<size_t>(i)].currentHp > 0)  // 仍存活
+                 alive.push_back(i);                                    // 记入候选
+         }
+         if (alive.empty()) return;                                      // 无人可打则返回
+         std::random_device rd;                                          // 随机源
+         std::mt19937 gen(rd());                                         // 随机引擎
+         std::uniform_int_distribution<std::size_t> pick(0, alive.size() - 1u);  // 均匀选下标
+         const int idx = alive[pick(gen)];                               // 随机敌人
+         DamagePacket packet;                                             // 伤害包
+         packet.raw_amount        = dmg;                                 // 原始伤害
+         packet.modified_amount   = dmg;                                 // 初始结算值
+         packet.source_type       = DamagePacket::SourceType::Player;     // 来源：玩家
+         packet.target_monster_index = idx;                              // 目标
+         packet.ignore_block      = false;                                // 尊重怪物格挡
+         packet.can_be_reduced    = true;                                 // 可无实体等
+         packet.from_attack       = false;                                // 非攻击类（不吃攻击向易伤/虚弱）
+         apply_damage_to_monster(packet);                                // 走统一对怪伤害
+     };
+     modifiers_.on_player_block_gained(state_, amount, &block_ctx);     // 广播：已获得格挡（势不可挡）
  }
  void BattleEngine::add_block_to_monster_impl(int monster_index, int amount) {  // 给怪物加格挡
      if (amount <= 0 || monster_index < 0 || monster_index >= static_cast<int>(state_.monsters.size())) return;
      state_.monsters[static_cast<size_t>(monster_index)].block += amount;
  }
- int BattleEngine::get_effective_damage_dealt_by_player_impl(int base_damage, int target_monster_index) const {  // 玩家对怪物的有效伤害（经 modifier）
+ int BattleEngine::get_effective_damage_dealt_by_player_impl(int base_damage, int target_monster_index, bool from_attack) const {  // 玩家对怪物的有效伤害（经 modifier）
      DamagePacket dmg;                                                  // 构造伤害包
      dmg.raw_amount = base_damage;
      dmg.modified_amount = base_damage;
      dmg.source_type = DamagePacket::SourceType::Player;
      dmg.target_monster_index = target_monster_index;
-     dmg.from_attack = true;
+     dmg.from_attack = from_attack;
      const_cast<ModifierSystem&>(modifiers_).on_player_deal_damage(dmg, state_);  // 经力量、易伤等修正
      return dmg.modified_amount > 0 ? dmg.modified_amount : 0;           // 返回修正后伤害
  }
@@ -1057,14 +1204,7 @@ int BattleEngine::get_monster_count_impl() const {
     return static_cast<int>(state_.monsters.size());
 }
 static void add_or_merge_status(std::vector<StatusInstance>& list, StatusId id, int stacks, int duration) {
-    for (auto& s : list) {
-        if (s.id == id) {
-            s.stacks += stacks;                                        // 已有则叠加层数
-            if (duration >= 0) s.duration = duration;                  // 有持续回合则刷新
-            return;
-        }
-    }
-    list.push_back(StatusInstance{std::move(id), stacks, duration});   // 无则新建
+    BattleEngine::merge_status_into_list(list, std::move(id), stacks, duration);
 }
 
 void BattleEngine::apply_status_to_player_impl(StatusId id, int stacks, int duration) {  // 对玩家施加状态（经 modifier 检查）
@@ -1104,7 +1244,7 @@ void BattleEngine::set_monster_status_stacks_impl(int monster_index, StatusId id
      ctx.from_attack = true;
      for (size_t i = 0; i < state_.monsters.size(); ++i) {
          if (state_.monsters[i].currentHp > 0) {
-             int dmg = get_effective_damage_dealt_by_player_impl(base_damage, static_cast<int>(i));  // 经 modifier 修正
+             int dmg = get_effective_damage_dealt_by_player_impl(base_damage, static_cast<int>(i), true);  // 经 modifier 修正（群体攻击）
              if (dmg > 0) ctx.deal_damage_to_monster(static_cast<int>(i), dmg);
          }
      }

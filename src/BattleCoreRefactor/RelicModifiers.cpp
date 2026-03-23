@@ -86,15 +86,7 @@ public:
     }
 };
 
-class CopperScalesRelic : public IBattleModifier {  // 铜制鳞片：每场战斗开始时获得 3 点荆棘（非每回合）
-public:
-    void on_battle_start(BattleState& state) override {
-        if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
-        auto& list = state.player.statuses;
-        list.erase(std::remove_if(list.begin(), list.end(), [](const StatusInstance& s) { return s.id == "thorns"; }), list.end());  // 清除上局遗留荆棘
-        list.push_back(StatusInstance{"thorns", 3, -1});  // 获得 3 点荆棘，本场有效
-    }
-};
+class CopperScalesRelic : public IBattleModifier {};  // 铜制鳞片：荆棘效果已自代码中移除，遗物保留为无效果占位
 
 class SmoothStoneRelic : public IBattleModifier {  // 意外光滑的石头：每场战斗开始时，获得 1 点敏捷
 public:
@@ -240,10 +232,11 @@ public:
 
 class OrichalcumRelic : public IBattleModifier {  // 奥利哈钢：回合结束时若没有任何格挡，获得 6 点格挡
 public:
-    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
+    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* ctx) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
         if (state.player.block > 0) return;         // 已有格挡则不触发
-        state.player.block += 6;                    // 获得 6 点格挡
+        if (ctx && ctx->grant_player_block) ctx->grant_player_block(6);  // 经统一入口（势不可挡等）
+        else state.player.block += 6;             // 无回调时直加
     }
 };
 

@@ -23,8 +23,6 @@ struct BattleStateSnapshot {
     /** 本回合已打出牌数（与凡庸等规则对齐） */
     int                      cardsPlayedThisTurn = 0;
     Stance                   stance;
-    int                      orbSlotCount;
-    std::vector<OrbSlot>     orbSlots;
     int                      potionSlotCount = 3;
     std::vector<PotionId>    potions;
     std::vector<RelicId>     relics;
