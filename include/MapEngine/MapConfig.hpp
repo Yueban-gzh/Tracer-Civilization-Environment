@@ -1,6 +1,7 @@
-﻿//MapConfig.hpp
+//MapConfig.hpp
 #pragma once
 #include "../Common/NodeTypes.hpp"
+#include <cstddef>
 #include <vector>
 #include <string>
 #include <utility>
@@ -494,13 +495,15 @@ namespace MapEngine {
 
         void nextMap() {
             if (!configs.empty()) {
-                currentConfigIndex = (currentConfigIndex + 1) % configs.size();
+                currentConfigIndex = static_cast<int>(
+                    (static_cast<std::size_t>(currentConfigIndex) + 1) % configs.size());
             }
         }
 
         void prevMap() {
             if (!configs.empty()) {
-                currentConfigIndex = (currentConfigIndex - 1 + configs.size()) % configs.size();
+                currentConfigIndex = static_cast<int>(
+                    (static_cast<std::size_t>(currentConfigIndex) + configs.size() - 1) % configs.size());
             }
         }
 
