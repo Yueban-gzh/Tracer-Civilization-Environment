@@ -1,4 +1,5 @@
 #include "../../include/BattleCoreRefactor/PotionEffects.hpp"  // 药水效果头文件
+#include "../../include/BattleCoreRefactor/BattleEngine.hpp"   // get_status_stacks：不能抽牌
 #include "../../include/CardSystem/CardSystem.hpp"             // 抽牌需 CardSystem
 
 namespace tce {
@@ -109,9 +110,8 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
 
     // 迅捷药水：抽 3 张牌（需传入 card_system）
     if (id == "swift_potion") {
-        if (card_system) {                                     // 若有卡牌系统
-            card_system->draw_cards(3);                       // 抽 3 张牌
-        }
+        if (card_system && BattleEngine::get_status_stacks(state.player.statuses, "cannot_draw") <= 0)
+            card_system->draw_cards(3);
         return;
     }
 

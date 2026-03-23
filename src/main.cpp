@@ -2,8 +2,8 @@
  * 《溯源者：文明环境》课设 - 程序入口
  * 模块：MapEngine(A)、BattleEngine(B)、CardSystem(C)、EventEngine(D)、DataLayer(E)
  *
- * 主菜单：1/F1=战斗  2/F2=事件/商店/休息 UI  3/F3=地图  Esc=退出
- * 用于测试所有 UI 与重要功能是否正常运行。
+ * 当前入口：启动后直接进入战斗 UI（runBattleUI），不再经过地图主流程。
+ * 下方仍保留事件/商店/休息、地图的静态测试函数，便于单独调试（可自行从 main 调用）。
  */
 
 #include <SFML/Graphics.hpp>
@@ -35,7 +35,6 @@
 #include "MapEngine/MapEngine.hpp"
 #include "MapEngine/MapUI.hpp"
 #include "MapEngine/MapConfig.hpp"
-#include "GameFlow/GameFlowController.hpp"
 #include "Common/NodeTypes.hpp"
 
 static void runBattleUI(sf::RenderWindow& window);
@@ -541,14 +540,9 @@ static void runMapUITest(sf::RenderWindow& window);
 
  int main() {
      const unsigned int winW = 1920, winH = 1080;
-    sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 主流程");
+     sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 战斗");
      window.setFramerateLimit(60);
 
-    tce::GameFlowController gameFlow(window);
-    if (!gameFlow.initialize()) {
-        std::cerr << "GameFlowController 初始化失败。" << std::endl;
-        return 1;
-    }
-    gameFlow.run();
+     runBattleUI(window);
      return 0;
  }

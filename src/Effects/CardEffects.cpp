@@ -395,6 +395,7 @@ void effect_ghostly_armor(EffectContext& ctx, bool is_upgraded) {
 
 // 巩固：将当前格挡翻倍
 void effect_entrench(EffectContext& ctx, bool /*is_upgraded*/) {
+    if (ctx.get_status_stacks_on_player("cannot_block") > 0) return;  // 无法格挡：不通过打牌增加格挡（不经 get_effective 链）
     int block = ctx.get_player_block();
     if (block > 0) ctx.add_block_to_player(block);
 }

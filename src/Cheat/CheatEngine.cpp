@@ -13,8 +13,8 @@ namespace tce {
 
 // 状态效果 ID 列表，供 player_status / monster_status 等命令补全
 static const char* const STATUS_IDS[] = {
-    "weak", "vulnerable", "strength", "poison", "draw_up", "energy_up", "block_up",
-    "metallicize", "poison_cloud", "double_damage", "double_tap", "demon_form", "heat_sink", "establishment", "equilibrium", "blasphemy", "hello", "unstoppable", "free_attack", "dexterity", "artifact", "strength_down", "frail",
+    "weak", "vulnerable", "strength", "poison", "draw_up", "cannot_draw", "cannot_block", "energy_up", "block_up",
+    "metallicize", "poison_cloud", "double_damage", "double_tap", "demon_form", "heat_sink", "establishment", "equilibrium", "blasphemy", "hello", "unstoppable", "free_attack", "dexterity", "dexterity_down", "artifact", "strength_down", "frail",
     "slow", "daze", "void", "flight", "indestructible", "death_rhythm", "curiosity", "anger", "curl_up", "vanish"
 };
 static const size_t STATUS_IDS_COUNT = sizeof(STATUS_IDS) / sizeof(STATUS_IDS[0]);

@@ -1675,7 +1675,7 @@ namespace tce {
             }
             else if (id == "entangle") {
                 name = L"缠绕";
-                line2 = L"在你的回合结束时，受到" + std::to_wstring(n) + L"点伤害";
+                line2 = L"本回合无法打出攻击牌；在你的回合结束时，受到 " + std::to_wstring(n) + L" 点伤害（受格挡影响）";
             }
             else if (id == "shackles") {
                 name = L"镣铐";
@@ -1687,11 +1687,21 @@ namespace tce {
             }
             else if (id == "dexterity_down") {
                 name = L"敏捷下降";
-                line2 = L"在你的回合结束时，失去 " + std::to_wstring(n) + L" 点敏捷";
+                line2 = L"在你的回合结束时，失去 " + std::to_wstring(n) + L" 点敏捷（可减至负数）";
             }
             else if (id == "draw_reduction") {
                 name = L"抽牌减少";
                 line2 = L"下 " + std::to_wstring(n) + L" 个回合内，每回合少抽 1 张牌";
+            }
+            else if (id == "cannot_draw") {
+                name = L"不能抽牌";
+                line2 = L"本回合内无法从抽牌堆抽牌；持续 " + std::to_wstring(st.duration) + L" 回合";
+            }
+            else if (id == "cannot_block") {
+                name = L"无法格挡";
+                line2 = (st.duration < 0)
+                    ? L"你无法从卡牌中获得格挡（本场战斗）"
+                    : L"你无法从卡牌中获得格挡，持续 " + std::to_wstring(st.duration) + L" 回合";
             }
             else if (id == "draw_up") {
                 name = L"抽牌增加";

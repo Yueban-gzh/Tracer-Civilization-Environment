@@ -29,6 +29,10 @@ x64/
 x86/
 [Ww]in32/
 
+# Makefile / 本地构建目录中的可执行文件与复制进来的 DLL（勿提交）
+build/*.exe
+build/*.dll
+
 # 编译/链接产物
 *.obj
 *.o

@@ -15,14 +15,26 @@ static void add_strength_stacks(std::vector<StatusInstance>& list, int stacks) {
     list.push_back(StatusInstance{"strength", stacks, -1});
 }
 
-/** 与 on_player_gain_block 中「敏捷→脆弱」顺序一致：用于不经过 EffectContext::get_effective_block_for_player 的卡牌格挡（如残像）。 */
+/** 与 on_player_gain_block 中「敏捷→脆弱」一致；敏捷可为负。 */
 static int apply_dexterity_and_frail_to_card_block(int base, const BattleState& state) {
     int b = base;
-    int dex = BattleEngine::get_status_stacks(state.player.statuses, "dexterity");
-    if (dex > 0) b += dex;
+    b += BattleEngine::get_status_stacks(state.player.statuses, "dexterity");
     if (BattleEngine::get_status_stacks(state.player.statuses, "frail") > 0)
         b = b * 3 / 4;
     return b > 0 ? b : 0;
+}
+
+/** 从玩家「敏捷」层数中减去 loss；可减至负数；仅当结果恰为 0 时移除该状态条目（不用 reduce_status_stacks，因其会把 ≤0 一律删掉）。 */
+static void subtract_player_dexterity_allow_negative(std::vector<StatusInstance>& list, int loss) {
+    if (loss <= 0) return;                                             // 无效减量直接返回
+    for (auto it = list.begin(); it != list.end(); ++it) {             // 扫描玩家状态列表
+        if (it->id != "dexterity") continue;                           // 非敏捷条目跳过
+        it->stacks -= loss;                                            // 扣层数，允许变成负数
+        if (it->stacks == 0)                                           // 恰好为 0 时视为无敏捷
+            list.erase(it);                                            // 移除空条目
+        return;                                                        // 已处理完已有敏捷
+    }
+    list.push_back(StatusInstance{"dexterity", -loss, -1});            // 原本没有敏捷则新建负敏捷
 }
 
 // ========== 负面 - 玩家 ==========
@@ -38,7 +50,15 @@ static int apply_dexterity_and_frail_to_card_block(int base, const BattleState& 
  };
 
  class PlayerConfusionModifier : public IBattleModifier {};         // 混乱：抽牌费用随机（桩）
- class PlayerDexterityDownModifier : public IBattleModifier {};     // 敏捷降低（桩）
+
+ class PlayerDexterityDownModifier : public IBattleModifier {      // 敏捷下降：回合结束时从「敏捷」扣 X，可负
+ public:                                                              // 对外接口
+     void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {  // 玩家回合结束
+         const int x = BattleEngine::get_status_stacks(state.player.statuses, "dexterity_down");  // X=敏捷下降层数=本次扣除量
+         if (x <= 0) return;                                          // 无敏捷下降则不扣敏捷
+         subtract_player_dexterity_allow_negative(state.player.statuses, x);  // 从 dexterity 扣 X，可低于 0
+     }                                                                // on_turn_end_player 结束
+ };                                                                   // PlayerDexterityDownModifier 结束
 
  class PlayerFrailModifier : public IBattleModifier {               // 脆弱：在 X 回合内，从卡牌获得的格挡减少 25%
  public:
@@ -49,15 +69,28 @@ static int apply_dexterity_and_frail_to_card_block(int base, const BattleState& 
      }
  };
  
- class PlayerCannotDrawModifier : public IBattleModifier {};       // 无法抽牌（桩）
+ class PlayerCannotDrawModifier : public IBattleModifier {        // 不能抽牌：本回合内无法从抽牌堆抽牌（回合初清零抽牌数；见 draw_cards_impl）
+ public:
+     void on_turn_start_player(BattleState& state, TurnStartContext* ctx) override {
+         if (!ctx) return;
+         if (BattleEngine::get_status_stacks(state.player.statuses, "cannot_draw") <= 0) return;
+         ctx->draw_count = 0;
+     }
+ };
  class PlayerFlexModifier : public IBattleModifier {};              // 灵活（桩）
 
- class PlayerEntangleModifier : public IBattleModifier {           // 缠身：本回合不能打出攻击牌
+ class PlayerEntangleModifier : public IBattleModifier {           // 缠绕：本回合不能打出攻击牌；回合结束时受到等同于层数的伤害（走格挡）
  public:
      void on_can_play_card(CanPlayCardContext& ctx) override {
          int stacks = BattleEngine::get_status_stacks(ctx.state.player.statuses, "entangle");
          if (stacks <= 0 || !ctx.is_attack) return;
          ctx.blocked = true;                                         // 禁止打出攻击牌
+     }
+     void on_turn_end_player(BattleState& state, PlayerTurnEndContext* ctx) override {
+         const int x = BattleEngine::get_status_stacks(state.player.statuses, "entangle");
+         if (x <= 0) return;
+         if (!ctx || !ctx->deal_damage_to_player) return;
+         ctx->deal_damage_to_player(x);
      }
  };
  
@@ -85,7 +118,13 @@ static int apply_dexterity_and_frail_to_card_block(int base, const BattleState& 
  };
  
  class PlayerCurseModifier : public IBattleModifier {};             // 诅咒（桩）
- class PlayerCannotBlockModifier : public IBattleModifier {};        // 无法格挡（桩）
+ class PlayerCannotBlockModifier : public IBattleModifier {         // 无法格挡 debuff（状态 id：cannot_block）
+ public:
+     void on_player_gain_block(int& block, const BattleState& state) override {
+         if (BattleEngine::get_status_stacks(state.player.statuses, "cannot_block") <= 0) return;  // 未携带则走正常敏捷/脆弱链
+         block = 0;                                                                              // 从卡牌结算的格挡清零（先于 add_block_to_player）
+     }
+ };
 class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形态：回合结束失去 1 点敏捷
  public:
    void on_turn_end_player(BattleState& state, PlayerTurnEndContext* /*ctx*/) override {
@@ -424,7 +463,7 @@ public:
      static bool is_negative_status(const StatusId& id) {            // 判断是否为负面效果（可被人工制品免疫）
          static const char* const negative[] = {                     // 杀戮尖塔 wiki：人工制品可阻挡的负面效果
              "weak", "vulnerable", "strength_down", "dexterity_down", "poison", "frail",
-             "draw_reduction", "fasting", "confusion", "entangle", "choke", "slow",
+             "draw_reduction", "cannot_draw", "cannot_block", "fasting", "confusion", "entangle", "choke", "slow",
             "shackles", "corpse_explosion", "wraith_form"
          };
          for (const auto* n : negative) if (id == n) return true;
@@ -540,19 +579,20 @@ public:
          }
      }
  };
- class PlayerDexterityModifier : public IBattleModifier {            // 敏捷：从卡牌获得的格挡 + 层数（须在脆弱之前注册）
- public:
-     void on_player_gain_block(int& block, const BattleState& state) override {
-         int dex = BattleEngine::get_status_stacks(state.player.statuses, "dexterity");
-         if (dex <= 0) return;
-         block += dex;
-     }
- };
+ class PlayerDexterityModifier : public IBattleModifier {            // 敏捷：卡牌格挡 += 敏捷层数（负敏捷则减格挡；先于脆弱）
+ public:                                                              // 对外接口
+     void on_player_gain_block(int& block, const BattleState& state) override {  // 结算卡牌基础格挡时
+         const int dex = BattleEngine::get_status_stacks(state.player.statuses, "dexterity");  // 当前敏捷代数和（可负）
+         if (dex == 0) return;                                        // 为 0 则无加减
+         block += dex;                                                // 非 0 则整段加到格挡上
+     }                                                                // on_player_gain_block 结束
+ };                                                                   // PlayerDexterityModifier 结束
  
  class PlayerDrawCardModifier : public IBattleModifier {              // 抽牌：回合开始多抽 X 张
  public:
      void on_turn_start_player(BattleState& state, TurnStartContext* ctx) override {
          if (!ctx) return;
+         if (BattleEngine::get_status_stacks(state.player.statuses, "cannot_draw") > 0) return;
          int stacks = BattleEngine::get_status_stacks(state.player.statuses, "draw_up");
          if (stacks <= 0) return;
          ctx->draw_count += stacks;                                  // 抽牌数 + 层数
@@ -587,6 +627,7 @@ public:
 class PlayerAfterimageModifier : public IBattleModifier {           // 余像：每打出一张牌获得 1 点格挡/层
 public:
     void on_card_played(BattleState& state, CardId /*card_id*/, int /*target_monster_index*/, CardPlayContext* ctx) override {
+        if (BattleEngine::get_status_stacks(state.player.statuses, "cannot_block") > 0) return;  // 无法格挡：打牌触发的格挡也不生效
         int stacks = BattleEngine::get_status_stacks(state.player.statuses, "after_image");
         if (stacks <= 0) return;                                      // 无余像层数
         const int b = apply_dexterity_and_frail_to_card_block(stacks, state);  // 敏捷脆弱后的格挡量
@@ -841,10 +882,8 @@ public:
      out.push_back(std::make_shared<BarricadeModifier>());             // 壁垒：施加时 duration=-1；与格挡清空规则配套
      out.push_back(std::make_shared<PlayerPoisonModifier>());
      out.push_back(std::make_shared<PlayerConfusionModifier>());
-     out.push_back(std::make_shared<PlayerDexterityDownModifier>());
-     out.push_back(std::make_shared<PlayerDexterityModifier>());       // 先于脆弱：格挡 = (基础+敏捷) 再 ×0.75
+     out.push_back(std::make_shared<PlayerDexterityModifier>());       // 先于脆弱：格挡 = 基础 + 敏捷（可负），再 ×0.75
      out.push_back(std::make_shared<PlayerFrailModifier>());
-     out.push_back(std::make_shared<PlayerCannotDrawModifier>());
      out.push_back(std::make_shared<PlayerFlexModifier>());
      out.push_back(std::make_shared<PlayerEntangleModifier>());
      out.push_back(std::make_shared<PlayerDrawReductionModifier>());
@@ -852,8 +891,10 @@ public:
      out.push_back(std::make_shared<PlayerFastingModifier>());
      out.push_back(std::make_shared<PlayerCurseModifier>());
      out.push_back(std::make_shared<PlayerCannotBlockModifier>());
-     out.push_back(std::make_shared<PlayerWraithFormModifier>());
+     out.push_back(std::make_shared<PlayerDexterityDownModifier>());  // 回合末先按敏捷下降扣 X 点敏捷（可负）
+     out.push_back(std::make_shared<PlayerWraithFormModifier>());     // 再幽魂形态扣 1 点敏捷
      out.push_back(std::make_shared<PlayerDrawCardModifier>());
+     out.push_back(std::make_shared<PlayerCannotDrawModifier>());
      out.push_back(std::make_shared<PlayerEnergyUpModifier>());
      out.push_back(std::make_shared<PlayerVigorModifier>());
      out.push_back(std::make_shared<PlayerBlockUpModifier>());
