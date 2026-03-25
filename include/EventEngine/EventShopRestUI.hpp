@@ -30,10 +30,11 @@ public:
     /** 从 UTF-8 字符串设置事件展示（主流程从 Event 填充时用）；imagePath 为空则显示占位 */
     void setEventDataFromUtf8(const std::string& title, const std::string& description,
                               const std::vector<std::string>& optionTexts,
-                              const std::string& imagePath = "");
+                              const std::string& imagePath = "",
+                              const std::vector<std::string>& optionEffectTexts = {});
 
-    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，主流程在 get_event_result 后调用，用户点确定后 pollEventOption 返回 0 */
-    void setEventResultFromUtf8(const std::string& resultSummary);
+    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，可选传入 imagePath（支持 "__cardid:<id>"） */
+    void setEventResultFromUtf8(const std::string& resultSummary, const std::string& imagePath = "");
 
     /** 从 DataLayer::Event 填充事件展示（主流程用 EventEngine::get_current_event() 取得后传入） */
     void setEventDataFromEvent(const DataLayer::Event* event);
@@ -105,6 +106,9 @@ private:
 
     int eventOptionPressedIndex_ = -1;  // 当前按下的事件选项下标（用于按下态绘制）
     int selectedEventOption_ = 0;        // 键盘焦点选项下标
+    float eventCardScrollOffset_ = 0.f;  // 事件“卡牌面板模式”滚动偏移
+    float eventCardScrollMax_ = 0.f;     // 当前可滚动最大偏移
+    float eventCardScrollStep_ = 42.f;   // 卡牌模式每档滚动步长（按行）
 
     // 待消费的选择（轮询一次即清空）
     int pendingEventOption_ = -1;

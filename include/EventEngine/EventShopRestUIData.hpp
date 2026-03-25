@@ -23,6 +23,8 @@ struct EventDisplayData {
     std::wstring title;
     std::wstring description;
     std::vector<std::wstring> optionTexts;
+    // 每个选项对应的“选后效果预览”，会在选项下方以红字单独显示
+    std::vector<std::wstring> optionEffectTexts;
     std::string imagePath;  // 可选，插图路径，空则显示占位
 };
 

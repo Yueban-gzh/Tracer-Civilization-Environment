@@ -135,19 +135,7 @@ inline void draw_wrapped_text(sf::RenderTarget& target, const sf::Font& font,
     if (!current.isEmpty() && static_cast<int>(lines.size()) < maxLines)
         lines.push_back(current);
     if (lines.empty()) return;
-    std::size_t joinedLen = 0;
-    for (const auto& l : lines) joinedLen += l.getSize();
-    if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {
-        sf::String& last = lines.back();
-        const sf::String ell = sf::String(L"\u2026");
-        while (true) {
-            measure.setString(last + ell);
-            if (measure.getLocalBounds().size.x <= maxWidth) break;
-            if (last.isEmpty()) break;
-            last.erase(last.getSize() - 1, 1);
-        }
-        last += ell;
-    }
+    // 不在文本尾部强制追加省略号：让超出高度/行数时也只“自然换行”，避免出现 "...".
     for (std::size_t li = 0; li < lines.size(); ++li) {
         sf::Text t(font, lines[li], charSize);
         t.setFillColor(color);

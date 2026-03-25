@@ -8,6 +8,7 @@
  */
 
 #include <SFML/Graphics.hpp>
+#include <algorithm>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -28,11 +29,43 @@ static void runMapUITest(sf::RenderWindow& window);
 
 // 将事件结果转为展示文案（用于结果页）
 static std::string eventResultToSummary(const tce::EventEngine::EventResult& res) {
-    if (res.type == "gold") return "获得了 " + std::to_string(res.value) + " 金币。";
-    if (res.type == "heal") return "恢复了 " + std::to_string(res.value) + " 点生命。";
-    if (res.type == "card_reward") return "获得了一张新卡牌（选牌由主流程处理）。";
-    if (res.type == "none") return "无事发生。";
-    return "事件结束。";
+    auto effectToSummary = [](const DataLayer::EventEffect& eff) {
+        const int v = eff.value;
+        if (eff.type == "gold") {
+            if (v >= 0) return std::string("获得了 ") + std::to_string(v) + " 金币。";
+            return std::string("失去了 ") + std::to_string(-v) + " 金币。";
+        }
+        if (eff.type == "heal") {
+            if (v >= 0) return std::string("恢复了 ") + std::to_string(v) + " 点生命。";
+            return std::string("失去了 ") + std::to_string(-v) + " 点生命。";
+        }
+        if (eff.type == "max_hp") {
+            if (v >= 0) return std::string("最大生命值提升了 ") + std::to_string(v) + "。";
+            return std::string("最大生命值降低了 ") + std::to_string(-v) + "。";
+        }
+        if (eff.type == "card_reward") return std::string("获得了 ") + std::to_string(v) + " 张新卡牌。";
+        if (eff.type == "card_reward_choose") return std::string("可选获得 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "remove_card") return std::string("移除了牌组中的 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "remove_card_choose") return std::string("自选移除牌组中的 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "upgrade_random") return std::string("升级了 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
+        if (eff.type == "none") return std::string("无事发生。");
+        return std::string("事件结算：") + eff.type;
+    };
+
+    if (!res.effects.empty()) {
+        std::string out;
+        for (size_t i = 0; i < res.effects.size(); ++i) {
+            if (i) out += " ";
+            out += effectToSummary(res.effects[i]);
+        }
+        return out.empty() ? std::string("无事发生。") : out;
+    }
+
+    DataLayer::EventEffect eff{ res.type, res.value };
+    return effectToSummary(eff);
 }
 
 // ---------- 事件/商店/休息 UI 测试（真实事件数据：DataLayer + EventEngine）----------

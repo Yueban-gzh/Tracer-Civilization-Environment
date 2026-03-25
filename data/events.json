@@ -1,166 +1,366 @@
 [
   {
     "id": "event_001",
-    "title": "拾遗卷",
-    "description": "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+    "title": "焚书坑儒",
+    "description": "残缺的典册在寂雾中扭曲，每一次翻页都像在剥夺你记忆里最不该丢弃的那部分。",
     "image": "assets/images/events/event_001.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 4,
     "options": [
-      { "text": "小心拂去尘埃，尝试解读", "next": "event_001a" },
-      { "text": "将残卷收好，留待日后", "result": { "type": "gold", "value": 15 } },
-      { "text": "置之不理，继续前行", "result": { "type": "none", "value": 0 } }  
-    ]
-  },
-  {
-    "id": "event_001a",
-    "title": "拾遗卷·解读",
-    "description": "你静心研读，文韵与残卷共鸣，获得了一丝文化遗卷之力。",
-    "options": [
-      { "text": "获得感悟", "result": { "type": "heal", "value": 10 } },
-      { "text": "领悟攻击要义", "result": { "type": "card_reward", "value": 1 } }
+      {
+        "text": "献祭一张牌，换取一件遗物",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "relic", "value": 1 } ] }
+      },
+      {
+        "text": "强行保留真章，但让寂雾在你体内沉根",
+        "result": { "effects": [ { "type": "add_curse", "value": 1 } ] }
+      },
+      { "text": "退开一步，权且不闻", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_002",
-    "title": "义仓赈济",
-    "description": "路遇义仓，乡民正在分发粮草。管事者望向你。",
+    "title": "断简游魂",
+    "description": "字缝里仍有余温。游魂低语，像在确认你是否愿意为“理解”付出代价。",
+    "image": "assets/images/events/event_002.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 4,
     "options": [
-      { "text": "捐出部分银两相助", "next": "event_002a" },
-      { "text": "婉拒离开", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_002a",
-    "title": "义仓赈济·善果",
-    "description": "乡民感念你的义举，赠你些许盘缠与干粮。",
-    "options": [
-      { "text": "收下银两", "result": { "type": "gold", "value": 25 } },
-      { "text": "只取干粮，恢复精神", "result": { "type": "heal", "value": 15 } }
+      {
+        "text": "借文韵止伤（用钱换短暂安定）",
+        "result": { "effects": [ { "type": "heal", "value": 14 }, { "type": "gold", "value": -10 } ] }
+      },
+      {
+        "text": "以心压魂，换取一件遗物",
+        "result": { "effects": [ { "type": "relic", "value": 1 }, { "type": "max_hp", "value": -2 } ] }
+      },
+      { "text": "不做停留", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_003",
-    "title": "墨迹未干",
-    "description": "一方石台上有一幅未干的字迹，似在等人续写。",
+    "title": "礼乐残鼎",
+    "description": "青铜裂纹仍残留节拍。节拍敲久了，会把人的格挡与骨气一并磨损。",
+    "image": "assets/images/events/event_003.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "提笔续写一句", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "静观其变", "result": { "type": "gold", "value": 10 } }
+      {
+        "text": "修补锈纹（付金币换恢复）",
+        "result": { "effects": [ { "type": "gold", "value": -20 }, { "type": "heal", "value": 20 } ] }
+      },
+      {
+        "text": "不修补：锈蚀吞噬，但换机会牌",
+        "result": { "effects": [ { "type": "max_hp", "value": -3 }, { "type": "card_reward_choose", "value": 2 } ] }
+      },
+      { "text": "退开一步", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_004",
-    "title": "古碑问心",
-    "description": "一座古碑立于道旁，碑文斑驳，唯「慎独」二字可辨。",
+    "title": "诸子回声",
+    "description": "诸子化作回声在殿内交错。每一次选择，都像把一段“正确的路”钉进命运。",
+    "image": "assets/images/events/event_004.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "默念碑文，静心体悟", "result": { "type": "heal", "value": 8 } },
-      { "text": "拓下二字带走", "next": "event_004a" },
-      { "text": "匆匆而过", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_004a",
-    "title": "古碑问心·拓本",
-    "description": "拓本入手，文韵微动，你获得了一点墨力与银两。",
-    "options": [
-      { "text": "收好拓本", "result": { "type": "gold", "value": 20 } }
+      {
+        "text": "取儒骨：最大生命上限获得增幅",
+        "result": { "effects": [ { "type": "max_hp", "value": 6 } ] }
+      },
+      {
+        "text": "尚墨献诗：以金币换两张机遇牌",
+        "result": { "effects": [ { "type": "gold", "value": -30 }, { "type": "card_reward", "value": 2 } ] }
+      },
+      {
+        "text": "庄周式沉没：换来强力抽取，但你必须承受少许失衡",
+        "result": { "effects": [ { "type": "card_reward", "value": 2 }, { "type": "max_hp", "value": -4 } ] }
+      }
     ]
   },
   {
     "id": "event_005",
-    "title": "异化书灵",
-    "description": "一只被异化的书灵拦路，驱散后可获得其残留文韵。",
+    "title": "稷下交换术",
+    "description": "学宫并不教你答案。它只让你学会：用代价换来更好用的问题。",
+    "image": "assets/images/events/event_005.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 4,
     "options": [
-      { "text": "以文韵驱散", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "绕道而行", "result": { "type": "none", "value": 0 } }
+      {
+        "text": "付学费：升级一张关键牌",
+        "result": { "effects": [ { "type": "gold", "value": -25 }, { "type": "upgrade_random", "value": 1 } ] }
+      },
+      {
+        "text": "以血为印：在上限上留下裂光，换一件遗物",
+        "result": { "effects": [ { "type": "heal", "value": -10 }, { "type": "relic", "value": 1 } ] }
+      },
+      { "text": "留待下一次", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_006",
-    "title": "藏书阁",
-    "description": "一座古老的藏书阁矗立在幻境深处，门扉半掩，隐约可见内里书卷堆积如山。",
+    "title": "净尘之柜",
+    "description": "柜门上刻着“除污亦除名”。你能看见诅咒与贪婪在同一个阴影里互相渗透。",
+    "image": "assets/images/events/event_006.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "推门而入，探索藏书", "next": "event_006a" },
-      { "text": "在门外驻足片刻", "result": { "type": "gold", "value": 10 } },
-      { "text": "转身离开", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_006a",
-    "title": "藏书阁·古籍",
-    "description": "阁内尘封的古籍散发着淡淡墨香，你注意到一本封皮残破的典籍格外引人注目。",
-    "options": [
-      { "text": "小心翼翼翻阅古籍", "next": "event_006b" },
-      { "text": "寻找其他有价值的书籍", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "离开藏书阁", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_006b",
-    "title": "藏书阁·传承",
-    "description": "古籍记载着前人的修行心得，字里行间蕴含着深厚的文化底蕴。你感受到一股力量在体内涌动。",
-    "options": [
-      { "text": "接受文化传承", "result": { "type": "relic", "value": 1 } },
-      { "text": "汲取知识精华", "result": { "type": "max_hp", "value": 5 } },
-      { "text": "将古籍放回原处", "result": { "type": "heal", "value": 15 } }
+      {
+        "text": "焚化寄生：移除一张诅咒并缴上微薄代价",
+        "result": { "effects": [ { "type": "remove_curse", "value": 1 }, { "type": "gold", "value": -10 } ] }
+      },
+      {
+        "text": "不净化：用诅咒的残温换一件遗物",
+        "result": { "effects": [ { "type": "relic", "value": 1 }, { "type": "add_curse", "value": 1 } ] }
+      },
+      { "text": "关上柜门，转身离去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_007",
-    "title": "武道传承",
-    "description": "幻境中出现一座古老的武道场，场中隐约可见武者练功的身影，剑气纵横。",
+    "title": "折柳送别",
+    "description": "柳丝被风拧成结。送别不是结束，而是把更远的路塞进你的胸腔。",
+    "image": "assets/images/events/event_007.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 4,
     "options": [
-      { "text": "上前挑战", "next": "event_007a" },
-      { "text": "在一旁观摩学习", "result": { "type": "gold", "value": 15 } },
-      { "text": "悄然离去", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_007a",
-    "title": "武道传承·试炼",
-    "description": "武道场的守门人是一位白发老者，他目光如炬，似乎看穿了你的实力。",
-    "options": [
-      { "text": "接受更高层次的试炼", "next": "event_007b" },
-      { "text": "请求指点一二", "result": { "type": "heal", "value": 12 } },
-      { "text": "知难而退", "result": { "type": "gold", "value": 8 } }
-    ]
-  },
-  {
-    "id": "event_007b",
-    "title": "武道传承·突破",
-    "description": "经过层层试炼，你感受到武道真意，身心都得到了淬炼与升华。",
-    "options": [
-      { "text": "突破极限，提升实力", "result": { "type": "max_hp", "value": 8 } },
-      { "text": "领悟武学奥义", "result": { "type": "card_reward", "value": 2 } },
-      { "text": "获得武道传承", "result": { "type": "relic", "value": 1 } }
+      {
+        "text": "以生命换一张“强行上路”的牌",
+        "result": { "effects": [ { "type": "heal", "value": -12 }, { "type": "card_reward", "value": 1 } ] }
+      },
+      {
+        "text": "付出金币换回光（先活下去，再谈选择）",
+        "result": { "effects": [ { "type": "gold", "value": -35 }, { "type": "heal", "value": 22 } ] }
+      },
+      { "text": "默默离开", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_008",
-    "title": "洗心池",
-    "description": "一方清澈的池水映照着你的倒影，池水泛着淡淡的灵光，似乎能洗涤心灵。",
+    "title": "长安夜宴·醉与醒",
+    "description": "酒意在灯影里翻涌。下一秒它也可能变成刀锋，把你的上限切开一条缝。",
+    "image": "assets/images/events/event_008.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 4,
     "options": [
-      { "text": "静坐池边，冥想感悟", "next": "event_008a" },
-      { "text": "掬水洗脸", "result": { "type": "heal", "value": 10 } },
-      { "text": "绕池而行", "result": { "type": "none", "value": 0 } }
+      {
+        "text": "三杯入喉：获得两张机遇牌，但上限缩水",
+        "result": { "effects": [ { "type": "card_reward_choose", "value": 2 }, { "type": "max_hp", "value": -3 } ] }
+      },
+      {
+        "text": "赋诗成契：换来一件遗物，缴上一部分金币",
+        "result": { "effects": [ { "type": "relic", "value": 1 }, { "type": "gold", "value": -40 } ] }
+      },
+      { "text": "你不喝了，转身离席", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
-    "id": "event_008a",
+    "id": "event_009",
+    "title": "西域集市的影价",
+    "description": "摊贩的口令像在计算。你意识到，价格不止是金币，还有你“愿不愿意付出更贵的那种”代价。",
+    "image": "assets/images/events/event_009.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 3,
+    "options": [
+      {
+        "text": "买走一次好运：金币换遗物",
+        "result": { "effects": [ { "type": "gold", "value": -60 }, { "type": "relic", "value": 1 } ] }
+      },
+      {
+        "text": "把坏牌丢出去：移除一张牌（换来清醒）",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "heal", "value": 6 } ] }
+      },
+      { "text": "不买不卖", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_010",
+    "title": "边塞誓书",
+    "description": "誓书在风里卷起又落下。你明白：真正的代价往往藏在“为了下一步”这四个字里。",
+    "image": "assets/images/events/event_010.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 3,
+    "options": [
+      {
+        "text": "以守换攻：上限增幅并升级一张牌",
+        "result": { "effects": [ { "type": "max_hp", "value": 4 }, { "type": "upgrade_random", "value": 1 } ] }
+      },
+      {
+        "text": "以胆换爆：以金币换强力牌，但你必须付出诅咒的代价",
+        "result": { "effects": [ { "type": "gold", "value": -30 }, { "type": "card_reward", "value": 2 }, { "type": "add_curse", "value": 1 } ] }
+      },
+      { "text": "退后半步", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_011",
+    "title": "书信与旅费",
+    "description": "信纸上没有情话，只有算好的分量。你知道它们能换来下一次出发。",
+    "image": "assets/images/events/event_011.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 3,
+    "options": [
+      {
+        "text": "拾得回信：获得金币（同时清理一点疲惫）",
+        "result": { "effects": [ { "type": "gold", "value": 40 }, { "type": "heal", "value": 8 } ] }
+      },
+      {
+        "text": "用旅费换一件遗物",
+        "result": { "effects": [ { "type": "gold", "value": -20 }, { "type": "relic", "value": 1 } ] }
+      },
+      { "text": "留白给下一条路", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_012",
+    "title": "祭灯引路",
+    "description": "灯火映出寂雾的纹理。你做出的选择，会决定下一盏灯是否还愿意照到你。",
+    "image": "assets/images/events/event_012.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 2,
+    "options": [
+      {
+        "text": "净化当下：移除一张诅咒并升级一张牌",
+        "result": { "effects": [ { "type": "remove_curse", "value": 1 }, { "type": "upgrade_random", "value": 1 } ] }
+      },
+      {
+        "text": "让诅咒作燃料：再多升级几次，但你会更脆弱",
+        "result": { "effects": [ { "type": "add_curse", "value": 1 }, { "type": "upgrade_random", "value": 2 }, { "type": "max_hp", "value": -2 } ] }
+      },
+      { "text": "不问灯影", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_013",
     "title": "洗心池·净化",
-    "description": "在冥想中，你感受到内心的杂念逐渐消散，身心变得澄澈通透。",
+    "description": "池水不洗脏。它洗掉你“愿不愿意继续承受代价”的那部分心。",
+    "image": "assets/images/events/event_013.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 5,
     "options": [
-      { "text": "净化心灵，移除负面", "next": "event_008b" },
-      { "text": "汲取池水灵力", "result": { "type": "max_hp", "value": 6 } },
-      { "text": "结束冥想", "result": { "type": "heal", "value": 8 } }
+      {
+        "text": "移除一张寄生：诅咒退去，体内回暖",
+        "result": { "effects": [ { "type": "remove_curse", "value": 1 }, { "type": "heal", "value": 10 } ] }
+      },
+      {
+        "text": "以净水聚灵：换来一件遗物",
+        "result": { "effects": [ { "type": "relic", "value": 1 } ] }
+      },
+      { "text": "绕池而行", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
-    "id": "event_008b",
-    "title": "洗心池·新生",
-    "description": "池水净化了你的身心，你感到前所未有的轻松与力量。",
+    "id": "event_014",
+    "title": "易碎瓷魄",
+    "description": "瓷器像你一样，脆弱却诚实。你越想保留完整，越会在寂雾里被迫破裂。",
+    "image": "assets/images/events/event_014.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 4,
     "options": [
-      { "text": "移除一张诅咒牌", "result": { "type": "remove_card", "value": 1 } },
-      { "text": "获得净化之力", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "铭记此番感悟", "result": { "type": "relic", "value": 1 } }
+      {
+        "text": "捏碎求名：上限与秩序都要付费，但你会得到更强的力量",
+        "result": { "effects": [ { "type": "max_hp", "value": -4 }, { "type": "card_reward_choose", "value": 2 }, { "type": "add_curse", "value": 1 } ] }
+      },
+      {
+        "text": "以韧换牌：恢复一点并升级一张牌",
+        "result": { "effects": [ { "type": "heal", "value": 8 }, { "type": "upgrade_random", "value": 1 } ] }
+      },
+      { "text": "你选择不触碰", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_015",
+    "title": "理学束缚",
+    "description": "条条教条像铁线。你可以在铁线上爬过去，也可以把铁线烧成灰。",
+    "image": "assets/images/events/event_015.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 4,
+    "options": [
+      {
+        "text": "破格解题：升级两次（但你会少些金币余量）",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 2 }, { "type": "gold", "value": -25 } ] }
+      },
+      {
+        "text": "拘守规则：删掉一张牌，并获得上限增幅",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": 3 } ] }
+      },
+      { "text": "折返，避开铁线", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_016",
+    "title": "心学顿悟",
+    "description": "你在刹那间懂了“如何用”。可懂得越深，代价越像一把钝刀，慢慢切开你的上限。",
+    "image": "assets/images/events/event_016.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      {
+        "text": "顿悟全力：尝试升级五次，但最大生命大幅降低",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 5 }, { "type": "max_hp", "value": -10 } ] }
+      },
+      {
+        "text": "浅尝辄止：拿两张机遇牌，不伤上限",
+        "result": { "effects": [ { "type": "card_reward_choose", "value": 2 } ] }
+      },
+      { "text": "克制与退后", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_017",
+    "title": "断卷封印",
+    "description": "断卷上有禁纹。你能把它当作枷锁，也能把它当作武器。",
+    "image": "assets/images/events/event_017.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      {
+        "text": "把危机刻在牌上：移除两张牌，顺便获得一点路费",
+        "result": { "effects": [ { "type": "remove_card", "value": 2 }, { "type": "gold", "value": 20 } ] }
+      },
+      {
+        "text": "封印寂雾代价：移除一张牌，减少上限，并换取一件遗物",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": -2 }, { "type": "relic", "value": 1 } ] }
+      },
+      { "text": "无事发生", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_018",
+    "title": "源点重构",
+    "description": "你已看见历史源点的轮廓。它像一张最后的棋盘：不押胜负，就只能被寂雾吞掉。",
+    "image": "assets/images/events/event_018.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 2,
+    "options": [
+      {
+        "text": "成功的赌局：遗物 + 两张机遇牌（但你先要交出金币）",
+        "result": { "effects": [ { "type": "relic", "value": 1 }, { "type": "card_reward_choose", "value": 2 }, { "type": "gold", "value": -30 } ] }
+      },
+      {
+        "text": "代价转移：牺牲一部分上限，换更多升级尝试",
+        "result": { "effects": [ { "type": "max_hp", "value": -6 }, { "type": "upgrade_random", "value": 2 } ] }
+      },
+      { "text": "放弃重构，退出源点", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   }
 ]
+

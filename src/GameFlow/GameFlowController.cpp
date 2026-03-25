@@ -24,6 +24,44 @@ int randomIndex(RunRng& rng, int boundExclusive) {
     return rng.uniform_int(0, boundExclusive - 1);
 }
 
+std::string join_names_cn(const std::vector<std::string>& names) {
+    if (names.empty()) return "无";
+    std::string out;
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (i > 0) out += "、";
+        out += names[i];
+    }
+    return out;
+}
+
+std::string relic_name_cn(const std::string& id) {
+    if (id == "burning_blood") return "燃烧之血";
+    if (id == "marble_bag") return "弹珠袋";
+    if (id == "small_blood_vial") return "小血瓶";
+    if (id == "copper_scales") return "铜制鳞片";
+    if (id == "centennial_puzzle") return "百年积木";
+    if (id == "clockwork_boots") return "发条靴";
+    if (id == "happy_flower") return "开心小花";
+    if (id == "lantern") return "灯笼";
+    if (id == "smooth_stone") return "意外光滑的石头";
+    if (id == "orichalcum") return "奥利哈钢";
+    if (id == "red_skull") return "红头骨";
+    if (id == "snake_skull") return "异蛇头骨";
+    if (id == "strawberry") return "草莓";
+    if (id == "potion_belt") return "药水腰带";
+    if (id == "vajra") return "金刚杵";
+    if (id == "nunchaku") return "双截棍";
+    if (id == "ceramic_fish") return "陶瓷小鱼";
+    if (id == "hand_drum") return "手摇鼓";
+    if (id == "pen_nib") return "钢笔尖";
+    if (id == "toy_ornithopter") return "玩具扑翼飞机";
+    if (id == "preparation_pack") return "准备背包";
+    if (id == "anchor") return "锚";
+    if (id == "art_of_war") return "孙子兵法";
+    if (id == "relic_strength_plus") return "力量遗物";
+    return id;
+}
+
 void applyBattleTestMock(PlayerBattleState& p) {
     if (std::find(p.relics.begin(), p.relics.end(), "burning_blood") == p.relics.end()) {
         p.relics.push_back("burning_blood");
@@ -539,21 +577,166 @@ void GameFlowController::resolveEvent(const std::string& contentId) {
         return;
     }
 
-    eventEngine_.apply_event_result(
-        result,
-        [this](int gold) { playerState_.gold += gold; },
-        [this](int heal) { playerState_.currentHp = std::min(playerState_.maxHp, playerState_.currentHp + heal); });
+    const auto applyOneEffect = [&](const std::string& type, int value) {
+        if (type == "gold") {
+            playerState_.gold += value;
+        } else if (type == "heal") {
+            playerState_.currentHp = std::min(playerState_.maxHp, playerState_.currentHp + value);
+        } else if (type == "max_hp") {
+            playerState_.maxHp += value;
+            if (playerState_.maxHp < 1) playerState_.maxHp = 1;
+            if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+        } else if (type == "card_reward") {
+            const int count = std::max(0, value);
+            if (count > 0) {
+                const bool hasCeramicFish = std::find(playerState_.relics.begin(), playerState_.relics.end(), "ceramic_fish") != playerState_.relics.end();
+                std::vector<CardId> cards = battleEngine_.get_reward_cards(count);
+                for (const auto& cid : cards) {
+                    cardSystem_.add_to_master_deck(cid);
+                    if (hasCeramicFish) playerState_.gold += 9; // 陶瓷小鱼：每次加入牌组获得 9 金币
+                }
+            }
+        } else if (type == "card_reward_choose") {
+            // 非交互结算路径（自动 resolveEvent）：按 value 选择张数，候选池更大一些
+            const int chooseCount = std::max(1, value);
+            const int candidateCount = std::max(3, chooseCount + 1);
+            const bool hasCeramicFish = std::find(playerState_.relics.begin(), playerState_.relics.end(), "ceramic_fish") != playerState_.relics.end();
+            std::vector<CardId> cards = battleEngine_.get_reward_cards(candidateCount);
+            for (int i = 0; i < chooseCount; ++i) {
+                if (cards.empty()) break;
+                const int pick = randomIndex(runRng_, static_cast<int>(cards.size()));
+                cardSystem_.add_to_master_deck(cards[static_cast<size_t>(pick)]);
+                if (hasCeramicFish) playerState_.gold += 9;
+                cards.erase(cards.begin() + pick); // 无放回，避免重复
+            }
+        } else if (type == "add_curse") {
+            const int count = std::max(0, value);
+            for (int i = 0; i < count; ++i) {
+                cardSystem_.add_to_master_deck("parasite");
+            }
+        } else if (type == "remove_card") {
+            const int count = std::max(0, value);
+            for (int i = 0; i < count; ++i) {
+                const auto& deck = cardSystem_.get_master_deck();
+                if (deck.empty()) break;
+                const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                eventEngine_.remove_card_from_master_deck(deck[static_cast<size_t>(idx)].instanceId);
+            }
+        } else if (type == "remove_card_choose") {
+            // 非交互结算路径（自动 resolveEvent）：退化为随机移除
+            const int count = std::max(1, value);
+            for (int i = 0; i < count; ++i) {
+                const auto& deck = cardSystem_.get_master_deck();
+                if (deck.empty()) break;
+                const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                eventEngine_.remove_card_from_master_deck(deck[static_cast<size_t>(idx)].instanceId);
+            }
+        } else if (type == "remove_curse") {
+            const int count = std::max(0, value);
+            for (int i = 0; i < count; ++i) {
+                const auto& deck = cardSystem_.get_master_deck();
+                if (deck.empty()) break;
+
+                std::vector<InstanceId> candidates;
+                for (const auto& inst : deck) {
+                    if (inst.id == "parasite" || inst.id == "parasite+") candidates.push_back(inst.instanceId);
+                }
+                if (candidates.empty()) {
+                    const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                    candidates.push_back(deck[static_cast<size_t>(idx)].instanceId);
+                }
+                const InstanceId picked = candidates[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(candidates.size())))];
+                eventEngine_.remove_card_from_master_deck(picked);
+            }
+        } else if (type == "upgrade_random") {
+            const int attempts = std::max(0, value);
+            for (int i = 0; i < attempts; ++i) {
+                const auto& deck = cardSystem_.get_master_deck();
+                if (deck.empty()) break;
+                const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                cardSystem_.upgrade_card_in_master_deck(deck[static_cast<size_t>(idx)].instanceId);
+            }
+        } else if (type == "relic") {
+            const int count = std::max(0, value);
+            static const std::vector<RelicId> relic_pool = {
+                "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle",
+                "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull",
+                "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum",
+                "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
+            };
+            for (int i = 0; i < count; ++i) {
+                std::vector<RelicId> available;
+                for (const auto& rid : relic_pool) {
+                    if (std::find(playerState_.relics.begin(), playerState_.relics.end(), rid) == playerState_.relics.end())
+                        available.push_back(rid);
+                }
+                if (available.empty()) break;
+                const RelicId gained = available[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(available.size())))];
+                playerState_.relics.push_back(gained);
+
+                // 拾起即刻效果（目前仅实现事件用到的少数遗物）
+                if (gained == "strawberry") {
+                    playerState_.maxHp += 7;
+                    playerState_.currentHp += 7;
+                    if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+                } else if (gained == "potion_belt") {
+                    playerState_.potionSlotCount += 2;
+                }
+            }
+        }
+
+        if (playerState_.currentHp <= 0) gameOver_ = true;
+    };
+
+    const auto applyEventResult = [&](const DataLayer::EventResult& res) {
+        if (!res.effects.empty()) {
+            for (const auto& eff : res.effects) {
+                if (!gameOver_) applyOneEffect(eff.type, eff.value);
+            }
+            return;
+        }
+        applyOneEffect(res.type, res.value);
+    };
+
+    applyEventResult(result);
     statusText_ = "事件结算完成。";
 }
 
 bool GameFlowController::runEventScene(const std::string& contentId) {
-    std::string eventId = contentId;
-    if (dataLayer_.get_event_by_id(eventId) == nullptr) {
-        eventId = "event_001";
+    // 问号房：按“当前地图层 index”从事件池做加权随机抽取（模仿杀戮尖塔问号房高波动事件池）。
+    // 本项目 MapEngine 的默认 content_id 形如：content_{typeInt}_{layer-index}
+    int layer = 0;
+    {
+        const size_t pos = contentId.rfind('_');
+        if (pos != std::string::npos) {
+            const std::string tail = contentId.substr(pos + 1); // "layer-index"
+            const size_t dash = tail.find('-');
+            if (dash != std::string::npos) {
+                try { layer = std::stoi(tail.substr(0, dash)); }
+                catch (...) { layer = 0; }
+            }
+        }
     }
-    if (dataLayer_.get_event_by_id(eventId) == nullptr) {
-        return false;
+
+    std::vector<DataLayer::RootEventCandidate> candidates =
+        dataLayer_.get_root_event_candidates_for_layer(layer);
+
+    std::string eventId;
+    if (!candidates.empty()) {
+        int totalWeight = 0;
+        for (const auto& c : candidates) totalWeight += std::max(1, c.weight);
+        if (totalWeight <= 0) totalWeight = 1;
+
+        int pick = randomIndex(runRng_, totalWeight);
+        for (const auto& c : candidates) {
+            const int w = std::max(1, c.weight);
+            if (pick < w) { eventId = c.id; break; }
+            pick -= w;
+        }
     }
+
+    if (eventId.empty()) eventId = "event_001";
+    if (dataLayer_.get_event_by_id(eventId) == nullptr) return false;
 
     eventEngine_.start_event(eventId);
 
@@ -578,7 +761,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
     ui.setScreen(EventShopRestScreen::Event);
     if (!eventEngine_.get_current_event()) {
         ui.setEventDataFromUtf8("（未加载事件）",
-                                "请确保 data/events.json 存在且含 event_001。",
+                                "请确保 data/events.json 存在且含根事件（如 event_001）。",
                                 { "离开" },
                                 "");
     }
@@ -586,13 +769,83 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
     bool inScene = true;
     bool showingResult = false;
     const EventEngine::Event* lastDisplayedEvent = nullptr;
+    std::vector<std::string> resultCardPreviewIds;
 
-    auto summarizeResult = [](const DataLayer::EventResult& res) {
-        if (res.type == "gold") return std::string("获得了 ") + std::to_string(res.value) + " 金币。";
-        if (res.type == "heal") return std::string("恢复了 ") + std::to_string(res.value) + " 点生命。";
-        if (res.type == "card_reward") return std::string("获得了一张新卡牌（选牌由主流程处理）。");
-        if (res.type == "none") return std::string("无事发生。");
-        return std::string("事件结束。");
+    auto effectToSummary = [](const DataLayer::EventEffect& eff) {
+        const int v = eff.value;
+        if (eff.type == "gold") {
+            if (v >= 0) return std::string("获得了 ") + std::to_string(v) + " 金币。";
+            return std::string("失去了 ") + std::to_string(-v) + " 金币。";
+        }
+        if (eff.type == "heal") {
+            if (v >= 0) return std::string("恢复了 ") + std::to_string(v) + " 点生命。";
+            return std::string("失去了 ") + std::to_string(-v) + " 点生命。";
+        }
+        if (eff.type == "max_hp") {
+            if (v >= 0) return std::string("最大生命值提升了 ") + std::to_string(v) + "。";
+            return std::string("最大生命值降低了 ") + std::to_string(-v) + "。";
+        }
+        if (eff.type == "card_reward") return std::string("获得了 ") + std::to_string(v) + " 张新卡牌。";
+        if (eff.type == "card_reward_choose") return std::string("可选获得 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "remove_card") return std::string("移除了牌组中的 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "remove_card_choose") return std::string("自选移除牌组中的 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "upgrade_random") return std::string("升级了 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
+        if (eff.type == "none") return std::string("无事发生。");
+        return std::string("事件结算：")+ eff.type + "（x" + std::to_string(v) + "）。";
+    };
+
+    auto summarizeResult = [&](const DataLayer::EventResult& res) {
+        std::string out;
+        if (!res.effects.empty()) {
+            for (size_t i = 0; i < res.effects.size(); ++i) {
+                if (i > 0) out += " ";
+                out += effectToSummary(res.effects[i]);
+            }
+            return out.empty() ? std::string("无事发生。") : out;
+        }
+        // 兼容旧数据：退化到 type/value
+        DataLayer::EventEffect eff{ res.type, res.value };
+        return effectToSummary(eff);
+    };
+
+    // 事件中的“自选”交互：复用事件面板按钮，返回被选中的索引（取消/关闭返回 -1）
+    auto pickFromEventOptions = [&](const std::string& title,
+                                    const std::string& desc,
+                                    const std::vector<std::string>& options,
+                                    const std::vector<std::string>& optionEffects = std::vector<std::string>{}) -> int {
+        if (options.empty()) return -1;
+        ui.setEventDataFromUtf8(title, desc, options, "", optionEffects);
+        while (window_.isOpen()) {
+            while (const std::optional ev = window_.pollEvent()) {
+                if (ev->is<sf::Event::Closed>()) {
+                    window_.close();
+                    return -1;
+                }
+                if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                    if (key->scancode == sf::Keyboard::Scancode::Escape) return -1;
+                }
+                sf::Vector2f mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                if (const auto* m1 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m1->position);
+                } else if (const auto* m2 = ev->getIf<sf::Event::MouseButtonReleased>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                }
+                ui.handleEvent(*ev, mp);
+            }
+
+            sf::Vector2f mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            ui.setMousePosition(mp);
+            int picked = -1;
+            if (ui.pollEventOption(picked)) return picked;
+
+            window_.clear(sf::Color(40, 38, 45));
+            ui.draw(window_);
+            window_.display();
+        }
+        return -1;
     };
 
     while (window_.isOpen() && inScene) {
@@ -637,15 +890,285 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
             } else if (eventEngine_.get_current_event() && eventEngine_.choose_option(outIndex)) {
                 DataLayer::EventResult res{};
                 if (eventEngine_.get_event_result(res)) {
-                    eventEngine_.apply_event_result(
-                        res,
-                        [this](int gold) { playerState_.gold += gold; },
-                        [this](int heal) {
-                            playerState_.currentHp =
-                                std::min(playerState_.maxHp, playerState_.currentHp + heal);
-                        });
-                    ui.setEventResultFromUtf8(summarizeResult(res));
+                        std::vector<std::string> detailMessages;
+                        const auto pushCardPreview = [&](const std::string& cid) {
+                            if (cid.empty()) return;
+                            if (resultCardPreviewIds.size() < 4) resultCardPreviewIds.push_back(cid);
+                        };
+                        const auto pushDetail = [&](const std::string& msg) {
+                            if (!msg.empty()) detailMessages.push_back(msg);
+                        };
+                        const auto applyOneEffect = [&](const std::string& type, int value) {
+                            if (type == "gold") {
+                                playerState_.gold += value;
+                            } else if (type == "heal") {
+                                playerState_.currentHp = std::min(playerState_.maxHp, playerState_.currentHp + value);
+                            } else if (type == "max_hp") {
+                                playerState_.maxHp += value;
+                                if (playerState_.maxHp < 1) playerState_.maxHp = 1;
+                                if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+                            } else if (type == "card_reward") {
+                                const int count = std::min(4, std::max(0, value));
+                                if (count > 0) {
+                                    const bool hasCeramicFish = std::find(playerState_.relics.begin(), playerState_.relics.end(), "ceramic_fish") != playerState_.relics.end();
+                                    std::vector<CardId> cards = battleEngine_.get_reward_cards(count);
+                                    std::vector<std::string> gained;
+                                    for (const auto& cid : cards) {
+                                        cardSystem_.add_to_master_deck(cid);
+                                        pushCardPreview(cid);
+                                        const CardData* cd = get_card_by_id(cid);
+                                        gained.push_back(cd ? cd->name : cid);
+                                        if (hasCeramicFish) playerState_.gold += 9; // 陶瓷小鱼：每次加入牌组获得 9 金币
+                                    }
+                                    pushDetail("获得卡牌：" + join_names_cn(gained));
+                                }
+                            } else if (type == "card_reward_choose") {
+                                const int chooseCount = std::min(4, std::max(1, value));
+                                const int candidateCount = std::max(3, chooseCount + 1);
+                                const bool hasCeramicFish = std::find(playerState_.relics.begin(), playerState_.relics.end(), "ceramic_fish") != playerState_.relics.end();
+                                std::vector<CardId> cards = battleEngine_.get_reward_cards(candidateCount);
+                                std::vector<std::string> chosenNames;
+                                for (int chooseIdx = 0; chooseIdx < chooseCount; ++chooseIdx) {
+                                    if (cards.empty()) break;
+                                    std::vector<std::string> optionTexts;
+                                    std::vector<std::string> optionEffects;
+                                    optionTexts.reserve(cards.size());
+                                    optionEffects.reserve(cards.size());
+                                    for (const auto& cid : cards) {
+                                        const CardData* cd = get_card_by_id(cid);
+                                        optionTexts.push_back(cd ? cd->name : cid);
+                                        if (cd) {
+                                            optionEffects.push_back("费" + std::to_string(std::max(0, cd->cost)) + "｜" + cd->description);
+                                        } else {
+                                            optionEffects.push_back("未知卡牌效果");
+                                        }
+                                    }
+                                    const int pick = pickFromEventOptions(
+                                        "择术",
+                                        "请选择 1 张要加入牌组的卡牌",
+                                        optionTexts,
+                                        optionEffects);
+                                    if (pick < 0 || pick >= static_cast<int>(cards.size())) break;
+                                    const CardId chosen = cards[static_cast<size_t>(pick)];
+                                    cardSystem_.add_to_master_deck(chosen);
+                                    pushCardPreview(chosen);
+                                    const CardData* chosenCd = get_card_by_id(chosen);
+                                    chosenNames.push_back(chosenCd ? chosenCd->name : chosen);
+                                    if (hasCeramicFish) playerState_.gold += 9;
+                                    cards.erase(cards.begin() + pick); // 无放回，避免重复
+                                }
+                                pushDetail("自选获得卡牌：" + join_names_cn(chosenNames));
+                            } else if (type == "add_curse") {
+                                const int count = std::min(4, std::max(0, value));
+                                for (int i = 0; i < count; ++i) {
+                                    cardSystem_.add_to_master_deck("parasite");
+                                    pushCardPreview("parasite");
+                                }
+                                pushDetail("获得诅咒牌：寄生 x" + std::to_string(count));
+                            } else if (type == "remove_card") {
+                                const int count = std::min(4, std::max(0, value));
+                                std::vector<std::string> removedNames;
+                                for (int i = 0; i < count; ++i) {
+                                    const auto& deck = cardSystem_.get_master_deck();
+                                    if (deck.empty()) break;
+                                    const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                                    const auto& inst = deck[static_cast<size_t>(idx)];
+                                    pushCardPreview(inst.id);
+                                    const CardData* cd = get_card_by_id(inst.id);
+                                    removedNames.push_back(cd ? cd->name : inst.id);
+                                    eventEngine_.remove_card_from_master_deck(inst.instanceId);
+                                }
+                                pushDetail("移除卡牌：" + join_names_cn(removedNames));
+                            } else if (type == "remove_card_choose") {
+                                const int count = std::min(4, std::max(1, value));
+                                std::vector<std::string> removedNames;
+                                for (int i = 0; i < count; ++i) {
+                                    const auto& deck = cardSystem_.get_master_deck();
+                                    if (deck.empty()) break;
+                                    std::vector<InstanceId> ids;
+                                    std::vector<std::string> names;
+                                    std::vector<std::string> effects;
+                                    ids.reserve(deck.size());
+                                    names.reserve(deck.size());
+                                    effects.reserve(deck.size());
+                                    for (const auto& inst : deck) {
+                                        ids.push_back(inst.instanceId);
+                                        const CardData* cd = get_card_by_id(inst.id);
+                                        names.push_back(cd ? cd->name : inst.id);
+                                        if (cd) {
+                                            effects.push_back("费" + std::to_string(std::max(0, cd->cost)) + "｜" + cd->description);
+                                        } else {
+                                            effects.push_back("未知卡牌效果");
+                                        }
+                                    }
+                                    const int pick = pickFromEventOptions(
+                                        "断舍",
+                                        "请选择 1 张要移除的卡牌",
+                                        names,
+                                        effects);
+                                    if (pick < 0 || pick >= static_cast<int>(ids.size())) break;
+                                    const InstanceId chosenInstId = ids[static_cast<size_t>(pick)];
+                                    for (const auto& inst : deck) {
+                                        if (inst.instanceId == chosenInstId) {
+                                            pushCardPreview(inst.id);
+                                            const CardData* cd = get_card_by_id(inst.id);
+                                            removedNames.push_back(cd ? cd->name : inst.id);
+                                            break;
+                                        }
+                                    }
+                                    eventEngine_.remove_card_from_master_deck(chosenInstId);
+                                }
+                                pushDetail("自选移除卡牌：" + join_names_cn(removedNames));
+                            } else if (type == "remove_curse") {
+                                const int count = std::min(4, std::max(0, value));
+                                std::vector<std::string> removedNames;
+                                for (int i = 0; i < count; ++i) {
+                                    const auto& deck = cardSystem_.get_master_deck();
+                                    if (deck.empty()) break;
+
+                                    std::vector<InstanceId> candidates;
+                                    for (const auto& inst : deck) {
+                                        if (inst.id == "parasite" || inst.id == "parasite+") candidates.push_back(inst.instanceId);
+                                    }
+                                    if (candidates.empty()) {
+                                        const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                                        candidates.push_back(deck[static_cast<size_t>(idx)].instanceId);
+                                    }
+                                    const InstanceId picked = candidates[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(candidates.size())))];
+                                    for (const auto& inst : deck) {
+                                        if (inst.instanceId == picked) {
+                                            pushCardPreview(inst.id);
+                                            const CardData* cd = get_card_by_id(inst.id);
+                                            removedNames.push_back(cd ? cd->name : inst.id);
+                                            break;
+                                        }
+                                    }
+                                    eventEngine_.remove_card_from_master_deck(picked);
+                                }
+                                pushDetail("移除诅咒相关卡牌：" + join_names_cn(removedNames));
+                            } else if (type == "upgrade_random") {
+                                const int attempts = std::min(4, std::max(0, value));
+                                std::vector<std::string> upgradedNames;
+                                for (int i = 0; i < attempts; ++i) {
+                                    const auto& deck = cardSystem_.get_master_deck();
+                                    if (deck.empty()) break;
+                                    bool useChooseUpgrade = (randomIndex(runRng_, 100) < 45); // 一定比率使用自选升级
+                                    if (useChooseUpgrade) {
+                                        std::vector<InstanceId> ids;
+                                        std::vector<std::string> names;
+                                        std::vector<std::string> effects;
+                                        ids.reserve(deck.size());
+                                        names.reserve(deck.size());
+                                        effects.reserve(deck.size());
+                                        for (const auto& inst : deck) {
+                                            ids.push_back(inst.instanceId);
+                                            const CardData* cd = get_card_by_id(inst.id);
+                                            names.push_back(cd ? cd->name : inst.id);
+                                            if (cd) effects.push_back("费" + std::to_string(std::max(0, cd->cost)) + "｜" + cd->description);
+                                            else effects.push_back("未知卡牌效果");
+                                        }
+                                        const int pick = pickFromEventOptions(
+                                            "精修",
+                                            "请选择 1 张要升级的卡牌",
+                                            names,
+                                            effects);
+                                        if (pick >= 0 && pick < static_cast<int>(ids.size())) {
+                                            const InstanceId iid = ids[static_cast<size_t>(pick)];
+                                            for (const auto& inst : deck) {
+                                                if (inst.instanceId == iid) {
+                                                    pushCardPreview(inst.id);
+                                                    const CardData* cd = get_card_by_id(inst.id);
+                                                    upgradedNames.push_back(cd ? cd->name : inst.id);
+                                                    break;
+                                                }
+                                            }
+                                            cardSystem_.upgrade_card_in_master_deck(iid);
+                                            continue;
+                                        }
+                                    }
+                                    const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
+                                    const auto& inst = deck[static_cast<size_t>(idx)];
+                                    pushCardPreview(inst.id);
+                                    const CardData* cd = get_card_by_id(inst.id);
+                                    upgradedNames.push_back(cd ? cd->name : inst.id);
+                                    cardSystem_.upgrade_card_in_master_deck(inst.instanceId);
+                                }
+                                pushDetail("升级卡牌：" + join_names_cn(upgradedNames));
+                            } else if (type == "relic") {
+                                const int count = std::max(0, value);
+                                static const std::vector<RelicId> relic_pool = {
+                                    "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle",
+                                    "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull",
+                                    "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum",
+                                    "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
+                                };
+                                std::vector<std::string> gainedRelics;
+                                for (int i = 0; i < count; ++i) {
+                                    std::vector<RelicId> available;
+                                    for (const auto& rid : relic_pool) {
+                                        if (std::find(playerState_.relics.begin(), playerState_.relics.end(), rid) == playerState_.relics.end())
+                                            available.push_back(rid);
+                                    }
+                                    if (available.empty()) break;
+                                    const RelicId gained = available[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(available.size())))];
+                                    playerState_.relics.push_back(gained);
+                                    gainedRelics.push_back(relic_name_cn(gained));
+
+                                    if (gained == "strawberry") {
+                                        playerState_.maxHp += 7;
+                                        playerState_.currentHp += 7;
+                                        if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+                                    } else if (gained == "potion_belt") {
+                                        playerState_.potionSlotCount += 2;
+                                    }
+                                }
+                                pushDetail("获得遗物：" + join_names_cn(gainedRelics));
+                            }
+                            if (playerState_.currentHp <= 0) gameOver_ = true;
+                        };
+
+                        const auto applyEventResult = [&](const DataLayer::EventResult& r) {
+                            if (!r.effects.empty()) {
+                                for (const auto& eff : r.effects) {
+                                    if (gameOver_) break;
+                                    applyOneEffect(eff.type, eff.value);
+                                }
+                                return;
+                            }
+                            applyOneEffect(r.type, r.value);
+                        };
+
+                        resultCardPreviewIds.clear();
+                        applyEventResult(res);
+                        // 结果区最多展示 4 张：两列网格
+                        std::vector<std::string> uniqueIds;
+                        uniqueIds.reserve(resultCardPreviewIds.size());
+                        for (const auto& id : resultCardPreviewIds) {
+                            if (id.empty()) continue;
+                            if (std::find(uniqueIds.begin(), uniqueIds.end(), id) == uniqueIds.end()) {
+                                uniqueIds.push_back(id);
+                            }
+                            if (uniqueIds.size() >= 4) break;
+                        }
+                        std::string resultImage;
+                        if (!uniqueIds.empty()) {
+                            resultImage = "__cards:";
+                            for (size_t i = 0; i < uniqueIds.size(); ++i) {
+                                if (i > 0) resultImage += "|";
+                                resultImage += uniqueIds[i];
+                            }
+                        }
+                        std::string finalSummary = summarizeResult(res);
+                        if (!detailMessages.empty()) {
+                            finalSummary += "\n";
+                            for (size_t i = 0; i < detailMessages.size(); ++i) {
+                                if (i > 0) finalSummary += "\n";
+                                finalSummary += "· " + detailMessages[i];
+                            }
+                        }
+                    ui.setEventResultFromUtf8(finalSummary, resultImage);
                     showingResult = true;
+                        if (gameOver_) inScene = false;
                 } else {
                     inScene = false;
                 }
