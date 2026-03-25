@@ -15,6 +15,7 @@
 #include "DataLayer/DataLayer.hpp"
 #include "Effects/CardEffects.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
+#include "EventEngine/EventShopRestUICommon.hpp"
 
 namespace tce {
 
@@ -32,6 +33,13 @@ std::string join_names_cn(const std::vector<std::string>& names) {
         out += names[i];
     }
     return out;
+}
+
+std::string potion_name_cn(const std::string& id) {
+    if (id == "block_potion") return "砌墙灵液";
+    if (id == "strength_potion") return "蛮力灵液";
+    if (id == "poison_potion") return "淬毒灵液";
+    return id;
 }
 
 std::string relic_name_cn(const std::string& id) {
@@ -1228,29 +1236,76 @@ bool GameFlowController::runShopScene() {
 
     ShopDisplayData shop{};
     shop.playerGold = playerState_.gold;
+    shop.playerCurrentHp = playerState_.currentHp;
+    shop.playerMaxHp = playerState_.maxHp;
+    shop.potionSlotsMax = playerState_.potionSlotCount;
+    shop.potionSlotsUsed = static_cast<int>(playerState_.potions.size());
+    shop.chapterLine = L"先秦溯源 · 行旅";
+    shop.removeServicePrice = 75;
+    if (!playerState_.playerName.empty())
+        shop.playerTitle = esr_detail::utf8_to_wstring(playerState_.playerName);
 
-    // 简单示例：给出几张固定卡牌作为出售列表
-    auto pushOffer = [](ShopDisplayData& s, const std::string& id,
-                        const std::wstring& name, int price) {
-        ShopCardOffer c;
-        c.id = id;
-        c.name = name;
-        c.price = price;
-        s.forSale.push_back(c);
+    auto refreshDeckList = [&]() {
+        shop.deckForRemove.clear();
+        for (const auto& inst : cardSystem_.get_master_deck()) {
+            MasterDeckCardDisplay d;
+            d.instanceId = inst.instanceId;
+            d.cardId = inst.id;
+            const CardData* data = get_card_by_id(inst.id);
+            d.cardName = data ? esr_detail::utf8_to_wstring(data->name) : esr_detail::utf8_to_wstring(inst.id);
+            shop.deckForRemove.push_back(d);
+        }
     };
-    pushOffer(shop, "iron_wave", L"铁斩波", 50);
-    pushOffer(shop, "cleave", L"顺劈斩", 60);
-    pushOffer(shop, "shrug_it_off", L"耸肩无视", 45);
 
-    // 当前 master deck 用于删牌列表
-    for (const auto& inst : cardSystem_.get_master_deck()) {
-        MasterDeckCardDisplay d;
-        d.instanceId = inst.instanceId;
-        const CardData* data = get_card_by_id(inst.id);
-        std::string name = data ? data->name : inst.id;
-        d.cardName = std::wstring(name.begin(), name.end());
-        shop.deckForRemove.push_back(d);
+    static const std::vector<std::pair<std::string, int>> kShopCards = {
+        {"iron_wave", 50}, {"cleave", 60}, {"shrug_it_off", 45}, {"quick_slash", 55}, {"strike", 40},
+    };
+    for (const auto& [cid, price] : kShopCards) {
+        ShopCardOffer c;
+        c.id = cid;
+        c.price = price;
+        const CardData* cd = get_card_by_id(cid);
+        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(cid);
+        shop.forSale.push_back(c);
     }
+
+    static const std::vector<std::pair<std::string, int>> kShopColorless = {
+        {"card_001", 85}, {"card_007", 55},
+    };
+    for (const auto& [cid, price] : kShopColorless) {
+        ShopCardOffer c;
+        c.id = cid;
+        c.price = price;
+        const CardData* cd = get_card_by_id(cid);
+        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(cid);
+        shop.colorlessForSale.push_back(c);
+    }
+
+    static const std::vector<std::pair<std::string, int>> kShopRelics = {
+        {"vajra", 180}, {"anchor", 160}, {"strawberry", 120},
+    };
+    for (const auto& [rid, price] : kShopRelics) {
+        if (std::find(playerState_.relics.begin(), playerState_.relics.end(), rid) != playerState_.relics.end())
+            continue;
+        ShopRelicOffer r;
+        r.id = rid;
+        r.price = price;
+        r.name = esr_detail::utf8_to_wstring(relic_name_cn(rid));
+        shop.relicsForSale.push_back(r);
+    }
+
+    static const std::vector<std::pair<std::string, int>> kShopPotions = {
+        {"block_potion", 40}, {"strength_potion", 45}, {"poison_potion", 50},
+    };
+    for (const auto& [pid, price] : kShopPotions) {
+        ShopPotionOffer p;
+        p.id = pid;
+        p.price = price;
+        p.name = esr_detail::utf8_to_wstring(potion_name_cn(pid));
+        shop.potionsForSale.push_back(p);
+    }
+
+    refreshDeckList();
 
     ui.setShopData(shop);
     ui.setScreen(EventShopRestScreen::Shop);
@@ -1274,10 +1329,25 @@ bool GameFlowController::runShopScene() {
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
 
-        // 购买卡牌
+        if (ui.pollShopLeave()) {
+            inScene = false;
+        }
+
+        if (ui.pollShopPayRemoveService()) {
+            if (!shop.removeServiceSoldOut && !shop.removeServicePaid &&
+                playerState_.gold >= shop.removeServicePrice) {
+                // 只要付得起净简服务，就进入“选择要删除的牌”界面；
+                // 若牌组为空，界面会显示提示但仍能正确跳转。
+                playerState_.gold -= shop.removeServicePrice;
+                shop.removeServicePaid = true;
+                shop.playerGold = playerState_.gold;
+                statusText_ = "请选择一张牌进行净简移除。";
+                ui.setShopData(shop);
+            }
+        }
+
         CardId buyId;
         if (ui.pollShopBuyCard(buyId)) {
-            const CardData* cardData = get_card_by_id(buyId);
             int price = 0;
             for (const auto& offer : shop.forSale) {
                 if (offer.id == buyId) {
@@ -1285,15 +1355,67 @@ bool GameFlowController::runShopScene() {
                     break;
                 }
             }
+            if (price == 0) {
+                for (const auto& offer : shop.colorlessForSale) {
+                    if (offer.id == buyId) {
+                        price = offer.price;
+                        break;
+                    }
+                }
+            }
+            const CardData* cardData = get_card_by_id(buyId);
             if (cardData && price > 0 && playerState_.gold >= price) {
                 playerState_.gold -= price;
                 cardSystem_.add_to_master_deck(buyId);
                 shop.playerGold = playerState_.gold;
+                shop.forSale.erase(
+                    std::remove_if(shop.forSale.begin(), shop.forSale.end(),
+                                   [&buyId](const ShopCardOffer& o) { return o.id == buyId; }),
+                    shop.forSale.end());
+                shop.colorlessForSale.erase(
+                    std::remove_if(shop.colorlessForSale.begin(), shop.colorlessForSale.end(),
+                                   [&buyId](const ShopCardOffer& o) { return o.id == buyId; }),
+                    shop.colorlessForSale.end());
+                refreshDeckList();
                 ui.setShopData(shop);
             }
         }
 
-        // 删除牌
+        int relicIdx = -1;
+        if (ui.pollShopBuyRelic(relicIdx)) {
+            if (relicIdx >= 0 && relicIdx < static_cast<int>(shop.relicsForSale.size())) {
+                const ShopRelicOffer& o = shop.relicsForSale[static_cast<size_t>(relicIdx)];
+                if (playerState_.gold >= o.price &&
+                    std::find(playerState_.relics.begin(), playerState_.relics.end(), o.id) ==
+                        playerState_.relics.end()) {
+                    playerState_.gold -= o.price;
+                    playerState_.relics.push_back(o.id);
+                    if (o.id == "potion_belt")
+                        playerState_.potionSlotCount += 2;
+                    shop.relicsForSale.erase(shop.relicsForSale.begin() + relicIdx);
+                    shop.playerGold = playerState_.gold;
+                    shop.potionSlotsMax = playerState_.potionSlotCount;
+                    ui.setShopData(shop);
+                }
+            }
+        }
+
+        int potIdx = -1;
+        if (ui.pollShopBuyPotion(potIdx)) {
+            if (potIdx >= 0 && potIdx < static_cast<int>(shop.potionsForSale.size())) {
+                const ShopPotionOffer& o = shop.potionsForSale[static_cast<size_t>(potIdx)];
+                if (playerState_.gold >= o.price &&
+                    static_cast<int>(playerState_.potions.size()) < playerState_.potionSlotCount) {
+                    playerState_.gold -= o.price;
+                    playerState_.potions.push_back(o.id);
+                    shop.potionsForSale.erase(shop.potionsForSale.begin() + potIdx);
+                    shop.playerGold = playerState_.gold;
+                    shop.potionSlotsUsed = static_cast<int>(playerState_.potions.size());
+                    ui.setShopData(shop);
+                }
+            }
+        }
+
         InstanceId removeId = 0;
         if (ui.pollShopRemoveCard(removeId)) {
             CardId removedId;
@@ -1302,12 +1424,9 @@ bool GameFlowController::runShopScene() {
                     playerState_.maxHp = std::max(1, playerState_.maxHp - 3);
                     if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
                 }
-                auto& list = shop.deckForRemove;
-                list.erase(std::remove_if(list.begin(), list.end(),
-                                          [removeId](const MasterDeckCardDisplay& d) {
-                                              return d.instanceId == removeId;
-                                          }),
-                           list.end());
+                shop.removeServicePaid = false;
+                shop.removeServiceSoldOut = true;
+                refreshDeckList();
                 ui.setShopData(shop);
             }
         }
@@ -1315,6 +1434,11 @@ bool GameFlowController::runShopScene() {
         window_.clear(sf::Color(40, 38, 45));
         ui.draw(window_);
         window_.display();
+    }
+
+    // 商店内已无选牌删牌界面：若曾付净简费但未完成移除，离开时退还
+    if (shop.removeServicePaid && !shop.removeServiceSoldOut) {
+        playerState_.gold += shop.removeServicePrice;
     }
 
     return true;
@@ -1344,6 +1468,7 @@ bool GameFlowController::runRestScene() {
     for (const auto& inst : cardSystem_.get_master_deck()) {
         MasterDeckCardDisplay d;
         d.instanceId = inst.instanceId;
+        d.cardId = inst.id;
         const CardData* data = get_card_by_id(inst.id);
         std::string name = data ? data->name : inst.id;
         d.cardName = std::wstring(name.begin(), name.end());
@@ -1390,6 +1515,7 @@ bool GameFlowController::runRestScene() {
                 for (const auto& inst : cardSystem_.get_master_deck()) {
                     MasterDeckCardDisplay d;
                     d.instanceId = inst.instanceId;
+                    d.cardId = inst.id;
                     const CardData* data = get_card_by_id(inst.id);
                     std::string name = data ? data->name : inst.id;
                     d.cardName = std::wstring(name.begin(), name.end());

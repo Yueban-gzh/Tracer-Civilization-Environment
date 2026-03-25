@@ -77,7 +77,8 @@ inline bool try_load_texture(sf::Texture& tex, const std::vector<std::string>& c
     return false;
 }
 
-inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest) {
+inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
+    sf::Color tint = sf::Color::White) {
     if (tex.getSize().x == 0 || tex.getSize().y == 0) return;
     sf::Sprite s(tex);
     const sf::Vector2u sz = tex.getSize();
@@ -85,6 +86,25 @@ inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, c
     const float sy = dest.size.y / static_cast<float>(sz.y);
     s.setPosition(dest.position);
     s.setScale(sf::Vector2f(sx, sy));
+    s.setColor(tint);
+    window.draw(s);
+}
+
+/** 在 dest 内居中绘制纹理，保持原始宽高比（letterbox / pillarbox） */
+inline void draw_texture_contain(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
+    sf::Color tint = sf::Color::White) {
+    if (tex.getSize().x == 0 || tex.getSize().y == 0) return;
+    sf::Sprite s(tex);
+    const sf::Vector2u sz = tex.getSize();
+    const float tw = static_cast<float>(sz.x);
+    const float th = static_cast<float>(sz.y);
+    const float scale = std::min(dest.size.x / tw, dest.size.y / th);
+    s.setScale(sf::Vector2f(scale, scale));
+    const float drawnW = tw * scale;
+    const float drawnH = th * scale;
+    s.setPosition(sf::Vector2f(dest.position.x + (dest.size.x - drawnW) * 0.5f,
+        dest.position.y + (dest.size.y - drawnH) * 0.5f));
+    s.setColor(tint);
     window.draw(s);
 }
 

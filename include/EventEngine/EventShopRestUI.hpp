@@ -48,7 +48,15 @@ public:
     bool pollEventOption(int& outIndex);
     /** 是否选择了购买某张牌；若 true，outCardId 为卡牌 id */
     bool pollShopBuyCard(CardId& outCardId);
-    /** 是否选择了删除牌组中某张牌；若 true，outInstanceId 为实例 id */
+    /** 是否点击「净简」准备支付（由主流程扣费后设 removeServicePaid） */
+    bool pollShopPayRemoveService();
+    /** 是否购买遗物；若 true，outIndex 为 relicsForSale 下标 */
+    bool pollShopBuyRelic(int& outIndex);
+    /** 是否购买药剂；若 true，outIndex 为 potionsForSale 下标 */
+    bool pollShopBuyPotion(int& outIndex);
+    /** 是否点击边缘「离开」离开商店 */
+    bool pollShopLeave();
+    /** 是否选择了删除牌组中某张牌；若 true，outInstanceId 为实例 id（需已支付净简） */
     bool pollShopRemoveCard(InstanceId& outInstanceId);
     /** 是否选择了休息回血 */
     bool pollRestHeal();
@@ -83,6 +91,14 @@ private:
     bool eventIllustLoaded_ = false;
     sf::Texture restBgTexture_;
     bool restBgLoaded_ = false;
+    sf::Texture shopBgTexture_;
+    bool shopBgLoaded_ = false;
+    sf::Texture shopTitleTexture_;
+    bool shopTitleLoaded_ = false;
+    sf::Texture shopDeleteCardTexture_;
+    bool shopDeleteCardLoaded_ = false;
+    sf::Texture shopDeleteBgTexture_;
+    bool shopDeleteBgLoaded_ = false;
     sf::Texture restHealIconTexture_;
     bool restHealIconLoaded_ = false;
     sf::Texture restSmithIconTexture_;
@@ -96,8 +112,16 @@ private:
 
     // 选项/按钮矩形（按顺序），用于点击检测
     std::vector<sf::FloatRect> eventOptionRects_;
-    std::vector<sf::FloatRect> shopBuyRects_;   // 与 forSale 下标对应
-    std::vector<sf::FloatRect> shopRemoveRects_; // 与 deckForRemove 下标对应
+    std::vector<sf::FloatRect> shopBuyRects_;       // 与 forSale 下标对应
+    std::vector<sf::FloatRect> shopColorlessRects_; // 与 colorlessForSale 下标对应
+    std::vector<sf::FloatRect> shopRelicRects_;
+    std::vector<sf::FloatRect> shopPotionRects_;
+    sf::FloatRect shopRemoveServiceRect_;
+    sf::FloatRect shopLeaveButtonRect_;
+    std::vector<sf::FloatRect> shopRemoveRects_;   // 与 deckForRemove 下标对应
+    float shopDeckScrollOffset_ = 0.f;
+    float shopDeckScrollMax_ = 0.f;
+    sf::FloatRect shopDeckAreaRect_;
     sf::FloatRect restHealButton_;
     sf::FloatRect restUpgradeChoiceButton_;  // 「升级」大按钮（进入选牌前）
     sf::FloatRect restBackButton_;           // 升级列表中「返回」
@@ -114,6 +138,12 @@ private:
     int pendingEventOption_ = -1;
     CardId pendingShopBuyCard_;
     bool pendingShopBuy_ = false;
+    bool pendingShopPayRemove_ = false;
+    int pendingShopRelicIndex_ = -1;
+    bool pendingShopRelic_ = false;
+    int pendingShopPotionIndex_ = -1;
+    bool pendingShopPotion_ = false;
+    bool pendingShopLeave_ = false;
     InstanceId pendingShopRemoveInstance_ = -1;
     bool pendingShopRemove_ = false;
     bool pendingRestHeal_ = false;
