@@ -1178,7 +1178,10 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                     showingResult = true;
                         if (gameOver_) inScene = false;
                 } else {
-                    inScene = false;
+                    // 这里通常是选择了带 next 的选项（进入二层事件），不是事件结束。
+                    // 保持在事件场景，等待下一帧按新的 current_event_ 刷新 UI。
+                    showingResult = false;
+                    lastDisplayedEvent = nullptr;
                 }
             }
         }

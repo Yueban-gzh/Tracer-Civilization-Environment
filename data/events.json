@@ -156,10 +156,27 @@
         "result": { "effects": [ { "type": "card_reward_choose", "value": 2 }, { "type": "max_hp", "value": -3 } ] }
       },
       {
-        "text": "赋诗成契：换来一件遗物，缴上一部分金币",
-        "result": { "effects": [ { "type": "relic", "value": 1 }, { "type": "gold", "value": -40 } ] }
+        "text": "赋诗成契：先入后庭，再定代价",
+        "next": "event_008a"
       },
       { "text": "你不喝了，转身离席", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_008a",
+    "title": "长安夜宴·后庭试价",
+    "description": "杯盏被换成了算盘。真正的价格现在才写在你眼前。",
+    "image": "assets/images/events/event_008.png",
+    "options": [
+      {
+        "text": "押注重金：换一件遗物与一张可选新牌",
+        "result": { "effects": [ { "type": "gold", "value": -40 }, { "type": "relic", "value": 1 }, { "type": "card_reward_choose", "value": 1 } ] }
+      },
+      {
+        "text": "酒醒留命：小幅恢复后离席",
+        "result": { "effects": [ { "type": "heal", "value": 10 } ] }
+      },
+      { "text": "看穿价码，不再加注", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
@@ -236,10 +253,27 @@
         "result": { "effects": [ { "type": "remove_curse", "value": 1 }, { "type": "upgrade_random", "value": 1 } ] }
       },
       {
-        "text": "让诅咒作燃料：再多升级几次，但你会更脆弱",
-        "result": { "effects": [ { "type": "add_curse", "value": 1 }, { "type": "upgrade_random", "value": 2 }, { "type": "max_hp", "value": -2 } ] }
+        "text": "让诅咒作燃料：先点灯，再决定炼法",
+        "next": "event_012a"
       },
       { "text": "不问灯影", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_012a",
+    "title": "祭灯引路·二炼",
+    "description": "灯焰被分成两股：一股稳，一股烈。你只能带走其中一种。",
+    "image": "assets/images/events/event_012.png",
+    "options": [
+      {
+        "text": "稳炼：安全升级一次",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 1 }, { "type": "max_hp", "value": -1 } ] }
+      },
+      {
+        "text": "烈炼：强行升级两次并背上一层诅咒",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 2 }, { "type": "add_curse", "value": 1 } ] }
+      },
+      { "text": "熄灯离去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
@@ -336,10 +370,27 @@
         "result": { "effects": [ { "type": "remove_card", "value": 2 }, { "type": "gold", "value": 20 } ] }
       },
       {
-        "text": "封印寂雾代价：移除一张牌，减少上限，并换取一件遗物",
-        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": -2 }, { "type": "relic", "value": 1 } ] }
+        "text": "封印寂雾代价：先刻印，再选择封印方式",
+        "next": "event_017a"
       },
       { "text": "无事发生", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_017a",
+    "title": "断卷封印·定价",
+    "description": "封印并不免费。你必须决定，是拿生命付账，还是拿资源付账。",
+    "image": "assets/images/events/event_017.png",
+    "options": [
+      {
+        "text": "血契封印：移除一张牌并换得遗物",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": -2 }, { "type": "relic", "value": 1 } ] }
+      },
+      {
+        "text": "财契封印：移除一张牌并回收一点路费",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "gold", "value": 20 } ] }
+      },
+      { "text": "终止封印", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
