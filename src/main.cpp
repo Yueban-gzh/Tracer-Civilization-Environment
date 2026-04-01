@@ -23,6 +23,9 @@
 #include "MapEngine/MapConfig.hpp"
 #include "Common/NodeTypes.hpp"
 
+#include "Treasure/TreasureChest.hpp"
+#include "Treasure/TreasureUI.hpp"
+
 static void runEventShopRestUITest(sf::RenderWindow& window);
 static void runMapUITest(sf::RenderWindow& window);
 
@@ -144,17 +147,61 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
 static void runMapUITest(sf::RenderWindow& window) {
     MapEngine::MapConfigManager configManager;
     MapEngine::MapEngine engine;
+    
+    // 初始化宝箱系统
+    tce::LootFactory lootFactory;
+    tce::ChestManager chestManager;
+    tce::TreasureUI treasureUI;
+    
     engine.setContentIdGenerator([](NodeType type, int layer, int index) -> std::string {
         const char* t[] = { "enemy", "elite", "event", "rest", "merchant", "treasure", "boss" };
         int i = static_cast<int>(type);
         return std::string(i >= 0 && i < 7 ? t[i] : "node") + "_" + std::to_string(layer) + "_" + std::to_string(index);
     });
-    engine.setNodeEnterCallback([](const MapEngine::MapNode& node) {
+    engine.setNodeEnterCallback([&chestManager, &lootFactory, &treasureUI](const MapEngine::MapNode& node) {
         std::cout << "[MapUI] 进入节点: " << node.id << " 类型:" << static_cast<int>(node.type) << " content_id:" << node.content_id << std::endl;
+        
+        // 显示节点类型的文字描述
+        std::string typeName;
+        switch (node.type) {
+            case NodeType::Enemy: typeName = "敌人"; break;
+            case NodeType::Elite: typeName = "精英"; break;
+            case NodeType::Event: typeName = "事件"; break;
+            case NodeType::Rest: typeName = "休息"; break;
+            case NodeType::Merchant: typeName = "商人"; break;
+            case NodeType::Treasure: typeName = "宝藏"; break;
+            case NodeType::Boss: typeName = "Boss"; break;
+            default: typeName = "未知"; break;
+        }
+        std::cout << "节点类型: " << typeName << "，是否可达: " << (node.is_reachable ? "是" : "否") << std::endl;
+        
+        // 处理宝藏节点
+        if (node.type == NodeType::Treasure) {
+            std::cout << "[宝箱] 发现宝藏节点！" << std::endl;
+            // 检查是否已有宝箱
+            if (!chestManager.hasChest(node.id)) {
+                // 创建一个随机宝箱
+                chestManager.createRandomChest(node.id, lootFactory);
+                std::cout << "[宝箱] 在节点 " << node.id << " 创建了一个随机宝箱！" << std::endl;
+            }
+            
+            // 询问是否打开宝箱
+            std::cout << "[宝箱] 你发现了一个宝箱，是否打开？(y/n): " << std::flush;
+            char input;    std::cin >> input;
+            if (input == 'y' || input == 'Y') {
+                tce::Loot loot = chestManager.openChest(node.id, lootFactory);
+                tce::TreasureChest* chest = chestManager.getChest(node.id);
+                if (chest) {
+                    treasureUI.show(chest, loot);
+                }
+            }
+        }
     });
 
     if (!configManager.getCurrentConfig()) { std::cerr << "无地图配置" << std::endl; return; }
     engine.init_fixed_map(*configManager.getCurrentConfig());
+    
+    // 初始地图的宝藏节点将在进入时自动创建宝箱
 
     MapEngine::MapUI ui;
     if (!ui.initialize(&window)) { std::cerr << "地图 UI 初始化失败" << std::endl; return; }
@@ -163,19 +210,36 @@ static void runMapUITest(sf::RenderWindow& window) {
     ui.loadBackgroundTexture("assets/images/background.png");
     ui.setMap(&engine);
     ui.setCurrentLayer(0);
+    
+    // 初始化宝箱UI
+    if (!treasureUI.initialize(&window)) {
+        std::cerr << "宝箱 UI 初始化失败" << std::endl;
+    }
 
     while (window.isOpen()) {
         while (const std::optional ev = window.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) { window.close(); return; }
+            
+            // 处理宝箱UI事件
+            if (treasureUI.isVisible()) {
+                if (treasureUI.handleEvent(*ev)) {
+                    continue; // 如果宝箱UI处理了事件，跳过其他处理
+                }
+            }
+            
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) return;
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     configManager.prevMap();
                     engine.init_fixed_map(*configManager.getCurrentConfig());
+                    
+                    // 新地图的宝藏节点将在进入时自动创建宝箱
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Right) {
                     configManager.nextMap();
                     engine.init_fixed_map(*configManager.getCurrentConfig());
+                    
+                    // 新地图的宝藏节点将在进入时自动创建宝箱
                 }
             }
             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
@@ -197,6 +261,12 @@ static void runMapUITest(sf::RenderWindow& window) {
         }
         window.clear(sf::Color(255, 255, 255));
         ui.draw();
+        
+        // 绘制宝箱UI
+        if (treasureUI.isVisible()) {
+            treasureUI.draw();
+        }
+        
         window.display();
     }
 }

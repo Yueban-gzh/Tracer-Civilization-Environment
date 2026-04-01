@@ -117,6 +117,11 @@ bool GameFlowController::initialize() {
     mapUI_.setMap(&mapEngine_);
     mapUI_.setCurrentLayer(0);
 
+    // 初始化宝箱UI
+    if (!treasureUI_.initialize(&window_)) {
+        std::cerr << "宝箱 UI 初始化失败" << std::endl;
+    }
+
     if (hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
         hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
         hudFontLoaded_ = true;
@@ -133,6 +138,14 @@ void GameFlowController::run() {
                 window_.close();
                 return;
             }
+            
+            // 处理宝箱UI事件
+            if (treasureUI_.isVisible()) {
+                if (treasureUI_.handleEvent(*ev)) {
+                    continue; // 如果宝箱UI处理了事件，跳过其他处理
+                }
+            }
+            
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
                     window_.close();
@@ -167,6 +180,12 @@ void GameFlowController::run() {
         window_.clear(sf::Color(245, 245, 245));
         mapUI_.draw();
         drawHud();
+        
+        // 绘制宝箱UI
+        if (treasureUI_.isVisible()) {
+            treasureUI_.draw();
+        }
+        
         window_.display();
     }
 }
@@ -219,7 +238,7 @@ void GameFlowController::resolveNode(const MapEngine::MapNode& node) {
         }
         break;
     case NodeType::Treasure:
-        resolveTreasure();
+        resolveTreasure(node.id);
         break;
     default:
         break;
@@ -678,10 +697,33 @@ void GameFlowController::resolveMerchant() {
     statusText_ = "商店购买 1 张牌（-50 金币）。";
 }
 
-void GameFlowController::resolveTreasure() {
-    const int gold = 40 + randomIndex(runRng_, 61);
-    playerState_.gold += gold;
-    statusText_ = "宝箱节点：获得金币。";
+void GameFlowController::resolveTreasure(const std::string& nodeId) {
+    // 检查是否已有宝箱
+    if (!chestManager_.hasChest(nodeId)) {
+        // 创建一个随机宝箱
+        chestManager_.createRandomChest(nodeId, lootFactory_);
+        std::cout << "[宝箱] 在节点 " << nodeId << " 创建了一个随机宝箱！" << std::endl;
+    }
+    
+    // 打开宝箱并生成战利品
+    tce::Loot loot = chestManager_.openChest(nodeId, lootFactory_);
+    
+    // 应用战利品
+    if (loot.hasGold) {
+        playerState_.gold += loot.gold;
+    }
+    
+    // 添加遗物到玩家状态
+    playerState_.relics.push_back(loot.relic.id);
+    
+    // 显示宝箱UI
+    tce::TreasureChest* chest = chestManager_.getChest(nodeId);
+    if (chest) {
+        treasureUI_.show(chest, loot);
+        statusText_ = "宝箱节点：获得奖励。";
+    } else {
+        statusText_ = "宝箱节点：获得金币。";
+    }
 }
 
 bool GameFlowController::runShopScene() {

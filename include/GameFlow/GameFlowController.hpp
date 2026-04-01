@@ -13,6 +13,8 @@
 #include "MapEngine/MapConfig.hpp"
 #include "MapEngine/MapEngine.hpp"
 #include "MapEngine/MapUI.hpp"
+#include "Treasure/TreasureChest.hpp"
+#include "Treasure/TreasureUI.hpp"
 
 namespace tce {
 
@@ -29,6 +31,7 @@ public:
 private:
     bool tryMoveToNode(const std::string& nodeId);
     void resolveNode(const MapEngine::MapNode& node);
+    void resolveTreasure(const std::string& nodeId);
 
     bool runBattleScene(NodeType nodeType);
     void resolveEvent(const std::string& contentId);
@@ -57,6 +60,11 @@ private:
     MapEngine::MapConfigManager mapConfigManager_;
     MapEngine::MapEngine mapEngine_;
     MapEngine::MapUI mapUI_;
+
+    // 宝箱系统
+    LootFactory lootFactory_;
+    ChestManager chestManager_;
+    TreasureUI treasureUI_;
 
     PlayerBattleState playerState_{};
     bool gameOver_ = false;
