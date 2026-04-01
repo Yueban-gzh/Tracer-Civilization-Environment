@@ -144,11 +144,21 @@ bool EventEngine::rest_upgrade_card(InstanceId instance_id) {
 void EventEngine::apply_event_result(const EventResult& result,
     std::function<void(int)> on_gold_add,
     std::function<void(int)> on_heal) {
-    if (result.type == "gold" && on_gold_add)
-        on_gold_add(result.value);
-    else if (result.type == "heal" && on_heal)
-        on_heal(result.value);
-    // "card_reward"：主流程根据 value 做选牌 UI 后调 add_to_master_deck；"none" 无需处理
+    auto applyOne = [&](const DataLayer::EventEffect& eff) {
+        if (eff.type == "gold" && on_gold_add) on_gold_add(eff.value);
+        else if (eff.type == "heal" && on_heal) on_heal(eff.value);
+    };
+
+    if (!result.effects.empty()) {
+        for (const auto& eff : result.effects) applyOne(eff);
+        return;
+    }
+
+    // 兼容旧数据结构：type/value
+    DataLayer::EventEffect eff{ result.type, result.value };
+    applyOne(eff);
+
+    // card_reward/remove_card/relic 等：本函数当前不处理，主流程/其他模块自行结算
 }
 
 } // namespace tce

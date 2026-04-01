@@ -38,6 +38,22 @@ EventShopRestUI::EventShopRestUI(unsigned width, unsigned height)
         "./assets/backgrounds/rest_bg_cn.png",
         "./assets/backgrounds/event_bg_cn.png"
     });
+    shopBgLoaded_ = try_load_texture(shopBgTexture_, {
+        "assets/backgrounds/shop_bg.png",
+        "./assets/backgrounds/shop_bg.png"
+    });
+    shopTitleLoaded_ = try_load_texture(shopTitleTexture_, {
+        "assets/ui/shop/shop_title.png",
+        "./assets/ui/shop/shop_title.png"
+    });
+    shopDeleteCardLoaded_ = try_load_texture(shopDeleteCardTexture_, {
+        "assets/ui/shop/delete_card.png",
+        "./assets/ui/shop/delete_card.png"
+    });
+    shopDeleteBgLoaded_ = try_load_texture(shopDeleteBgTexture_, {
+        "assets/ui/shop/delete_bg.png",
+        "./assets/ui/shop/delete_bg.png"
+    });
     restHealIconLoaded_ = try_load_texture(restHealIconTexture_, {
         "assets/ui/rest/icon_heal.png",
         "./assets/ui/rest/icon_heal.png"
@@ -71,16 +87,36 @@ void EventShopRestUI::setScreen(EventShopRestScreen screen) {
     if (screen == EventShopRestScreen::Event) selectedEventOption_ = 0;
     if (screen == EventShopRestScreen::Rest) restShowUpgradeList_ = false;
     pendingShopBuy_ = false;
+    pendingShopPayRemove_ = false;
+    pendingShopRelic_ = false;
+    pendingShopPotion_ = false;
+    pendingShopLeave_ = false;
     pendingShopRemove_ = false;
+    shopDeckScrollOffset_ = 0.f;
+    shopDeckScrollMax_ = 0.f;
     pendingRestHeal_ = false;
     pendingRestUpgrade_ = false;
 }
 
 void EventShopRestUI::setEventData(const EventDisplayData& data) {
     eventData_ = data;
-    if (eventData_.optionTexts.empty())
+    if (eventData_.optionTexts.empty()) {
         eventData_.optionTexts.push_back(std::wstring(L"离开"));
+        eventData_.optionEffectTexts.push_back(std::wstring());
+    } else if (eventData_.optionEffectTexts.size() != eventData_.optionTexts.size()) {
+        // 防止旧数据结构导致 size 不一致
+        if (eventData_.optionEffectTexts.size() < eventData_.optionTexts.size())
+            eventData_.optionEffectTexts.resize(eventData_.optionTexts.size());
+        else
+            eventData_.optionEffectTexts.resize(eventData_.optionTexts.size());
+    }
     eventOptionRects_.clear();
+    pendingEventOption_ = -1;
+    eventOptionPressedIndex_ = -1;
+    selectedEventOption_ = 0;
+    eventCardScrollOffset_ = 0.f;
+    eventCardScrollMax_ = 0.f;
+    eventCardScrollStep_ = 42.f;
     if (data.imagePath != eventIllustPath_) {
         eventIllustPath_ = data.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
@@ -89,31 +125,59 @@ void EventShopRestUI::setEventData(const EventDisplayData& data) {
 
 void EventShopRestUI::setEventDataFromUtf8(const std::string& title, const std::string& description,
                                            const std::vector<std::string>& optionTexts,
-                                           const std::string& imagePath) {
+                                           const std::string& imagePath,
+                                           const std::vector<std::string>& optionEffectTexts) {
     eventData_.title = utf8_to_wstring(title);
     eventData_.description = utf8_to_wstring(description);
     eventData_.optionTexts.clear();
     for (const auto& s : optionTexts)
         eventData_.optionTexts.push_back(utf8_to_wstring(s));
-    if (eventData_.optionTexts.empty())
-        eventData_.optionTexts.push_back(std::wstring(L"离开"));
+    if (eventData_.optionTexts.empty()) eventData_.optionTexts.push_back(std::wstring(L"离开"));
+    eventData_.optionEffectTexts.clear();
+    eventData_.optionEffectTexts.reserve(eventData_.optionTexts.size());
+    for (std::size_t i = 0; i < eventData_.optionTexts.size(); ++i) {
+        if (i < optionEffectTexts.size())
+            eventData_.optionEffectTexts.push_back(utf8_to_wstring(optionEffectTexts[i]));
+        else
+            eventData_.optionEffectTexts.push_back(std::wstring());
+    }
     eventData_.imagePath = imagePath;
     eventOptionRects_.clear();
+    pendingEventOption_ = -1;
+    eventOptionPressedIndex_ = -1;
+    selectedEventOption_ = 0;
+    eventCardScrollOffset_ = 0.f;
+    eventCardScrollMax_ = 0.f;
+    eventCardScrollStep_ = 42.f;
     if (eventData_.imagePath != eventIllustPath_) {
         eventIllustPath_ = eventData_.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
     }
 }
 
-void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary) {
+void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary, const std::string& imagePath) {
     eventData_.title = std::wstring(L"事件结果");
     eventData_.description = utf8_to_wstring(resultSummary);
     eventData_.optionTexts.assign(1, std::wstring(L"确定"));
-    eventData_.imagePath.clear();
+    eventData_.optionEffectTexts.assign(1, std::wstring());
+    eventData_.imagePath = imagePath;
     eventOptionRects_.clear();
-    if (!eventIllustPath_.empty()) {
-        eventIllustPath_.clear();
-        eventIllustLoaded_ = false;
+    pendingEventOption_ = -1;
+    eventOptionPressedIndex_ = -1;
+    selectedEventOption_ = 0;
+    eventCardScrollOffset_ = 0.f;
+    eventCardScrollMax_ = 0.f;
+    eventCardScrollStep_ = 42.f;
+    if (eventData_.imagePath != eventIllustPath_) {
+        eventIllustPath_ = eventData_.imagePath;
+        // "__cardid:" / "__cards:" 走代码绘制，不加载贴图
+        if (!eventIllustPath_.empty() &&
+            eventIllustPath_.rfind("__cardid:", 0) != 0 &&
+            eventIllustPath_.rfind("__cards:", 0) != 0) {
+            eventIllustLoaded_ = eventIllustTexture_.loadFromFile(eventIllustPath_);
+        } else {
+            eventIllustLoaded_ = false;
+        }
     }
 }
 
@@ -122,12 +186,62 @@ void EventShopRestUI::setEventDataFromEvent(const DataLayer::Event* event) {
     eventData_.title = utf8_to_wstring(event->title);
     eventData_.description = utf8_to_wstring(event->description);
     eventData_.optionTexts.clear();
-    for (const auto& opt : event->options)
+    eventData_.optionEffectTexts.clear();
+    auto effectToPreview = [](const DataLayer::EventEffect& eff) -> std::string {
+        const int v = eff.value;
+        if (eff.type == "gold") {
+            if (v >= 0) return "+" + std::to_string(v) + "金";
+            return "-" + std::to_string(-v) + "金";
+        }
+        if (eff.type == "heal") {
+            if (v >= 0) return "+" + std::to_string(v) + "血";
+            return "-" + std::to_string(-v) + "血";
+        }
+        if (eff.type == "max_hp") {
+            if (v >= 0) return "+" + std::to_string(v) + "上限";
+            return "-" + std::to_string(-v) + "上限";
+        }
+        if (eff.type == "card_reward") return "+" + std::to_string(v) + "牌";
+        if (eff.type == "card_reward_choose") return "自选+" + std::to_string(std::max(1, v)) + "牌";
+        if (eff.type == "remove_card") return "-" + std::to_string(v) + "牌";
+        if (eff.type == "remove_card_choose") return "自选删" + std::to_string(std::max(1, v)) + "牌";
+        if (eff.type == "upgrade_random") return "升级" + std::to_string(v) + "次";
+        if (eff.type == "relic") return "+" + std::to_string(v) + "遗物";
+        if (eff.type == "add_curse") return "+" + std::to_string(v) + "诅咒";
+        if (eff.type == "remove_curse") return "-" + std::to_string(v) + "诅咒";
+        if (eff.type == "none") return {};
+        return eff.type;
+    };
+
+    for (const auto& opt : event->options) {
+        std::string effectPreview;
+        if (!opt.result.effects.empty()) {
+            for (size_t i = 0; i < opt.result.effects.size(); ++i) {
+                const std::string piece = effectToPreview(opt.result.effects[i]);
+                if (piece.empty()) continue;
+                if (!effectPreview.empty()) effectPreview += "；";
+                effectPreview += piece;
+            }
+        } else {
+            DataLayer::EventEffect eff{ opt.result.type, opt.result.value };
+            effectPreview = effectToPreview(eff);
+        }
+
         eventData_.optionTexts.push_back(utf8_to_wstring(opt.text));
+        eventData_.optionEffectTexts.push_back(utf8_to_wstring(effectPreview));
+    }
     if (eventData_.optionTexts.empty())
         eventData_.optionTexts.push_back(std::wstring(L"离开"));
+    if (eventData_.optionEffectTexts.empty())
+        eventData_.optionEffectTexts.assign(eventData_.optionTexts.size(), std::wstring());
     eventData_.imagePath = event->image;
     eventOptionRects_.clear();
+    pendingEventOption_ = -1;
+    eventOptionPressedIndex_ = -1;
+    selectedEventOption_ = 0;
+    eventCardScrollOffset_ = 0.f;
+    eventCardScrollMax_ = 0.f;
+    eventCardScrollStep_ = 42.f;
     if (eventData_.imagePath != eventIllustPath_) {
         eventIllustPath_ = eventData_.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
@@ -137,7 +251,12 @@ void EventShopRestUI::setEventDataFromEvent(const DataLayer::Event* event) {
 void EventShopRestUI::setShopData(const ShopDisplayData& data) {
     shopData_ = data;
     shopBuyRects_.clear();
+    shopColorlessRects_.clear();
+    shopRelicRects_.clear();
+    shopPotionRects_.clear();
     shopRemoveRects_.clear();
+    shopDeckScrollOffset_ = 0.f;
+    shopDeckScrollMax_ = 0.f;
 }
 
 void EventShopRestUI::setRestData(const RestDisplayData& data) {
@@ -166,10 +285,44 @@ void EventShopRestUI::drawPanel(sf::RenderWindow& window, float centerX, float c
 bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos) {
     if (screen_ == EventShopRestScreen::None) return false;
 
+    const bool shopRemovePickMode =
+        (screen_ == EventShopRestScreen::Shop && shopData_.removeServicePaid && !shopData_.removeServiceSoldOut);
+
+    if (screen_ == EventShopRestScreen::Event) {
+        if (auto const* wheel = ev.getIf<sf::Event::MouseWheelScrolled>()) {
+            const bool cardPickMode = (eventData_.title == L"择术" || eventData_.title == L"断舍" || eventData_.title == L"精修");
+            if (cardPickMode && eventCardScrollMax_ > 0.f) {
+                // SFML 鼠标滚轮：上滚 delta>0，偏移应减小（往上看）
+                const float step = std::max(12.f, eventCardScrollStep_);
+                eventCardScrollOffset_ -= wheel->delta * step;
+                if (eventCardScrollOffset_ < 0.f) eventCardScrollOffset_ = 0.f;
+                if (eventCardScrollOffset_ > eventCardScrollMax_) eventCardScrollOffset_ = eventCardScrollMax_;
+                return true;
+            }
+        }
+    } else if (shopRemovePickMode) {
+        if (auto const* wheel = ev.getIf<sf::Event::MouseWheelScrolled>()) {
+            if (shopDeckScrollMax_ > 0.f) {
+                const float step = std::max(14.f, eventCardScrollStep_);
+                shopDeckScrollOffset_ -= wheel->delta * step;
+                if (shopDeckScrollOffset_ < 0.f) shopDeckScrollOffset_ = 0.f;
+                if (shopDeckScrollOffset_ > shopDeckScrollMax_) shopDeckScrollOffset_ = shopDeckScrollMax_;
+                return true;
+            }
+        }
+    }
+
     if (ev.is<sf::Event::MouseButtonReleased>()) {
         auto const* rel = ev.getIf<sf::Event::MouseButtonReleased>();
-        if (rel && rel->button == sf::Mouse::Button::Left)
+        if (rel && rel->button == sf::Mouse::Button::Left) {
+            if (screen_ == EventShopRestScreen::Event && eventOptionPressedIndex_ >= 0 &&
+                eventOptionPressedIndex_ < static_cast<int>(eventOptionRects_.size())) {
+                if (eventOptionRects_[static_cast<std::size_t>(eventOptionPressedIndex_)].contains(mousePos)) {
+                    pendingEventOption_ = eventOptionPressedIndex_;
+                }
+            }
             eventOptionPressedIndex_ = -1;
+        }
         return false;
     }
     if (ev.is<sf::Event::MouseButtonPressed>()) {
@@ -180,11 +333,31 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
             for (size_t i = 0; i < eventOptionRects_.size(); ++i) {
                 if (eventOptionRects_[i].contains(mousePos)) {
                     eventOptionPressedIndex_ = static_cast<int>(i);
-                    pendingEventOption_ = static_cast<int>(i);
                     return true;
                 }
             }
         } else if (screen_ == EventShopRestScreen::Shop) {
+            if (shopLeaveButtonRect_.contains(mousePos)) {
+                pendingShopLeave_ = true;
+                return true;
+            }
+            if (shopRemovePickMode) {
+                for (size_t i = 0; i < shopRemoveRects_.size() && i < shopData_.deckForRemove.size(); ++i) {
+                    if (shopRemoveRects_[i].contains(mousePos)) {
+                        pendingShopRemoveInstance_ = shopData_.deckForRemove[i].instanceId;
+                        pendingShopRemove_ = true;
+                        return true;
+                    }
+                }
+                return false;
+            }
+            if (shopRemoveServiceRect_.contains(mousePos) &&
+                !shopData_.removeServiceSoldOut &&
+                !shopData_.removeServicePaid &&
+                shopData_.removeServicePrice > 0) {
+                pendingShopPayRemove_ = true;
+                return true;
+            }
             for (size_t i = 0; i < shopBuyRects_.size() && i < shopData_.forSale.size(); ++i) {
                 if (shopBuyRects_[i].contains(mousePos)) {
                     pendingShopBuyCard_ = shopData_.forSale[i].id;
@@ -192,10 +365,24 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                     return true;
                 }
             }
-            for (size_t i = 0; i < shopRemoveRects_.size() && i < shopData_.deckForRemove.size(); ++i) {
-                if (shopRemoveRects_[i].contains(mousePos)) {
-                    pendingShopRemoveInstance_ = shopData_.deckForRemove[i].instanceId;
-                    pendingShopRemove_ = true;
+            for (size_t i = 0; i < shopColorlessRects_.size() && i < shopData_.colorlessForSale.size(); ++i) {
+                if (shopColorlessRects_[i].contains(mousePos)) {
+                    pendingShopBuyCard_ = shopData_.colorlessForSale[i].id;
+                    pendingShopBuy_ = true;
+                    return true;
+                }
+            }
+            for (size_t i = 0; i < shopRelicRects_.size() && i < shopData_.relicsForSale.size(); ++i) {
+                if (shopRelicRects_[i].contains(mousePos)) {
+                    pendingShopRelicIndex_ = static_cast<int>(i);
+                    pendingShopRelic_ = true;
+                    return true;
+                }
+            }
+            for (size_t i = 0; i < shopPotionRects_.size() && i < shopData_.potionsForSale.size(); ++i) {
+                if (shopPotionRects_[i].contains(mousePos)) {
+                    pendingShopPotionIndex_ = static_cast<int>(i);
+                    pendingShopPotion_ = true;
                     return true;
                 }
             }
@@ -254,6 +441,10 @@ void EventShopRestUI::draw(sf::RenderWindow& window) {
     if (screen_ == EventShopRestScreen::None) return;
     if (screen_ == EventShopRestScreen::Rest && restBgLoaded_) {
         draw_texture_fit(window, restBgTexture_, sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_))));
+    } else if (screen_ == EventShopRestScreen::Shop && shopBgLoaded_) {
+        // 商店专用背景，整体压暗一档
+        draw_texture_fit(window, shopBgTexture_, sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_))),
+            sf::Color(158, 156, 162));
     } else if (eventBgLoaded_) {
         draw_texture_fit(window, eventBgTexture_, sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_))));
     }
@@ -283,6 +474,34 @@ bool EventShopRestUI::pollShopBuyCard(CardId& outCardId) {
     if (!pendingShopBuy_) return false;
     outCardId = pendingShopBuyCard_;
     pendingShopBuy_ = false;
+    return true;
+}
+
+bool EventShopRestUI::pollShopPayRemoveService() {
+    if (!pendingShopPayRemove_) return false;
+    pendingShopPayRemove_ = false;
+    return true;
+}
+
+bool EventShopRestUI::pollShopBuyRelic(int& outIndex) {
+    if (!pendingShopRelic_) return false;
+    outIndex = pendingShopRelicIndex_;
+    pendingShopRelic_ = false;
+    pendingShopRelicIndex_ = -1;
+    return true;
+}
+
+bool EventShopRestUI::pollShopBuyPotion(int& outIndex) {
+    if (!pendingShopPotion_) return false;
+    outIndex = pendingShopPotionIndex_;
+    pendingShopPotion_ = false;
+    pendingShopPotionIndex_ = -1;
+    return true;
+}
+
+bool EventShopRestUI::pollShopLeave() {
+    if (!pendingShopLeave_) return false;
+    pendingShopLeave_ = false;
     return true;
 }
 

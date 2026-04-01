@@ -30,10 +30,11 @@ public:
     /** 从 UTF-8 字符串设置事件展示（主流程从 Event 填充时用）；imagePath 为空则显示占位 */
     void setEventDataFromUtf8(const std::string& title, const std::string& description,
                               const std::vector<std::string>& optionTexts,
-                              const std::string& imagePath = "");
+                              const std::string& imagePath = "",
+                              const std::vector<std::string>& optionEffectTexts = {});
 
-    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，主流程在 get_event_result 后调用，用户点确定后 pollEventOption 返回 0 */
-    void setEventResultFromUtf8(const std::string& resultSummary);
+    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，可选传入 imagePath（支持 "__cardid:<id>"） */
+    void setEventResultFromUtf8(const std::string& resultSummary, const std::string& imagePath = "");
 
     /** 从 DataLayer::Event 填充事件展示（主流程用 EventEngine::get_current_event() 取得后传入） */
     void setEventDataFromEvent(const DataLayer::Event* event);
@@ -47,7 +48,15 @@ public:
     bool pollEventOption(int& outIndex);
     /** 是否选择了购买某张牌；若 true，outCardId 为卡牌 id */
     bool pollShopBuyCard(CardId& outCardId);
-    /** 是否选择了删除牌组中某张牌；若 true，outInstanceId 为实例 id */
+    /** 是否点击「净简」准备支付（由主流程扣费后设 removeServicePaid） */
+    bool pollShopPayRemoveService();
+    /** 是否购买遗物；若 true，outIndex 为 relicsForSale 下标 */
+    bool pollShopBuyRelic(int& outIndex);
+    /** 是否购买药剂；若 true，outIndex 为 potionsForSale 下标 */
+    bool pollShopBuyPotion(int& outIndex);
+    /** 是否点击边缘「离开」离开商店 */
+    bool pollShopLeave();
+    /** 是否选择了删除牌组中某张牌；若 true，outInstanceId 为实例 id（需已支付净简） */
     bool pollShopRemoveCard(InstanceId& outInstanceId);
     /** 是否选择了休息回血 */
     bool pollRestHeal();
@@ -82,6 +91,14 @@ private:
     bool eventIllustLoaded_ = false;
     sf::Texture restBgTexture_;
     bool restBgLoaded_ = false;
+    sf::Texture shopBgTexture_;
+    bool shopBgLoaded_ = false;
+    sf::Texture shopTitleTexture_;
+    bool shopTitleLoaded_ = false;
+    sf::Texture shopDeleteCardTexture_;
+    bool shopDeleteCardLoaded_ = false;
+    sf::Texture shopDeleteBgTexture_;
+    bool shopDeleteBgLoaded_ = false;
     sf::Texture restHealIconTexture_;
     bool restHealIconLoaded_ = false;
     sf::Texture restSmithIconTexture_;
@@ -95,8 +112,16 @@ private:
 
     // 选项/按钮矩形（按顺序），用于点击检测
     std::vector<sf::FloatRect> eventOptionRects_;
-    std::vector<sf::FloatRect> shopBuyRects_;   // 与 forSale 下标对应
-    std::vector<sf::FloatRect> shopRemoveRects_; // 与 deckForRemove 下标对应
+    std::vector<sf::FloatRect> shopBuyRects_;       // 与 forSale 下标对应
+    std::vector<sf::FloatRect> shopColorlessRects_; // 与 colorlessForSale 下标对应
+    std::vector<sf::FloatRect> shopRelicRects_;
+    std::vector<sf::FloatRect> shopPotionRects_;
+    sf::FloatRect shopRemoveServiceRect_;
+    sf::FloatRect shopLeaveButtonRect_;
+    std::vector<sf::FloatRect> shopRemoveRects_;   // 与 deckForRemove 下标对应
+    float shopDeckScrollOffset_ = 0.f;
+    float shopDeckScrollMax_ = 0.f;
+    sf::FloatRect shopDeckAreaRect_;
     sf::FloatRect restHealButton_;
     sf::FloatRect restUpgradeChoiceButton_;  // 「升级」大按钮（进入选牌前）
     sf::FloatRect restBackButton_;           // 升级列表中「返回」
@@ -105,11 +130,20 @@ private:
 
     int eventOptionPressedIndex_ = -1;  // 当前按下的事件选项下标（用于按下态绘制）
     int selectedEventOption_ = 0;        // 键盘焦点选项下标
+    float eventCardScrollOffset_ = 0.f;  // 事件“卡牌面板模式”滚动偏移
+    float eventCardScrollMax_ = 0.f;     // 当前可滚动最大偏移
+    float eventCardScrollStep_ = 42.f;   // 卡牌模式每档滚动步长（按行）
 
     // 待消费的选择（轮询一次即清空）
     int pendingEventOption_ = -1;
     CardId pendingShopBuyCard_;
     bool pendingShopBuy_ = false;
+    bool pendingShopPayRemove_ = false;
+    int pendingShopRelicIndex_ = -1;
+    bool pendingShopRelic_ = false;
+    int pendingShopPotionIndex_ = -1;
+    bool pendingShopPotion_ = false;
+    bool pendingShopLeave_ = false;
     InstanceId pendingShopRemoveInstance_ = -1;
     bool pendingShopRemove_ = false;
     bool pendingRestHeal_ = false;

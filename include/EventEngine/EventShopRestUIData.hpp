@@ -23,6 +23,8 @@ struct EventDisplayData {
     std::wstring title;
     std::wstring description;
     std::vector<std::wstring> optionTexts;
+    // 每个选项对应的“选后效果预览”，会在选项下方以红字单独显示
+    std::vector<std::wstring> optionEffectTexts;
     std::string imagePath;  // 可选，插图路径，空则显示占位
 };
 
@@ -33,17 +35,49 @@ struct ShopCardOffer {
     int price = 0;
 };
 
+/** 商店遗物槽位 */
+struct ShopRelicOffer {
+    std::string id;
+    std::wstring name;
+    int price = 0;
+};
+
+/** 商店药剂槽位 */
+struct ShopPotionOffer {
+    std::string id;
+    std::wstring name;
+    int price = 0;
+};
+
 /** 牌组中一张牌（用于商店删牌 / 休息升级时展示） */
 struct MasterDeckCardDisplay {
     InstanceId instanceId = 0;
+    CardId cardId;  // 用于复用战斗卡面渲染（可为空，表示仅有 cardName）
     std::wstring cardName;
 };
 
 /** 商店界面数据 */
 struct ShopDisplayData {
-    std::vector<ShopCardOffer> forSale;
-    std::vector<MasterDeckCardDisplay> deckForRemove;  // 当前牌组，供玩家选一张删除
+    std::vector<ShopCardOffer> forSale;              // 第一行：通常 5 张
+    /** 第二行左侧：对齐上排第 1、2 列的无色/特殊牌（仿 StS 下排两张） */
+    std::vector<ShopCardOffer> colorlessForSale;
+    std::vector<ShopRelicOffer> relicsForSale;       // 第二行中上：3 遗物
+    std::vector<ShopPotionOffer> potionsForSale;     // 第二行中下：3 灵液
+    std::vector<MasterDeckCardDisplay> deckForRemove;
+
     int playerGold = 0;
+    int playerCurrentHp = 0;
+    int playerMaxHp = 0;
+    int potionSlotsMax = 3;
+    int potionSlotsUsed = 0;
+    std::wstring chapterLine;
+    /** 顶栏左侧称谓，空则用「溯源者」 */
+    std::wstring playerTitle;
+
+    /** 净简服务：支付后可从牌组选一张移除；本趟商店用过后售罄 */
+    int removeServicePrice = 75;
+    bool removeServicePaid = false;
+    bool removeServiceSoldOut = false;
 };
 
 /** 休息界面数据 */

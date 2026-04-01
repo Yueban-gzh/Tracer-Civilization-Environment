@@ -249,8 +249,22 @@ static EventOption parse_option(const JsonValue& v) {
     if (const JsonValue* p = v.get_key("next")) opt.next = p->as_string();
     if (const JsonValue* p = v.get_key("result")) {
         if (p->is_object()) {
-            if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
-            if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            // 新版：result.effects（可携带多个效果）
+            if (const JsonValue* pe = p->get_key("effects")) {
+                if (pe->is_array()) {
+                    for (const JsonValue& ev : pe->arr) {
+                        if (!ev.is_object()) continue;
+                        EventEffect eff;
+                        if (const JsonValue* et = ev.get_key("type")) eff.type = et->as_string();
+                        if (const JsonValue* val = ev.get_key("value")) eff.value = val->as_int();
+                        if (!eff.type.empty()) opt.result.effects.push_back(std::move(eff));
+                    }
+                }
+            } else {
+                // 旧版：result.type + result.value
+                if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
+                if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            }
         }
     }
     return opt;
@@ -281,6 +295,9 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
         if (const JsonValue* p = v.get_key("image")) e.image = p->as_string();
+        if (const JsonValue* p = v.get_key("layer_min")) e.layer_min = p->as_int();
+        if (const JsonValue* p = v.get_key("layer_max")) e.layer_max = p->as_int();
+        if (const JsonValue* p = v.get_key("weight")) e.weight = p->as_int();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插
@@ -319,6 +336,64 @@ const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
     auto it = events_.find(id);
     if (it == events_.end()) return nullptr;
     return &it->second;
+}
+
+std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<EventId> out;
+    out.reserve(events_.size());
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (ok) out.push_back(id);
+    }
+
+    // 为了可复现与 UI 好看：按 id 排序
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<RootEventCandidate> DataLayerImpl::get_root_event_candidates_for_layer(int layer) const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<RootEventCandidate> out;
+    out.reserve(events_.size());
+
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (!ok) continue;
+
+        const Event& e = kv.second;
+        if (layer < e.layer_min || layer > e.layer_max) continue;
+        const int w = e.weight <= 0 ? 1 : e.weight;
+        out.push_back(RootEventCandidate{ e.id, w });
+    }
+
+    // 保证可复现：按 id 排序
+    std::sort(out.begin(), out.end(), [](const RootEventCandidate& a, const RootEventCandidate& b) {
+        return a.id < b.id;
+    });
+    return out;
 }
 
 int DataLayerImpl::rarity_order(tce::Rarity r) {

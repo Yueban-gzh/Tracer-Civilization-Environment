@@ -77,7 +77,8 @@ inline bool try_load_texture(sf::Texture& tex, const std::vector<std::string>& c
     return false;
 }
 
-inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest) {
+inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
+    sf::Color tint = sf::Color::White) {
     if (tex.getSize().x == 0 || tex.getSize().y == 0) return;
     sf::Sprite s(tex);
     const sf::Vector2u sz = tex.getSize();
@@ -85,6 +86,25 @@ inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, c
     const float sy = dest.size.y / static_cast<float>(sz.y);
     s.setPosition(dest.position);
     s.setScale(sf::Vector2f(sx, sy));
+    s.setColor(tint);
+    window.draw(s);
+}
+
+/** 在 dest 内居中绘制纹理，保持原始宽高比（letterbox / pillarbox） */
+inline void draw_texture_contain(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
+    sf::Color tint = sf::Color::White) {
+    if (tex.getSize().x == 0 || tex.getSize().y == 0) return;
+    sf::Sprite s(tex);
+    const sf::Vector2u sz = tex.getSize();
+    const float tw = static_cast<float>(sz.x);
+    const float th = static_cast<float>(sz.y);
+    const float scale = std::min(dest.size.x / tw, dest.size.y / th);
+    s.setScale(sf::Vector2f(scale, scale));
+    const float drawnW = tw * scale;
+    const float drawnH = th * scale;
+    s.setPosition(sf::Vector2f(dest.position.x + (dest.size.x - drawnW) * 0.5f,
+        dest.position.y + (dest.size.y - drawnH) * 0.5f));
+    s.setColor(tint);
     window.draw(s);
 }
 
@@ -135,19 +155,7 @@ inline void draw_wrapped_text(sf::RenderTarget& target, const sf::Font& font,
     if (!current.isEmpty() && static_cast<int>(lines.size()) < maxLines)
         lines.push_back(current);
     if (lines.empty()) return;
-    std::size_t joinedLen = 0;
-    for (const auto& l : lines) joinedLen += l.getSize();
-    if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {
-        sf::String& last = lines.back();
-        const sf::String ell = sf::String(L"\u2026");
-        while (true) {
-            measure.setString(last + ell);
-            if (measure.getLocalBounds().size.x <= maxWidth) break;
-            if (last.isEmpty()) break;
-            last.erase(last.getSize() - 1, 1);
-        }
-        last += ell;
-    }
+    // 不在文本尾部强制追加省略号：让超出高度/行数时也只“自然换行”，避免出现 "...".
     for (std::size_t li = 0; li < lines.size(); ++li) {
         sf::Text t(font, lines[li], charSize);
         t.setFillColor(color);

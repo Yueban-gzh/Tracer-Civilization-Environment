@@ -8,6 +8,7 @@
  */
 
 #include <SFML/Graphics.hpp>
+#include <algorithm>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -28,11 +29,43 @@ static void runMapUITest(sf::RenderWindow& window);
 
 // 将事件结果转为展示文案（用于结果页）
 static std::string eventResultToSummary(const tce::EventEngine::EventResult& res) {
-    if (res.type == "gold") return "获得了 " + std::to_string(res.value) + " 金币。";
-    if (res.type == "heal") return "恢复了 " + std::to_string(res.value) + " 点生命。";
-    if (res.type == "card_reward") return "获得了一张新卡牌（选牌由主流程处理）。";
-    if (res.type == "none") return "无事发生。";
-    return "事件结束。";
+    auto effectToSummary = [](const DataLayer::EventEffect& eff) {
+        const int v = eff.value;
+        if (eff.type == "gold") {
+            if (v >= 0) return std::string("获得了 ") + std::to_string(v) + " 金币。";
+            return std::string("失去了 ") + std::to_string(-v) + " 金币。";
+        }
+        if (eff.type == "heal") {
+            if (v >= 0) return std::string("恢复了 ") + std::to_string(v) + " 点生命。";
+            return std::string("失去了 ") + std::to_string(-v) + " 点生命。";
+        }
+        if (eff.type == "max_hp") {
+            if (v >= 0) return std::string("最大生命值提升了 ") + std::to_string(v) + "。";
+            return std::string("最大生命值降低了 ") + std::to_string(-v) + "。";
+        }
+        if (eff.type == "card_reward") return std::string("获得了 ") + std::to_string(v) + " 张新卡牌。";
+        if (eff.type == "card_reward_choose") return std::string("可选获得 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "remove_card") return std::string("移除了牌组中的 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "remove_card_choose") return std::string("自选移除牌组中的 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
+        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "upgrade_random") return std::string("升级了 ") + std::to_string(v) + " 张卡牌。";
+        if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
+        if (eff.type == "none") return std::string("无事发生。");
+        return std::string("事件结算：") + eff.type;
+    };
+
+    if (!res.effects.empty()) {
+        std::string out;
+        for (size_t i = 0; i < res.effects.size(); ++i) {
+            if (i) out += " ";
+            out += effectToSummary(res.effects[i]);
+        }
+        return out.empty() ? std::string("无事发生。") : out;
+    }
+
+    DataLayer::EventEffect eff{ res.type, res.value };
+    return effectToSummary(eff);
 }
 
 // ---------- 事件/商店/休息 UI 测试（真实事件数据：DataLayer + EventEngine）----------
@@ -95,8 +128,28 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
                     ui.setScreen(EventShopRestScreen::Shop);
                     ShopDisplayData shop;
                     shop.playerGold = 99;
-                    shop.forSale = { { "iron_wave", L"铁斩波", 50 }, { "cleave", L"顺劈斩", 60 } };
-                    shop.deckForRemove = { { 1, L"打击" }, { 2, L"防御" } };
+                    shop.playerCurrentHp = 72;
+                    shop.playerMaxHp = 80;
+                    shop.potionSlotsMax = 3;
+                    shop.potionSlotsUsed = 1;
+                    shop.playerTitle = L"稷下学子";
+                    shop.chapterLine = L"先秦溯源 · 第 6 层";
+                    shop.removeServicePrice = 75;
+                    shop.forSale = {
+                        { "iron_wave", L"铁斩波", 50 }, { "cleave", L"顺劈斩", 60 }, { "shrug_it_off", L"耸肩无视", 45 },
+                        { "quick_slash", L"快斩", 55 }, { "strike", L"打击", 40 },
+                    };
+                    shop.colorlessForSale = {
+                        { "card_001", L"与子同袍", 85 }, { "card_007", L"雨雪霏霏", 55 },
+                    };
+                    shop.relicsForSale = {
+                        { "vajra", L"金刚杵", 180 }, { "anchor", L"船锚", 160 }, { "strawberry", L"草莓", 120 },
+                    };
+                    shop.potionsForSale = {
+                        { "block_potion", L"砌墙灵液", 40 }, { "strength_potion", L"蛮力灵液", 45 },
+                        { "poison_potion", L"淬毒灵液", 50 },
+                    };
+                    shop.deckForRemove = { { 1, "strike", L"打击" }, { 2, "defend", L"防御" } };
                     ui.setShopData(shop);
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Num3 || key->scancode == sf::Keyboard::Scancode::Numpad3) {
@@ -104,7 +157,7 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
                     ui.setScreen(EventShopRestScreen::Rest);
                     RestDisplayData rest;
                     rest.healAmount = 20;
-                    rest.deckForUpgrade = { { 1, L"打击" }, { 2, L"铁斩波" } };
+                    rest.deckForUpgrade = { { 1, "strike", L"打击" }, { 2, "cleave", L"铁斩波" } };
                     ui.setRestData(rest);
                 }
             }
@@ -129,6 +182,11 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
         }
         CardId outCardId;
         if (ui.pollShopBuyCard(outCardId)) std::cout << "[EventShopRestUI] 购买卡牌: " << outCardId << std::endl;
+        if (ui.pollShopPayRemoveService()) std::cout << "[EventShopRestUI] 净简付费" << std::endl;
+        int ri = -1, pi = -1;
+        if (ui.pollShopBuyRelic(ri)) std::cout << "[EventShopRestUI] 购买遗物: " << ri << std::endl;
+        if (ui.pollShopBuyPotion(pi)) std::cout << "[EventShopRestUI] 购买灵液: " << pi << std::endl;
+        if (ui.pollShopLeave()) std::cout << "[EventShopRestUI] 离开商店" << std::endl;
         InstanceId outInstId;
         if (ui.pollShopRemoveCard(outInstId)) std::cout << "[EventShopRestUI] 删除牌实例: " << outInstId << std::endl;
         if (ui.pollRestHeal()) std::cout << "[EventShopRestUI] 选择休息回血" << std::endl;
