@@ -1319,7 +1319,7 @@ bool GameFlowController::runShopScene() {
             }
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
-                    inScene = false;
+                    if (!ui.tryDismissShopRemoveConfirm()) inScene = false;
                 }
             }
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
@@ -1487,7 +1487,7 @@ bool GameFlowController::runRestScene() {
             }
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
-                    inScene = false;
+                    if (!ui.tryDismissRestForgeUpgradeConfirm()) inScene = false;
                 }
             }
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
@@ -1501,6 +1501,7 @@ bool GameFlowController::runRestScene() {
 
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
+        ui.syncRestForgeScrollbarDrag(mousePos);
 
         if (ui.pollRestHeal()) {
             playerState_.currentHp = std::min(playerState_.maxHp, playerState_.currentHp + rest.healAmount);

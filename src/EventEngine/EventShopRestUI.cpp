@@ -4,6 +4,7 @@
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
 #include "DataLayer/DataTypes.h"
+#include "DataLayer/DataLayer.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
@@ -15,6 +16,13 @@
 
 namespace tce {
 using namespace esr_detail;
+
+namespace {
+bool rest_forge_card_upgradable(const CardId& id) {
+    if (id.empty() || id.back() == '+') return false;
+    return get_card_by_id(id + "+") != nullptr;
+}
+} // namespace
 
 EventShopRestUI::EventShopRestUI(unsigned width, unsigned height)
     : width_(width), height_(height) {
@@ -96,6 +104,14 @@ void EventShopRestUI::setScreen(EventShopRestScreen screen) {
     shopDeckScrollMax_ = 0.f;
     pendingRestHeal_ = false;
     pendingRestUpgrade_ = false;
+    restDeckPickScrollOffset_ = 0.f;
+    restDeckPickScrollMax_ = 0.f;
+    restForgeViewUpgrade_ = false;
+    restForgeScrollbarDragging_ = false;
+    restForgeUpgradeConfirmOpen_ = false;
+    restForgeConfirmInstanceId_ = 0;
+    shopRemoveConfirmOpen_ = false;
+    shopRemoveConfirmInstanceId_ = 0;
 }
 
 void EventShopRestUI::setEventData(const EventDisplayData& data) {
@@ -257,11 +273,19 @@ void EventShopRestUI::setShopData(const ShopDisplayData& data) {
     shopRemoveRects_.clear();
     shopDeckScrollOffset_ = 0.f;
     shopDeckScrollMax_ = 0.f;
+    shopRemoveConfirmOpen_ = false;
+    shopRemoveConfirmInstanceId_ = 0;
 }
 
 void EventShopRestUI::setRestData(const RestDisplayData& data) {
     restData_ = data;
     restUpgradeRects_.clear();
+    restDeckPickScrollOffset_ = 0.f;
+    restDeckPickScrollMax_ = 0.f;
+    restForgeViewUpgrade_ = false;
+    restForgeScrollbarDragging_ = false;
+    restForgeUpgradeConfirmOpen_ = false;
+    restForgeConfirmInstanceId_ = 0;
 }
 
 void EventShopRestUI::setMousePosition(sf::Vector2f pos) {
@@ -288,6 +312,14 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
     const bool shopRemovePickMode =
         (screen_ == EventShopRestScreen::Shop && shopData_.removeServicePaid && !shopData_.removeServiceSoldOut);
 
+    if (ev.is<sf::Event::MouseMoved>()) {
+        if (screen_ == EventShopRestScreen::Rest && restShowUpgradeList_ && restForgeScrollbarDragging_ &&
+            !restForgeUpgradeConfirmOpen_) {
+            syncRestForgeScrollbarDrag(mousePos);
+            return true;
+        }
+    }
+
     if (screen_ == EventShopRestScreen::Event) {
         if (auto const* wheel = ev.getIf<sf::Event::MouseWheelScrolled>()) {
             const bool cardPickMode = (eventData_.title == L"择术" || eventData_.title == L"断舍" || eventData_.title == L"精修");
@@ -300,7 +332,7 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 return true;
             }
         }
-    } else if (shopRemovePickMode) {
+    } else if (shopRemovePickMode && !shopRemoveConfirmOpen_) {
         if (auto const* wheel = ev.getIf<sf::Event::MouseWheelScrolled>()) {
             if (shopDeckScrollMax_ > 0.f) {
                 const float step = std::max(14.f, eventCardScrollStep_);
@@ -310,11 +342,22 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 return true;
             }
         }
+    } else if (screen_ == EventShopRestScreen::Rest && restShowUpgradeList_ && !restForgeUpgradeConfirmOpen_) {
+        if (auto const* wheel = ev.getIf<sf::Event::MouseWheelScrolled>()) {
+            if (restDeckPickScrollMax_ > 0.f) {
+                const float step = std::max(14.f, eventCardScrollStep_);
+                restDeckPickScrollOffset_ -= wheel->delta * step;
+                if (restDeckPickScrollOffset_ < 0.f) restDeckPickScrollOffset_ = 0.f;
+                if (restDeckPickScrollOffset_ > restDeckPickScrollMax_) restDeckPickScrollOffset_ = restDeckPickScrollMax_;
+                return true;
+            }
+        }
     }
 
     if (ev.is<sf::Event::MouseButtonReleased>()) {
         auto const* rel = ev.getIf<sf::Event::MouseButtonReleased>();
         if (rel && rel->button == sf::Mouse::Button::Left) {
+            restForgeScrollbarDragging_ = false;
             if (screen_ == EventShopRestScreen::Event && eventOptionPressedIndex_ >= 0 &&
                 eventOptionPressedIndex_ < static_cast<int>(eventOptionRects_.size())) {
                 if (eventOptionRects_[static_cast<std::size_t>(eventOptionPressedIndex_)].contains(mousePos)) {
@@ -337,6 +380,21 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 }
             }
         } else if (screen_ == EventShopRestScreen::Shop) {
+            if (shopRemovePickMode && shopRemoveConfirmOpen_) {
+                if (shopRemoveConfirmOkRect_.contains(mousePos)) {
+                    pendingShopRemoveInstance_ = shopRemoveConfirmInstanceId_;
+                    pendingShopRemove_ = true;
+                    shopRemoveConfirmOpen_ = false;
+                    shopRemoveConfirmInstanceId_ = 0;
+                    return true;
+                }
+                if (shopRemoveConfirmBackRect_.contains(mousePos)) {
+                    shopRemoveConfirmOpen_ = false;
+                    shopRemoveConfirmInstanceId_ = 0;
+                    return true;
+                }
+                return true;
+            }
             if (shopLeaveButtonRect_.contains(mousePos)) {
                 pendingShopLeave_ = true;
                 return true;
@@ -344,8 +402,8 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
             if (shopRemovePickMode) {
                 for (size_t i = 0; i < shopRemoveRects_.size() && i < shopData_.deckForRemove.size(); ++i) {
                     if (shopRemoveRects_[i].contains(mousePos)) {
-                        pendingShopRemoveInstance_ = shopData_.deckForRemove[i].instanceId;
-                        pendingShopRemove_ = true;
+                        shopRemoveConfirmInstanceId_ = shopData_.deckForRemove[i].instanceId;
+                        shopRemoveConfirmOpen_ = true;
                         return true;
                     }
                 }
@@ -387,15 +445,64 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 }
             }
         } else if (screen_ == EventShopRestScreen::Rest) {
+            if (restShowUpgradeList_ && restForgeUpgradeConfirmOpen_) {
+                if (restForgeConfirmOkRect_.contains(mousePos)) {
+                    pendingRestUpgradeInstance_ = restForgeConfirmInstanceId_;
+                    pendingRestUpgrade_ = true;
+                    restForgeUpgradeConfirmOpen_ = false;
+                    restForgeConfirmInstanceId_ = 0;
+                    return true;
+                }
+                if (restBackButton_.contains(mousePos)) {
+                    restForgeUpgradeConfirmOpen_ = false;
+                    restForgeConfirmInstanceId_ = 0;
+                    return true;
+                }
+                if (restForgeViewUpgradeToggleRect_.contains(mousePos)) {
+                    restForgeViewUpgrade_ = !restForgeViewUpgrade_;
+                    return true;
+                }
+                return true;
+            }
             if (restShowUpgradeList_) {
+                if (restForgeScrollbarThumbRect_.contains(mousePos) && restDeckPickScrollMax_ > 0.f) {
+                    restForgeScrollbarDragging_ = true;
+                    restForgeScrollbarGrabY_ = mousePos.y - restForgeScrollbarThumbRect_.position.y;
+                    return true;
+                }
+                if (restForgeScrollbarTrackRect_.contains(mousePos) && restDeckPickScrollMax_ > 0.f &&
+                    !restForgeScrollbarThumbRect_.contains(mousePos)) {
+                    const float trackTop = restForgeScrollbarTrackRect_.position.y;
+                    const float trackH = restForgeScrollbarTrackRect_.size.y;
+                    const float thumbH = restForgeScrollbarThumbH_;
+                    const float maxT = std::max(0.f, trackH - thumbH);
+                    if (maxT > 1.f) {
+                        float thumbTop = mousePos.y - thumbH * 0.5f;
+                        if (thumbTop < trackTop) thumbTop = trackTop;
+                        if (thumbTop > trackTop + maxT) thumbTop = trackTop + maxT;
+                        restDeckPickScrollOffset_ = ((thumbTop - trackTop) / maxT) * restDeckPickScrollMax_;
+                    }
+                    return true;
+                }
+                if (restForgeViewUpgradeToggleRect_.contains(mousePos)) {
+                    restForgeViewUpgrade_ = !restForgeViewUpgrade_;
+                    return true;
+                }
                 if (restBackButton_.contains(mousePos)) {
                     restShowUpgradeList_ = false;
+                    restForgeScrollbarDragging_ = false;
+                    restForgeUpgradeConfirmOpen_ = false;
+                    restForgeConfirmInstanceId_ = 0;
                     return true;
                 }
                 for (size_t i = 0; i < restUpgradeRects_.size() && i < restData_.deckForUpgrade.size(); ++i) {
                     if (restUpgradeRects_[i].contains(mousePos)) {
-                        pendingRestUpgradeInstance_ = restData_.deckForUpgrade[i].instanceId;
-                        pendingRestUpgrade_ = true;
+                        const auto& pick = restData_.deckForUpgrade[i];
+                        if (rest_forge_card_upgradable(pick.cardId)) {
+                            restForgeConfirmInstanceId_ = pick.instanceId;
+                            restForgeUpgradeConfirmOpen_ = true;
+                            restForgeScrollbarDragging_ = false;
+                        }
                         return true;
                     }
                 }
@@ -406,6 +513,10 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 }
                 if (restUpgradeChoiceButton_.contains(mousePos)) {
                     restShowUpgradeList_ = true;
+                    restDeckPickScrollOffset_ = 0.f;
+                    restForgeViewUpgrade_ = false;
+                    restForgeUpgradeConfirmOpen_ = false;
+                    restForgeConfirmInstanceId_ = 0;
                     return true;
                 }
             }
@@ -523,6 +634,36 @@ bool EventShopRestUI::pollRestUpgradeCard(InstanceId& outInstanceId) {
     outInstanceId = pendingRestUpgradeInstance_;
     pendingRestUpgrade_ = false;
     return true;
+}
+
+bool EventShopRestUI::tryDismissRestForgeUpgradeConfirm() {
+    if (screen_ != EventShopRestScreen::Rest || !restShowUpgradeList_ || !restForgeUpgradeConfirmOpen_) return false;
+    restForgeUpgradeConfirmOpen_ = false;
+    restForgeConfirmInstanceId_ = 0;
+    return true;
+}
+
+bool EventShopRestUI::tryDismissShopRemoveConfirm() {
+    const bool inRemovePickMode =
+        (screen_ == EventShopRestScreen::Shop && shopData_.removeServicePaid && !shopData_.removeServiceSoldOut);
+    if (!inRemovePickMode || !shopRemoveConfirmOpen_) return false;
+    shopRemoveConfirmOpen_ = false;
+    shopRemoveConfirmInstanceId_ = 0;
+    return true;
+}
+
+void EventShopRestUI::syncRestForgeScrollbarDrag(const sf::Vector2f& mousePos) {
+    if (restForgeUpgradeConfirmOpen_) return;
+    if (!restForgeScrollbarDragging_ || screen_ != EventShopRestScreen::Rest || !restShowUpgradeList_) return;
+    const float trackTop = restForgeScrollbarTrackRect_.position.y;
+    const float trackH = restForgeScrollbarTrackRect_.size.y;
+    const float thumbH = restForgeScrollbarThumbH_;
+    if (restDeckPickScrollMax_ <= 0.f || trackH <= thumbH) return;
+    const float maxT = trackH - thumbH;
+    float thumbTop = mousePos.y - restForgeScrollbarGrabY_;
+    if (thumbTop < trackTop) thumbTop = trackTop;
+    if (thumbTop > trackTop + maxT) thumbTop = trackTop + maxT;
+    restDeckPickScrollOffset_ = ((thumbTop - trackTop) / maxT) * restDeckPickScrollMax_;
 }
 
 } // namespace tce

@@ -166,6 +166,7 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
         }
         sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         ui.setMousePosition(mousePos);
+        ui.syncRestForgeScrollbarDrag(mousePos);
 
         int outIndex = -1;
         if (ui.pollEventOption(outIndex)) {
