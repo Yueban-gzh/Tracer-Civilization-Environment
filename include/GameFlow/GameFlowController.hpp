@@ -38,7 +38,7 @@ private:
     bool runRestScene();
     void resolveRest();
     void resolveMerchant();
-    void resolveTreasure();
+    bool runTreasureScene();
 
     int firstAliveMonsterIndex(const BattleState& state) const;
     void drawHud();

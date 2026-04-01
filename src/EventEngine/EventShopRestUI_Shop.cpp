@@ -133,23 +133,154 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
     window.draw(priceText);
 }
 
-// 战斗系统卡面（复用 StS 风格）：无价签、不绘制描述，用于商店删牌选择页
+// 战斗系统卡面（复用 StS 风格）：无价签、不绘制描述，用于商店删牌选择页 / 休息锻造
+sf::String type_label_for_card(const CardData* cd) {
+    if (!cd) return sf::String(L"招式");
+    switch (cd->cardType) {
+    case CardType::Attack: return sf::String(L"攻击");
+    case CardType::Skill: return sf::String(L"技能");
+    case CardType::Power: return sf::String(L"能力");
+    case CardType::Status: return sf::String(L"状态");
+    case CardType::Curse: return sf::String(L"诅咒");
+    default: return sf::String(L"招式");
+    }
+}
+
 void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& font,
     const sf::Vector2f& mousePos, CardId cid, const std::wstring& fallbackName,
-    const sf::FloatRect& rect, bool& outHover) {
+    const sf::FloatRect& rect, bool& outHover, bool forgeOrangeHover = false, bool drawDescription = false,
+    bool upgradedGreenStyle = false, bool forceGoldBorder = false) {
     const CardData* cd = get_card_by_id(cid);
     outHover = rect.contains(mousePos);
 
     const sf::Color borderCol = cd ? rarity_outline(cd->rarity) : sf::Color(160, 150, 140);
+    const bool forgeGoldOn = forgeOrangeHover && (outHover || forceGoldBorder);
+    if (forgeGoldOn) {
+        sf::RectangleShape outer(sf::Vector2f(rect.size.x + 10.f, rect.size.y + 10.f));
+        outer.setPosition(sf::Vector2f(rect.position.x - 5.f, rect.position.y - 5.f));
+        outer.setFillColor(sf::Color::Transparent);
+        outer.setOutlineColor(sf::Color(255, 150, 70, 140));
+        outer.setOutlineThickness(4.f);
+        window.draw(outer);
+    }
     sf::RectangleShape bg(rect.size);
     bg.setPosition(rect.position);
     bg.setFillColor(sf::Color(55, 50, 48));
-    bg.setOutlineColor(outHover ? sf::Color(255, 230, 160) : borderCol);
-    bg.setOutlineThickness(outHover ? 2.5f : 2.f);
+    if (forgeGoldOn) {
+        bg.setOutlineColor(sf::Color(255, 200, 110));
+        bg.setOutlineThickness(4.f);
+    } else {
+        bg.setOutlineColor(outHover ? sf::Color(255, 230, 160) : borderCol);
+        bg.setOutlineThickness(outHover ? 2.5f : 2.f);
+    }
     window.draw(bg);
 
     const float w = rect.size.x;
     const float h = rect.size.y;
+
+    // 与 BattleUI 手牌卡一致：基准 190×300，整体按比例缩放（标题/立绘/类型/描述/费用字号同战斗）
+    if (drawDescription) {
+        constexpr float kBattleCardW = 190.f;
+        constexpr float kBattleCardH = 300.f;
+        const float s = std::max(0.18f, std::min(w / kBattleCardW, h / kBattleCardH));
+        const float pad = 4.f * s;
+        const float innerL = rect.position.x + pad;
+        const float innerT = rect.position.y + pad;
+        const float innerW = w - 2.f * pad;
+
+        const float titleY = innerT + 24.f * s;
+        const float titleH = 32.f * s;
+        sf::RectangleShape titleBar(sf::Vector2f(std::max(4.f, innerW - 16.f * s), titleH));
+        titleBar.setPosition(sf::Vector2f(innerL + 8.f * s, titleY));
+        titleBar.setFillColor(sf::Color(72, 68, 65));
+        titleBar.setOutlineColor(sf::Color(90, 85, 82));
+        titleBar.setOutlineThickness(1.f);
+        window.draw(titleBar);
+
+        const float artTop = titleY + titleH + 4.f * s;
+        const float artH = 98.f * s;
+        const float chop12 = 12.f * s;
+        const float chop10 = 10.f * s;
+        sf::ConvexShape artPanel;
+        artPanel.setPointCount(8);
+        artPanel.setPoint(0, sf::Vector2f(innerL, artTop));
+        artPanel.setPoint(1, sf::Vector2f(innerL + innerW, artTop));
+        artPanel.setPoint(2, sf::Vector2f(innerL + innerW, artTop + artH - chop12));
+        artPanel.setPoint(3, sf::Vector2f(innerL + innerW * 0.75f, artTop + artH));
+        artPanel.setPoint(4, sf::Vector2f(innerL + innerW * 0.5f, artTop + artH - chop10));
+        artPanel.setPoint(5, sf::Vector2f(innerL + innerW * 0.25f, artTop + artH));
+        artPanel.setPoint(6, sf::Vector2f(innerL, artTop + artH - chop12));
+        artPanel.setPoint(7, sf::Vector2f(innerL, artTop));
+        artPanel.setFillColor(sf::Color(120, 45, 42));
+        artPanel.setOutlineColor(sf::Color(100, 38, 35));
+        artPanel.setOutlineThickness(1.f);
+        window.draw(artPanel);
+
+        const float typeY = artTop + artH + 6.f * s;
+        const float typeH = 26.f * s;
+        sf::RectangleShape typeBar(sf::Vector2f(std::max(4.f, innerW - 24.f * s), typeH));
+        typeBar.setPosition(sf::Vector2f(innerL + 12.f * s, typeY));
+        typeBar.setFillColor(sf::Color(72, 68, 65));
+        typeBar.setOutlineColor(sf::Color(90, 85, 82));
+        typeBar.setOutlineThickness(1.f);
+        window.draw(typeBar);
+
+        if (cd && cd->cost != -2) {
+            const float costR = 22.f * s;
+            const float costCx = innerL + costR - 10.f * s;
+            const float costCy = innerT + costR - 10.f * s;
+            sf::CircleShape costCircle(costR);
+            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
+            costCircle.setFillColor(sf::Color(200, 55, 50));
+            costCircle.setOutlineColor(sf::Color(255, 190, 90));
+            costCircle.setOutlineThickness(2.f);
+            window.draw(costCircle);
+            sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
+            const unsigned costFont = std::max(8u, static_cast<unsigned>(std::round(26.f * s)));
+            sf::Text costText(font, costStr, costFont);
+            costText.setFillColor(sf::Color::White);
+            const sf::FloatRect cb = costText.getLocalBounds();
+            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
+            costText.setPosition(sf::Vector2f(costCx, costCy));
+            window.draw(costText);
+        }
+
+        sf::String cardName;
+        if (cd && !cd->name.empty())
+            cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
+        else
+            cardName = sf::String(fallbackName);
+        const unsigned nameFont = std::max(8u, static_cast<unsigned>(std::round(20.f * s)));
+        sf::Text nameText(font, cardName, nameFont);
+        nameText.setFillColor(upgradedGreenStyle ? sf::Color(95, 220, 130) : sf::Color::White);
+        const sf::FloatRect nb = nameText.getLocalBounds();
+        nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
+        nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, titleY + titleH * 0.5f));
+        window.draw(nameText);
+
+        const unsigned typeFont = std::max(8u, static_cast<unsigned>(std::round(16.f * s)));
+        sf::Text typeText(font, type_label_for_card(cd), typeFont);
+        typeText.setFillColor(upgradedGreenStyle ? sf::Color(140, 235, 175) : sf::Color::White);
+        const sf::FloatRect tb = typeText.getLocalBounds();
+        typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+        typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeY + typeH * 0.5f));
+        window.draw(typeText);
+
+        if (cd && !cd->description.empty()) {
+            sf::String descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
+            const float descX = innerL + 12.f * s;
+            const float descY = typeY + typeH + 14.f * s;
+            const float descMaxW = std::max(8.f, innerW - 24.f * s);
+            const float descMaxH = std::max(4.f, (rect.position.y + h) - descY - 14.f * s);
+            const unsigned descFontSz = std::max(8u, static_cast<unsigned>(std::round(15.f * s)));
+            const sf::Color descCol =
+                upgradedGreenStyle ? sf::Color(130, 235, 175) : sf::Color(240, 238, 235);
+            draw_wrapped_text(window, font, descStr, descFontSz, sf::Vector2f(descX, descY), descMaxW, descMaxH,
+                descCol);
+        }
+        return;
+    }
+
     const float pad = 5.f;
     const float innerL = rect.position.x + pad;
     const float innerT = rect.position.y + pad;
@@ -197,7 +328,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
     nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 4.f + titleH * 0.5f));
     window.draw(nameText);
 
-    sf::Text typeText(font, sf::String(L"招式"), static_cast<unsigned>(std::max(9.f, h * 0.042f)));
+    sf::Text typeText(font, type_label_for_card(cd), static_cast<unsigned>(std::max(9.f, h * 0.042f)));
     typeText.setFillColor(sf::Color(220, 215, 205));
     const sf::FloatRect tb = typeText.getLocalBounds();
     typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
@@ -260,6 +391,95 @@ void draw_icon_offer(sf::RenderWindow& window, const sf::Font& font, const sf::V
 }
 
 } // namespace
+
+void EventShopRestUI::drawMasterDeckCardPickGrid(sf::RenderWindow& window,
+    const std::vector<MasterDeckCardDisplay>& deck, const sf::String& tipText, bool drawTipLine, float contentLeft,
+    float contentW, float regionTop, float regionBottom, float clipTop, float clipBottom, float scale,
+    unsigned bodySize, float layoutW, float layoutH, float& scrollOffset, float& scrollMax, float& cardScrollStep,
+    std::vector<sf::FloatRect>& outHitRects, sf::FloatRect& outListViewportRect, bool previewUpgrade,
+    bool forgeOrangeHover, bool showCardDescription) {
+    constexpr float kCardAspect = 300.f / 190.f;
+    float listTop = regionTop;
+    if (drawTipLine && !tipText.isEmpty()) {
+        sf::Text tip(fontForText(), tipText, bodySize);
+        tip.setFillColor(sf::Color(236, 227, 206));
+        tip.setOutlineColor(sf::Color(20, 18, 24));
+        tip.setOutlineThickness(1.f);
+        tip.setPosition(sf::Vector2f(contentLeft + 4.f, regionTop));
+        window.draw(tip);
+        listTop = regionTop + std::max(20.f, static_cast<float>(fontForText().getLineSpacing(bodySize)) + 8.f);
+    }
+    const float listTopClamped = std::max(listTop, clipTop + 10.f * scale);
+    const float listBottom = std::min(regionBottom, clipBottom - 10.f * scale);
+    const float listH = std::max(50.f, listBottom - listTopClamped);
+    outListViewportRect = sf::FloatRect(sf::Vector2f(contentLeft, listTopClamped), sf::Vector2f(contentW, listH));
+
+    constexpr int kCols = 5;
+    const float sidePadX = 18.f * scale;
+    const float gapX = 16.f * scale;
+    const float gapY = 14.f * scale;
+    const float baseTileW = (contentW - sidePadX * 2.f - gapX * (kCols - 1)) / static_cast<float>(kCols);
+    const float shrinkMul = showCardDescription ? 0.86f : 0.80f;
+    const float tileW = std::max(62.f, baseTileW * shrinkMul);
+    const float tileH = tileW * kCardAspect;
+    const int n = static_cast<int>(deck.size());
+    const int rows = (n + kCols - 1) / kCols;
+    const float totalH = rows > 0 ? (rows * tileH + (rows - 1) * gapY) : 0.f;
+    scrollMax = std::max(0.f, totalH - listH);
+    if (scrollOffset > scrollMax) scrollOffset = scrollMax;
+    if (scrollOffset < 0.f) scrollOffset = 0.f;
+    cardScrollStep = tileH + gapY;
+    outHitRects.assign(deck.size(), sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(0.f, 0.f)));
+
+    const float lw = std::max(1.f, layoutW);
+    const float lh = std::max(1.f, layoutH);
+    const float scissorOutY =
+        (forgeOrangeHover || showCardDescription) ? 10.f : 0.f;
+    const float scTopPx = std::max(0.f, listTopClamped - scissorOutY);
+    const float scBotPx = std::min(lh, listTopClamped + listH + scissorOutY);
+    const float scHPx = std::max(1.f, scBotPx - scTopPx);
+
+    const sf::View viewBeforeCards = window.getView();
+    if (listH > 1.f && contentW > 1.f) {
+        sf::View clipView = window.getDefaultView();
+        clipView.setScissor(
+            sf::FloatRect(sf::Vector2f(contentLeft / lw, scTopPx / lh), sf::Vector2f(contentW / lw, scHPx / lh)));
+        window.setView(clipView);
+    }
+
+    const float viewportBottom = listTopClamped + listH;
+    const float cullOverhang = forgeOrangeHover ? 8.f : 2.f;
+
+    for (int i = 0; i < n; ++i) {
+        const int row = i / kCols;
+        const int col = i % kCols;
+        const float rowDrawW = static_cast<float>(kCols) * tileW + static_cast<float>(kCols - 1) * gapX;
+        const float startX = contentLeft + (contentW - rowDrawW) * 0.5f;
+        const float x = startX + col * (tileW + gapX);
+        const float y = listTopClamped + row * (tileH + gapY) - scrollOffset;
+        sf::FloatRect r(sf::Vector2f(x, y), sf::Vector2f(tileW, tileH));
+        outHitRects[static_cast<size_t>(i)] = r;
+        if (r.position.y + r.size.y <= listTopClamped - cullOverhang || r.position.y >= viewportBottom + cullOverhang)
+            continue;
+
+        const auto& dc = deck[static_cast<size_t>(i)];
+        CardId displayId = dc.cardId;
+        std::wstring fallbackName = dc.cardName;
+        if (previewUpgrade && !dc.cardId.empty() && dc.cardId.back() != '+') {
+            const CardId upId = dc.cardId + "+";
+            if (get_card_by_id(upId)) {
+                displayId = upId;
+                const CardData* uc = get_card_by_id(upId);
+                if (uc) fallbackName = utf8_to_wstring(uc->name);
+            }
+        }
+        bool hover = false;
+        draw_battle_card_tile_no_price(window, fontForText(), mousePos_, displayId, fallbackName, r, hover,
+            forgeOrangeHover, showCardDescription, false, false);
+    }
+
+    window.setView(viewBeforeCards);
+}
 
 void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
     // 使用当前视图尺寸而非构造时的 width_/height_：全屏或缩放窗口后二者会不一致，否则面板偏置、删牌区 scissor 与几何错位
@@ -414,70 +634,14 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
         const float clipBottom = panelTop + panelH - 8.f * scale;
         const float pageTop = std::max(clipTop, std::max(contentTop + 4.f, contentTopEffective + 6.f - removePageShiftUp));
         const float pageBottom = std::min(clipBottom, contentBottom - 8.f);
-        const float pageH = std::max(120.f, pageBottom - pageTop);
-        // 按需求：删牌选择页不额外铺背景（只画卡面本体）
-        sf::Text tip(fontForText(), sf::String(L"请选择一张卡牌进行移除"), static_cast<unsigned>(bodySize));
-        tip.setFillColor(sf::Color(236, 227, 206));
-        tip.setOutlineColor(sf::Color(20, 18, 24));
-        tip.setOutlineThickness(1.f);
-        tip.setPosition(sf::Vector2f(contentLeft + 4.f, pageTop));
-        window.draw(tip);
-
-        // 卡牌底板有描边外扩：为避免“漏出木框”，可视窗口向内收缩一点点
-        const float listTopRaw = pageTop + std::max(20.f,
-            static_cast<float>(fontForText().getLineSpacing(bodySize)) + 8.f);
-        const float listTop = std::max(listTopRaw, clipTop + 10.f * scale);
-        const float listBottom = std::min(pageBottom, clipBottom - 10.f * scale);
-        const float listH = std::max(50.f, listBottom - listTop);
-        shopDeckAreaRect_ = sf::FloatRect(sf::Vector2f(contentLeft, listTop), sf::Vector2f(contentW, listH));
-
-        constexpr int kCols = 5;
-        const float sidePadX = 18.f * scale; // 两侧留白
-        const float gapX = 16.f * scale;     // 牌间距更大
-        const float gapY = 14.f * scale;
-        // 进一步缩小卡面，避免出框；并保持 190:300 比例
-        const float baseTileW = (contentW - sidePadX * 2.f - gapX * (kCols - 1)) / static_cast<float>(kCols);
-        const float shrinkMul = 0.80f;
-        const float tileW = std::max(62.f, baseTileW * shrinkMul);
-        const float tileH = tileW * BATTLE_CARD_ASPECT_H_OVER_W;
-        const int n = static_cast<int>(shopData_.deckForRemove.size());
-        const int rows = (n + kCols - 1) / kCols;
-        const float totalH = rows > 0 ? (rows * tileH + (rows - 1) * gapY) : 0.f;
-        shopDeckScrollMax_ = std::max(0.f, totalH - listH);
-        if (shopDeckScrollOffset_ > shopDeckScrollMax_) shopDeckScrollOffset_ = shopDeckScrollMax_;
-        if (shopDeckScrollOffset_ < 0.f) shopDeckScrollOffset_ = 0.f;
-        eventCardScrollStep_ = tileH + gapY;
-        shopRemoveRects_.assign(shopData_.deckForRemove.size(),
-            sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(0.f, 0.f)));
-
-        // 卡牌仅部分落在可视区内时仍会整卡绘制，描边会穿出底板；用裁剪区限制到 list 矩形（与事件删牌区思路一致，但需真正 scissor）
-        const sf::View viewBeforeCards = window.getView();
-        if (listH > 1.f && contentW > 1.f) {
-            sf::View clipView = window.getDefaultView();
-            clipView.setScissor(sf::FloatRect(sf::Vector2f(contentLeft / lw, listTop / lh),
-                sf::Vector2f(contentW / lw, listH / lh)));
-            window.setView(clipView);
-        }
-
-        for (int i = 0; i < n; ++i) {
-            const int row = i / kCols;
-            const int col = i % kCols;
-            const float rowDrawW = static_cast<float>(kCols) * tileW + static_cast<float>(kCols - 1) * gapX;
-            const float startX = contentLeft + (contentW - rowDrawW) * 0.5f;
-            const float x = startX + col * (tileW + gapX);
-            const float y = listTop + row * (tileH + gapY) - shopDeckScrollOffset_;
-            sf::FloatRect r(sf::Vector2f(x, y), sf::Vector2f(tileW, tileH));
-            shopRemoveRects_[static_cast<size_t>(i)] = r;
-            if (r.position.y + r.size.y < listTop || r.position.y > listBottom) continue;
-
-            const auto& dc = shopData_.deckForRemove[static_cast<size_t>(i)];
-            bool hover = false;
-            draw_battle_card_tile_no_price(window, fontForText(), mousePos_, dc.cardId, dc.cardName, r, hover);
-        }
-
-        window.setView(viewBeforeCards);
+        // 与休息锻造一致：描述 + 金边悬停 + 裁切外扩，避免首尾行与边框被裁断、标题用战斗卡面 UTF-8 路径
+        drawMasterDeckCardPickGrid(window, shopData_.deckForRemove, sf::String(L"请选择一张卡牌进行移除"), true,
+            contentLeft, contentW, pageTop, pageBottom, clipTop, clipBottom, scale, bodySize, lw, lh,
+            shopDeckScrollOffset_, shopDeckScrollMax_, eventCardScrollStep_, shopRemoveRects_, shopDeckAreaRect_,
+            false, true, true);
 
         drawLeaveButton();
+        if (shopRemoveConfirmOpen_) drawShopRemoveConfirmOverlay(window);
         return;
     }
 
@@ -772,6 +936,265 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
 
     // StS：离开贴在面板左缘外侧偏下（侧挂），略压边框形成「咬住」感
     drawLeaveButton();
+}
+
+namespace {
+
+/** 用折线画勾，避免 U+2713 在中文字体中缺字变「口」 */
+void draw_outline_checkmark(sf::RenderWindow& window, sf::Vector2f center, float em, sf::Color stroke) {
+    const float k = em * 0.5f;
+    sf::VertexArray segs(sf::PrimitiveType::Lines, 4);
+    segs[0].position = sf::Vector2f(center.x - k * 0.75f, center.y + k * 0.02f);
+    segs[0].color = stroke;
+    segs[1].position = sf::Vector2f(center.x - k * 0.08f, center.y + k * 0.65f);
+    segs[1].color = stroke;
+    segs[2].position = sf::Vector2f(center.x - k * 0.08f, center.y + k * 0.65f);
+    segs[2].color = stroke;
+    segs[3].position = sf::Vector2f(center.x + k * 0.92f, center.y - k * 0.7f);
+    segs[3].color = stroke;
+    window.draw(segs);
+}
+
+} // namespace
+
+void EventShopRestUI::drawRestForgeUpgradeConfirmOverlay(sf::RenderWindow& window) {
+    if (!restForgeUpgradeConfirmOpen_ || restForgeConfirmInstanceId_ == 0) return;
+
+    const MasterDeckCardDisplay* pick = nullptr;
+    for (const auto& c : restData_.deckForUpgrade) {
+        if (c.instanceId == restForgeConfirmInstanceId_) {
+            pick = &c;
+            break;
+        }
+    }
+    if (!pick) return;
+
+    const CardId& baseId = pick->cardId;
+    if (baseId.empty() || baseId.back() == '+') return;
+    const CardId upId = baseId + "+";
+    if (!get_card_by_id(upId)) return;
+
+    const sf::Vector2f vsz = window.getView().getSize();
+    const float lw = std::max(1.f, vsz.x);
+    const float lh = std::max(1.f, vsz.y);
+
+    sf::RectangleShape dim2(sf::Vector2f(lw, lh));
+    dim2.setPosition(sf::Vector2f(0.f, 0.f));
+    dim2.setFillColor(sf::Color(5, 4, 8, 195));
+    window.draw(dim2);
+
+    const float scale = std::clamp(lw / 780.f, 0.78f, 1.4f);
+    const unsigned bodySize = static_cast<unsigned>(std::round(BODY_CHAR_SIZE * scale));
+
+    sf::Text title(fontForText(), sf::String(L"升级预览"), static_cast<unsigned>(bodySize + 8u));
+    title.setFillColor(sf::Color(255, 230, 180));
+    title.setOutlineColor(sf::Color(20, 16, 12));
+    title.setOutlineThickness(1.f);
+    const sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setOrigin(
+        sf::Vector2f(titleBounds.position.x + titleBounds.size.x * 0.5f, titleBounds.position.y + titleBounds.size.y * 0.5f));
+    title.setPosition(sf::Vector2f(lw * 0.5f, 42.f));
+    window.draw(title);
+
+    constexpr float kBattleCardW = 190.f;
+    constexpr float kBattleCardH = 300.f;
+    const float cardMul = 1.36f;
+    const float cardW = kBattleCardW * scale * cardMul;
+    const float cardH = kBattleCardH * scale * cardMul;
+    // 金边在卡矩形外再扩约 5px，中间须留出「箭头带」避免与卡面重叠
+    const float gapMid = 40.f * scale + 96.f;
+    const float pairW = cardW * 2.f + gapMid;
+    const float centerY = lh * 0.44f;
+    const float leftX = lw * 0.5f - pairW * 0.5f;
+    const sf::FloatRect leftRect(sf::Vector2f(leftX, centerY - cardH * 0.5f), sf::Vector2f(cardW, cardH));
+    const sf::FloatRect rightRect(sf::Vector2f(leftX + cardW + gapMid, centerY - cardH * 0.5f), sf::Vector2f(cardW, cardH));
+
+    bool hoverL = false;
+    bool hoverR = false;
+    draw_battle_card_tile_no_price(window, fontForText(), mousePos_, baseId, pick->cardName, leftRect, hoverL, true, true,
+        false, true);
+    draw_battle_card_tile_no_price(window, fontForText(), mousePos_, upId, pick->cardName, rightRect, hoverR, true, true,
+        true, true);
+
+    // ASCII「>」各字体必有；U+203A「›」在多数中文字体中无字形会显示为「口」
+    sf::Text arrows(fontForText(), sf::String(L"> > >"), static_cast<unsigned>(bodySize + 20u));
+    arrows.setFillColor(sf::Color(255, 205, 75));
+    arrows.setOutlineColor(sf::Color(55, 35, 8));
+    arrows.setOutlineThickness(1.f);
+    const sf::FloatRect ab = arrows.getLocalBounds();
+    arrows.setOrigin(sf::Vector2f(ab.position.x + ab.size.x * 0.5f, ab.position.y + ab.size.y * 0.5f));
+    arrows.setPosition(sf::Vector2f(leftX + cardW + gapMid * 0.5f, centerY));
+    window.draw(arrows);
+
+    constexpr float kBottomBand = 96.f;
+    constexpr float kSideMargin = 40.f;
+    const float backW = 118.f;
+    const float backH = 44.f;
+    const float backLeft = kSideMargin;
+    const float bandY = lh - kBottomBand;
+    const float backTop = bandY + (kBottomBand - backH) * 0.5f;
+    restBackButton_ = sf::FloatRect(sf::Vector2f(backLeft, backTop), sf::Vector2f(backW, backH));
+    const bool backHover = restBackButton_.contains(mousePos_);
+    sf::RectangleShape backBtn(restBackButton_.size);
+    backBtn.setPosition(restBackButton_.position);
+    backBtn.setFillColor(backHover ? sf::Color(155, 42, 38) : sf::Color(128, 36, 32));
+    backBtn.setOutlineThickness(2.f);
+    backBtn.setOutlineColor(sf::Color(220, 160, 120));
+    window.draw(backBtn);
+    sf::Text backLab(fontForText(), sf::String(L"← 返回"), static_cast<unsigned>(std::max(14u, bodySize - 1u)));
+    backLab.setFillColor(sf::Color(255, 248, 238));
+    const sf::FloatRect br = backLab.getLocalBounds();
+    backLab.setOrigin(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
+    backLab.setPosition(sf::Vector2f(backLeft + backW * 0.5f, backTop + backH * 0.5f));
+    window.draw(backLab);
+
+    constexpr float kCbSize = 20.f;
+    const float cbX = backLeft + backW + 24.f;
+    const float cbY = backTop + (backH - kCbSize) * 0.5f;
+    constexpr float kLabelGap = 10.f;
+    sf::Text vu(fontForText(), sf::String(L"查看升级"), static_cast<unsigned>(std::max(14u, bodySize - 2u)));
+    vu.setFillColor(sf::Color(230, 225, 215));
+    const sf::FloatRect vb = vu.getLocalBounds();
+    const float toggleW = kCbSize + kLabelGap + vb.size.x + 12.f;
+    restForgeViewUpgradeToggleRect_ =
+        sf::FloatRect(sf::Vector2f(cbX - 4.f, backTop), sf::Vector2f(toggleW, backH));
+
+    sf::RectangleShape cb(sf::Vector2f(kCbSize, kCbSize));
+    cb.setPosition(sf::Vector2f(cbX, cbY));
+    cb.setFillColor(sf::Color(40, 38, 48));
+    cb.setOutlineThickness(2.f);
+    cb.setOutlineColor(sf::Color(140, 130, 120));
+    window.draw(cb);
+    if (restForgeViewUpgrade_) {
+        sf::RectangleShape inner(sf::Vector2f(kCbSize - 8.f, kCbSize - 8.f));
+        inner.setPosition(sf::Vector2f(cbX + 4.f, cbY + 4.f));
+        inner.setFillColor(sf::Color(240, 170, 80));
+        window.draw(inner);
+    }
+    vu.setPosition(sf::Vector2f(cbX + kCbSize + kLabelGap, cbY + (kCbSize - vb.size.y) * 0.5f));
+    window.draw(vu);
+
+    sf::Text hint(fontForText(), sf::String(L"确认升级该卡牌？"), static_cast<unsigned>(bodySize + 2u));
+    hint.setFillColor(sf::Color(248, 240, 220));
+    hint.setOutlineColor(sf::Color(20, 18, 24));
+    hint.setOutlineThickness(1.f);
+    const sf::FloatRect hb = hint.getLocalBounds();
+    hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+    hint.setPosition(sf::Vector2f(lw * 0.5f, bandY + kBottomBand * 0.52f));
+    window.draw(hint);
+
+    const float okW = 118.f;
+    const float okH = 44.f;
+    const float okLeft = lw - kSideMargin - okW;
+    restForgeConfirmOkRect_ = sf::FloatRect(sf::Vector2f(okLeft, backTop), sf::Vector2f(okW, okH));
+    const bool okHover = restForgeConfirmOkRect_.contains(mousePos_);
+    sf::RectangleShape okBtn(restForgeConfirmOkRect_.size);
+    okBtn.setPosition(restForgeConfirmOkRect_.position);
+    okBtn.setFillColor(okHover ? sf::Color(72, 195, 178) : sf::Color(48, 155, 142));
+    okBtn.setOutlineThickness(2.f);
+    okBtn.setOutlineColor(sf::Color(180, 255, 240));
+    window.draw(okBtn);
+    const float okEm = static_cast<float>(std::max(22u, bodySize + 4u));
+    const sf::Vector2f okCenter(okLeft + okW * 0.5f, backTop + okH * 0.5f);
+    draw_outline_checkmark(window, okCenter, okEm, sf::Color(255, 255, 250));
+    draw_outline_checkmark(window, okCenter + sf::Vector2f(1.f, 0.f), okEm, sf::Color(255, 255, 250));
+    draw_outline_checkmark(window, okCenter + sf::Vector2f(-1.f, 0.f), okEm, sf::Color(255, 255, 250));
+}
+
+void EventShopRestUI::drawShopRemoveConfirmOverlay(sf::RenderWindow& window) {
+    if (!shopRemoveConfirmOpen_ || shopRemoveConfirmInstanceId_ == 0) return;
+
+    const MasterDeckCardDisplay* pick = nullptr;
+    for (const auto& c : shopData_.deckForRemove) {
+        if (c.instanceId == shopRemoveConfirmInstanceId_) {
+            pick = &c;
+            break;
+        }
+    }
+    if (!pick || pick->cardId.empty()) return;
+
+    const sf::Vector2f vsz = window.getView().getSize();
+    const float lw = std::max(1.f, vsz.x);
+    const float lh = std::max(1.f, vsz.y);
+
+    sf::RectangleShape dim2(sf::Vector2f(lw, lh));
+    dim2.setPosition(sf::Vector2f(0.f, 0.f));
+    dim2.setFillColor(sf::Color(5, 4, 8, 195));
+    window.draw(dim2);
+
+    const float scale = std::clamp(lw / 780.f, 0.78f, 1.4f);
+    const unsigned bodySize = static_cast<unsigned>(std::round(BODY_CHAR_SIZE * scale));
+
+    sf::Text title(fontForText(), sf::String(L"净简预览"), static_cast<unsigned>(bodySize + 8u));
+    title.setFillColor(sf::Color(255, 230, 180));
+    title.setOutlineColor(sf::Color(20, 16, 12));
+    title.setOutlineThickness(1.f);
+    const sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setOrigin(
+        sf::Vector2f(titleBounds.position.x + titleBounds.size.x * 0.5f, titleBounds.position.y + titleBounds.size.y * 0.5f));
+    title.setPosition(sf::Vector2f(lw * 0.5f, 42.f));
+    window.draw(title);
+
+    constexpr float kBattleCardW = 190.f;
+    constexpr float kBattleCardH = 300.f;
+    const float cardMul = 1.42f;
+    const float cardW = kBattleCardW * scale * cardMul;
+    const float cardH = kBattleCardH * scale * cardMul;
+    const float centerY = lh * 0.44f;
+    const sf::FloatRect cardRect(sf::Vector2f(lw * 0.5f - cardW * 0.5f, centerY - cardH * 0.5f),
+        sf::Vector2f(cardW, cardH));
+    const bool upgradedGreen = !pick->cardId.empty() && pick->cardId.back() == '+';
+    bool hoverPreview = false;
+    draw_battle_card_tile_no_price(window, fontForText(), mousePos_, pick->cardId, pick->cardName, cardRect, hoverPreview,
+        true, true, upgradedGreen, true);
+
+    constexpr float kBottomBand = 96.f;
+    constexpr float kSideMargin = 40.f;
+    const float backW = 118.f;
+    const float backH = 44.f;
+    const float backLeft = kSideMargin;
+    const float bandY = lh - kBottomBand;
+    const float backTop = bandY + (kBottomBand - backH) * 0.5f;
+    shopRemoveConfirmBackRect_ = sf::FloatRect(sf::Vector2f(backLeft, backTop), sf::Vector2f(backW, backH));
+    const bool backHover = shopRemoveConfirmBackRect_.contains(mousePos_);
+    sf::RectangleShape backBtn(shopRemoveConfirmBackRect_.size);
+    backBtn.setPosition(shopRemoveConfirmBackRect_.position);
+    backBtn.setFillColor(backHover ? sf::Color(155, 42, 38) : sf::Color(128, 36, 32));
+    backBtn.setOutlineThickness(2.f);
+    backBtn.setOutlineColor(sf::Color(220, 160, 120));
+    window.draw(backBtn);
+    sf::Text backLab(fontForText(), sf::String(L"← 返回"), static_cast<unsigned>(std::max(14u, bodySize - 1u)));
+    backLab.setFillColor(sf::Color(255, 248, 238));
+    const sf::FloatRect br = backLab.getLocalBounds();
+    backLab.setOrigin(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
+    backLab.setPosition(sf::Vector2f(backLeft + backW * 0.5f, backTop + backH * 0.5f));
+    window.draw(backLab);
+
+    sf::Text hint(fontForText(), sf::String(L"确认移除此卡牌？"), static_cast<unsigned>(bodySize + 2u));
+    hint.setFillColor(sf::Color(248, 240, 220));
+    hint.setOutlineColor(sf::Color(20, 18, 24));
+    hint.setOutlineThickness(1.f);
+    const sf::FloatRect hb = hint.getLocalBounds();
+    hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+    hint.setPosition(sf::Vector2f(lw * 0.5f, bandY + kBottomBand * 0.52f));
+    window.draw(hint);
+
+    const float okW = 118.f;
+    const float okH = 44.f;
+    const float okLeft = lw - kSideMargin - okW;
+    shopRemoveConfirmOkRect_ = sf::FloatRect(sf::Vector2f(okLeft, backTop), sf::Vector2f(okW, okH));
+    const bool okHover = shopRemoveConfirmOkRect_.contains(mousePos_);
+    sf::RectangleShape okBtn(shopRemoveConfirmOkRect_.size);
+    okBtn.setPosition(shopRemoveConfirmOkRect_.position);
+    okBtn.setFillColor(okHover ? sf::Color(72, 195, 178) : sf::Color(48, 155, 142));
+    okBtn.setOutlineThickness(2.f);
+    okBtn.setOutlineColor(sf::Color(180, 255, 240));
+    window.draw(okBtn);
+    const float okEm = static_cast<float>(std::max(22u, bodySize + 4u));
+    const sf::Vector2f okCenter(okLeft + okW * 0.5f, backTop + okH * 0.5f);
+    draw_outline_checkmark(window, okCenter, okEm, sf::Color(255, 255, 250));
+    draw_outline_checkmark(window, okCenter + sf::Vector2f(1.f, 0.f), okEm, sf::Color(255, 255, 250));
+    draw_outline_checkmark(window, okCenter + sf::Vector2f(-1.f, 0.f), okEm, sf::Color(255, 255, 250));
 }
 
 } // namespace tce

@@ -42,6 +42,12 @@ public:
     bool handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos);
     void setMousePosition(sf::Vector2f pos);
     void draw(sf::RenderWindow& window);
+    /** 每帧在 setMousePosition 之后调用：锻造页拖动滚动条时平滑跟随鼠标 */
+    void syncRestForgeScrollbarDrag(const sf::Vector2f& mousePos);
+    /** 若当前为锻造升级确认层，关闭确认并返回 true（供 Escape 优先消费） */
+    bool tryDismissRestForgeUpgradeConfirm();
+    /** 若当前为商店净简删牌确认层，关闭确认并返回 true（供 Escape 优先消费） */
+    bool tryDismissShopRemoveConfirm();
 
     // ---------- 轮询：每帧最多消费一次，主流程在 draw 之后调用 ----------
     /** 是否选择了事件选项；若 true，outIndex 为选项下标 (0-based) */
@@ -67,7 +73,21 @@ private:
     void drawEventScreen(sf::RenderWindow& window);
     void drawShopScreen(sf::RenderWindow& window);
     void drawRestScreen(sf::RenderWindow& window);
+    /** 锻造选牌后「升级确认」：双卡对比 + 确认/返回（在 drawRestScreen 内调用） */
+    void drawRestForgeUpgradeConfirmOverlay(sf::RenderWindow& window);
+    /** 商店净简选牌后「移除确认」：单卡放大预览（在 drawShopScreen 删牌页内调用） */
+    void drawShopRemoveConfirmOverlay(sf::RenderWindow& window);
     void drawPanel(sf::RenderWindow& window, float centerX, float centerY, float w, float h);
+    /**
+     * 主牌组选卡网格（商店删牌 / 休息锻造共用）：5 列、裁剪、滚轮偏移；可选顶部提示行。
+     * previewUpgrade：为 true 时在数据存在时绘制 id+「+」的预览卡面（锻造「查看升级」）。
+     */
+    void drawMasterDeckCardPickGrid(sf::RenderWindow& window, const std::vector<MasterDeckCardDisplay>& deck,
+        const sf::String& tipText, bool drawTipLine, float contentLeft, float contentW, float regionTop,
+        float regionBottom, float clipTop, float clipBottom, float scale, unsigned bodySize, float layoutW,
+        float layoutH, float& scrollOffset, float& scrollMax, float& cardScrollStep,
+        std::vector<sf::FloatRect>& outHitRects, sf::FloatRect& outListViewportRect, bool previewUpgrade,
+        bool forgeOrangeHover, bool showCardDescription);
     bool clickInRect(const sf::Vector2f& pos, const sf::FloatRect& r) const;
 
     unsigned width_;
@@ -122,11 +142,28 @@ private:
     float shopDeckScrollOffset_ = 0.f;
     float shopDeckScrollMax_ = 0.f;
     sf::FloatRect shopDeckAreaRect_;
+    bool shopRemoveConfirmOpen_ = false;
+    InstanceId shopRemoveConfirmInstanceId_ = 0;
+    sf::FloatRect shopRemoveConfirmBackRect_;
+    sf::FloatRect shopRemoveConfirmOkRect_;
     sf::FloatRect restHealButton_;
     sf::FloatRect restUpgradeChoiceButton_;  // 「升级」大按钮（进入选牌前）
     sf::FloatRect restBackButton_;           // 升级列表中「返回」
     std::vector<sf::FloatRect> restUpgradeRects_;
     bool restShowUpgradeList_ = false;       // true = 已选「升级」，显示选牌列表
+    float restDeckPickScrollOffset_ = 0.f;
+    float restDeckPickScrollMax_ = 0.f;
+    sf::FloatRect restForgeListViewportRect_;
+    sf::FloatRect restForgeScrollbarTrackRect_;
+    sf::FloatRect restForgeScrollbarThumbRect_;
+    float restForgeScrollbarThumbH_ = 0.f;
+    bool restForgeViewUpgrade_ = false;
+    sf::FloatRect restForgeViewUpgradeToggleRect_;
+    bool restForgeScrollbarDragging_ = false;
+    float restForgeScrollbarGrabY_ = 0.f;
+    bool restForgeUpgradeConfirmOpen_ = false;
+    InstanceId restForgeConfirmInstanceId_ = 0;
+    sf::FloatRect restForgeConfirmOkRect_;
 
     int eventOptionPressedIndex_ = -1;  // 当前按下的事件选项下标（用于按下态绘制）
     int selectedEventOption_ = 0;        // 键盘焦点选项下标
