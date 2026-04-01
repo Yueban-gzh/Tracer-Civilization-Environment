@@ -2862,9 +2862,7 @@ namespace tce {
                     const float cardLeft = cx_i - CARD_W * 0.5f;
                     const float cardTop = cy_i - CARD_H * 0.5f;
                     if (mousePos_.x >= cardLeft && mousePos_.x <= cardLeft + CARD_W && mousePos_.y >= cardTop && mousePos_.y <= cardTop + CARD_H) {
-                        // 普通出牌：不可打出/能量不够的牌不参与悬停，无法选中
-                        if (!card_select_active_ && !hand_index_playable_now(s, i))
-                            continue;
+                        // 普通出牌：所有手牌都可以悬停预览；是否可打出在点击时判断
                         hoverIndex = i;
                         // 左键点击时开始选中该牌（由 handleEvent 设置 selectedHandIndex_）
                         break;
@@ -3094,12 +3092,6 @@ namespace tce {
             draw_wrapped_text(window, fontForChinese(), descStr, 15,
                               sf::Vector2f(descX, descY), descMaxW, descMaxH,
                               sf::Color(240, 238, 235), states);
-            // 普通战斗：不可打出或能量不足时压暗（选牌弃牌/消耗界面不过滤，不压暗）
-            if (!card_select_active_ && !hand_index_playable_now(s, static_cast<int>(idx))) {
-                sf::RectangleShape dimMask(sf::Vector2f(w, h));
-                dimMask.setFillColor(sf::Color(12, 12, 18, 150));
-                window.draw(dimMask, states);
-            }
             };
 
         if (handSelectReshuffleFan) {
