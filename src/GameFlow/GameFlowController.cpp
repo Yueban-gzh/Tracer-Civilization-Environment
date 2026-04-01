@@ -1,4 +1,5 @@
 #include "GameFlow/GameFlowController.hpp"
+#include "EventEngine/TreasureRoomLogic.hpp"
 
 #include <algorithm>
 #include <ctime>
@@ -16,6 +17,7 @@
 #include "Effects/CardEffects.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
+#include "EventEngine/TreasureRoomUI.hpp"
 
 namespace tce {
 
@@ -265,7 +267,11 @@ void GameFlowController::resolveNode(const MapEngine::MapNode& node) {
         }
         break;
     case NodeType::Treasure:
-        resolveTreasure();
+        if (runTreasureScene()) {
+            // statusText_ 在 runTreasureScene 内写入
+        } else {
+            statusText_ = "宝箱已中断。";
+        }
         break;
     default:
         break;
@@ -1209,10 +1215,93 @@ void GameFlowController::resolveMerchant() {
     statusText_ = "商店购买 1 张牌（-50 金币）。";
 }
 
-void GameFlowController::resolveTreasure() {
-    const int gold = 40 + randomIndex(runRng_, 61);
-    playerState_.gold += gold;
-    statusText_ = "宝箱节点：获得金币。";
+bool GameFlowController::runTreasureScene() {
+    const TreasureRoomOutcome tr = roll_and_resolve_treasure_room(runRng_, playerState_.relics);
+
+    auto assetExists = [](const std::string& p) {
+        return std::filesystem::exists(std::filesystem::u8path(p));
+    };
+    std::string relicIconPath;
+    if (!tr.relic_id.empty()) {
+        const std::string rel = "assets/relics/" + tr.relic_id + ".png";
+        if (assetExists(rel))
+            relicIconPath = rel;
+        else if (assetExists(std::string("./") + rel))
+            relicIconPath = std::string("./") + rel;
+    }
+
+    TreasureRoomDisplayData dd{};
+    dd.chest_kind = tr.chest_kind;
+    dd.title_line = esr_detail::utf8_to_wstring(std::string(treasure_chest_kind_label_cn(tr.chest_kind)));
+    dd.has_gold = tr.grants_gold;
+    dd.gold_amount = tr.gold_amount;
+    dd.has_relic = !tr.relic_id.empty();
+    if (dd.has_relic)
+        dd.relic_line = esr_detail::utf8_to_wstring(std::string("遗物「") + relic_name_cn(tr.relic_id) + "」");
+    dd.relic_icon_path = relicIconPath;
+    dd.has_curse = tr.grants_curse;
+
+    TreasureRoomUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
+    if (!ui.loadFont("assets/fonts/Sanji.ttf") && !ui.loadFont("assets/fonts/default.ttf"))
+        ui.loadFont("data/font.ttf");
+    if (!ui.loadChineseFont("assets/fonts/simkai.ttf")) {
+        if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
+            if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
+                if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf"))
+                    ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+            }
+        }
+    }
+    ui.setup(dd);
+
+    bool inScene = true;
+    while (window_.isOpen() && inScene) {
+        while (const std::optional ev = window_.pollEvent()) {
+            if (ev->is<sf::Event::Closed>()) {
+                window_.close();
+                return false;
+            }
+            sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            ui.handleEvent(*ev, mousePos);
+        }
+
+        sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+        ui.setMousePosition(mousePos);
+
+        if (ui.pollLeave()) {
+            std::string detail = std::string(treasure_chest_kind_label_cn(tr.chest_kind)) + "：";
+            if (tr.grants_gold) {
+                playerState_.gold += tr.gold_amount;
+                detail += "金币 +" + std::to_string(tr.gold_amount) + "；";
+            }
+            if (!tr.relic_id.empty()) {
+                playerState_.relics.push_back(tr.relic_id);
+                if (tr.relic_id == "strawberry") {
+                    playerState_.maxHp += 7;
+                    playerState_.currentHp += 7;
+                    if (playerState_.currentHp > playerState_.maxHp) playerState_.currentHp = playerState_.maxHp;
+                } else if (tr.relic_id == "potion_belt") {
+                    playerState_.potionSlotCount += 2;
+                }
+                detail += "遗物「" + relic_name_cn(tr.relic_id) + "」；";
+            } else {
+                detail += "遗物池已空；";
+            }
+            if (tr.grants_curse) {
+                cardSystem_.add_to_master_deck("parasite");
+                detail += "诅咒：寄生；";
+            }
+            if (!detail.empty() && detail.back() == '；') detail.pop_back();
+            statusText_ = detail;
+            inScene = false;
+        }
+
+        window_.clear(sf::Color(12, 10, 18));
+        ui.draw(window_);
+        window_.display();
+    }
+
+    return window_.isOpen();
 }
 
 bool GameFlowController::runShopScene() {
