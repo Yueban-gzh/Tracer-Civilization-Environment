@@ -63,7 +63,9 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
             }
             return true;
         },
-        [this](InstanceId id) { return cardSystem_.upgrade_card_in_master_deck(id); }) {}
+        [this](InstanceId id) { return cardSystem_.upgrade_card_in_master_deck(id); })
+    , hudBattleUi_(static_cast<unsigned>(window.getSize().x),
+                   static_cast<unsigned>(window.getSize().y)) {}
 
 bool GameFlowController::initialize() {
     dataLayer_.load_cards("");
@@ -121,6 +123,10 @@ bool GameFlowController::initialize() {
         hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
         hudFontLoaded_ = true;
     }
+
+    // 顶栏/遗物栏 UI 使用与战斗一致的字体配置
+    hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
+    hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
 
     statusText_ = "选择第一个节点开始爬塔。";
     return true;
@@ -654,6 +660,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
 
         window_.clear(sf::Color(40, 38, 45));
         ui.draw(window_);
+        drawHud();  // 事件界面上方叠加全局顶栏 + 遗物栏
         window_.display();
     }
 
@@ -791,6 +798,7 @@ bool GameFlowController::runShopScene() {
 
         window_.clear(sf::Color(40, 38, 45));
         ui.draw(window_);
+        drawHud();  // 商店界面上方叠加全局顶栏 + 遗物栏
         window_.display();
     }
 
@@ -879,6 +887,7 @@ bool GameFlowController::runRestScene() {
 
         window_.clear(sf::Color(40, 38, 45));
         ui.draw(window_);
+        drawHud();  // 休息界面上方叠加全局顶栏 + 遗物栏
         window_.display();
     }
 
@@ -893,26 +902,18 @@ int GameFlowController::firstAliveMonsterIndex(const BattleState& state) const {
 }
 
 void GameFlowController::drawHud() {
-    if (!hudFontLoaded_) return;
+    // 利用 BattleUI 的顶栏与遗物栏绘制逻辑，构造一个最小 BattleStateSnapshot
+    BattleStateSnapshot snap{};
+    snap.playerName = playerState_.playerName;
+    snap.character  = playerState_.character;
+    snap.currentHp  = playerState_.currentHp;
+    snap.maxHp      = playerState_.maxHp;
+    snap.gold       = playerState_.gold;
+    snap.potionSlotCount = playerState_.potionSlotCount;
+    snap.potions    = playerState_.potions;
+    snap.relics     = playerState_.relics;
 
-    sf::Text text(hudFont_);
-    text.setCharacterSize(24);
-    text.setFillColor(sf::Color::Black);
-    text.setPosition({ 20.f, 16.f });
-
-    std::string stageText = "进行中";
-    if (gameOver_) stageText = "失败";
-    if (gameCleared_) stageText = "通关";
-
-    const std::string hud =
-        "HP: " + std::to_string(playerState_.currentHp) + "/" + std::to_string(playerState_.maxHp) +
-        "   Gold: " + std::to_string(playerState_.gold) +
-        "   Deck: " + std::to_string(cardSystem_.get_master_deck().size()) +
-        "   状态: " + stageText +
-        "\n" + statusText_;
-    text.setString(sf::String::fromUtf8(hud.begin(), hud.end()));
-
-    window_.draw(text);
+    hudBattleUi_.drawGlobalHud(window_, snap);
 }
 
 std::string GameFlowController::nodeTypeToString(NodeType nodeType) const {

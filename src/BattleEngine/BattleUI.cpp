@@ -1293,6 +1293,18 @@ namespace tce {
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
     }
 
+    void BattleUI::drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        if (!fontLoaded_) return;
+        // 顶栏背景色块与战斗界面保持一致
+        sf::RectangleShape topBg(sf::Vector2f(static_cast<float>(width_), TOP_BAR_BG_H));
+        topBg.setPosition(sf::Vector2f(0.f, 0.f));
+        topBg.setFillColor(TOP_BAR_BG_COLOR);
+        window.draw(topBg);
+
+        drawTopBar(window, s);
+        drawRelicsRow(window, s);
+    }
+
     // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽（1~5 槽）、层数占位、难度占位
     void BattleUI::drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         const float left = 28.f;              // 左侧起始

@@ -87,6 +87,9 @@ public:
     /** 在确认选牌并即将打出触发牌前调用：接下来若干张「离手进入弃牌/消耗」的飞牌从屏幕中央选牌区飞出并走弧线（与 main/GameFlow 中 play_card 配对） */
     void set_pending_select_ui_pile_fly(int discard_or_exhaust_count);
 
+    /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
+    void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
+
 private:
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "BattleCoreRefactor/BattleEngine.hpp"
+#include "BattleEngine/BattleUI.hpp"
 #include "CardSystem/CardSystem.hpp"
 #include "Common/RunRng.hpp"
 #include "DataLayer/DataLayer.h"
@@ -47,6 +48,8 @@ private:
     sf::RenderWindow& window_;
     sf::Font hudFont_;
     bool hudFontLoaded_ = false;
+    // 地图 / 事件界面共用的战斗顶栏 + 遗物栏 UI
+    BattleUI hudBattleUi_;
 
     RunRng                 runRng_;
     DataLayer::DataLayerImpl dataLayer_;
