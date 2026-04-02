@@ -138,6 +138,11 @@ private:
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度
+    /** 布局常量按 1920×1080 设计；与窗口不一致时用于缩放部分固定像素控件 */
+    static constexpr float kDesignWidth = 1920.f;
+    static constexpr float kDesignHeight = 1080.f;
+    float uiScaleX_ = 1.f;
+    float uiScaleY_ = 1.f;
     sf::Font font_;                             // 主字体（英文/数字）
     bool fontLoaded_ = false;                   // 主字体是否加载成功
     sf::Font fontChinese_;                     // 中文字体

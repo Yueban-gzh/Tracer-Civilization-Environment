@@ -1,0 +1,62 @@
+{
+  "monsters": [
+    {
+      "id": "buguguiqi",
+      "cycle": [
+        {
+          "intent": { "kind": "Attack_And_Block", "value": 6, "block": 6, "ui_label": "龟壳冲撞" }
+        },
+        {
+          "intent": { "kind": "Attack", "value": 10, "use_strength": true }
+        }
+      ]
+    },
+    {
+      "id": "dading",
+      "cycle": [
+        {
+          "intent": { "kind": "Buff", "status": "strength", "stacks": 2, "ui_label": "鼎中炽焰" }
+        },
+        {
+          "intent": { "kind": "Attack", "value": 8, "use_strength": true }
+        }
+      ]
+    },
+    {
+      "id": "fashengjiangli",
+      "cycle": [
+        {
+          "intent": { "kind": "Attack_And_Weak", "value": 7, "stacks": 1, "ui_label": "缚魂鞭挞" }
+        },
+        {
+          "intent": { "kind": "Mul_Attack", "value": 3, "times": 3 }
+        }
+      ]
+    },
+    {
+      "id": "liejianshusheng",
+      "cycle": [
+        {
+          "intent": { "kind": "Attack_And_Vulnerable", "value": 6, "stacks": 2, "ui_label": "断简诅咒" }
+        },
+        {
+          "intent": { "kind": "Strength_And_Block", "value": 2, "stacks": 5 }
+        }
+      ]
+    },
+    {
+      "id": "yazhongzhihun",
+      "cycle": [
+        {
+          "intent": { "kind": "Buff", "status": "strength", "stacks": 3, "ui_label": "冢土苏醒" }
+        },
+        {
+          "intent": { "kind": "Mul_Attack", "value": 4, "times": 3 }
+        },
+        {
+          "intent": { "kind": "Strength_And_Player_Weak", "value": 2, "stacks": 2 }
+        }
+      ]
+    }
+  ]
+}

@@ -114,6 +114,7 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
 bool GameFlowController::initialize() {
     dataLayer_.load_cards("");
     dataLayer_.load_monsters("");
+    dataLayer_.load_encounters("");
     dataLayer_.load_events("");
     register_all_card_effects(cardSystem_);
 
@@ -273,18 +274,8 @@ void GameFlowController::resolveNode(const MapEngine::MapNode& node) {
 }
 
 bool GameFlowController::runBattleScene(NodeType nodeType) {
-    std::vector<MonsterId> monsters;
-    if (nodeType == NodeType::Boss) {
-        monsters = { "hexaghost" };
-    } else if (nodeType == NodeType::Elite) {
-        monsters = { "fat_gremlin", "green_louse" };
-    } else {
-        static const std::vector<MonsterId> normalPool = { "cultist", "green_louse", "red_louse" };
-        const int count = 1 + randomIndex(runRng_, 3);
-        for (int i = 0; i < count; ++i) {
-            monsters.push_back(normalPool[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(normalPool.size())))]);
-        }
-    }
+    const int mapPage = mapConfigManager_.getCurrentIndex();
+    std::vector<MonsterId> monsters = dataLayer_.roll_monsters_for_battle(mapPage, nodeType, runRng_);
 
     applyBattleTestMock(playerState_);
     battleEngine_.start_battle(monsters, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
@@ -310,6 +301,17 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         // loaded
     }
 
+    // 尝试为本场战斗的所有怪物加载贴图：约定文件名为 assets/monsters/<monster_id>.png 或 .jpg
+    for (const auto& mid : monsters) {
+        const std::string basePng = "assets/monsters/" + mid + ".png";
+        const std::string baseJpg = "assets/monsters/" + mid + ".jpg";
+        if (exists(basePng)) {
+            ui.loadMonsterTexture(mid, basePng);
+        } else if (exists(baseJpg)) {
+            ui.loadMonsterTexture(mid, baseJpg);
+        }
+    }
+
     CheatEngine cheat(&battleEngine_, &cardSystem_);
     CheatPanel cheatPanel(&cheat,
                           static_cast<unsigned>(window_.getSize().x),
@@ -320,6 +322,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     }
 
     bool runningBattleScene = true;
+    bool reward_phase_started = false;
     struct PendingCardSelectPlay {
         bool active = false;
         int playHandIndex = -1;
@@ -514,7 +517,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
 
-        if (!ui.is_deck_view_active() && !ui.is_card_select_active() && !battleEngine_.is_battle_over()) {
+        if (!ui.is_deck_view_active() && !ui.is_card_select_active() && !ui.is_reward_screen_active()
+            && !battleEngine_.is_battle_over()) {
             battleEngine_.step_turn_phase();
         }
 
@@ -528,17 +532,42 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         battleEngine_.tick_damage_displays();
 
         if (battleEngine_.is_battle_over()) {
-            runningBattleScene = false;
+            if (!battleEngine_.is_victory()) {
+                runningBattleScene = false;
+            } else {
+                if (!reward_phase_started) {
+                    reward_phase_started = true;
+                    const int gold_reward = battleEngine_.get_victory_gold();
+                    battleEngine_.grant_victory_gold();
+                    std::vector<CardId> reward_cards = battleEngine_.get_reward_cards(3);
+                    std::vector<std::string> reward_card_strs;
+                    reward_card_strs.reserve(reward_cards.size());
+                    for (const CardId& c : reward_cards) reward_card_strs.push_back(c);
+                    std::vector<std::string> relic_ids;
+                    std::vector<std::string> potion_ids;
+                    const RelicId r = battleEngine_.grant_reward_relic();
+                    if (!r.empty()) relic_ids.push_back(r);
+                    const PotionId p = battleEngine_.grant_reward_potion();
+                    if (!p.empty()) potion_ids.push_back(p);
+                    ui.set_reward_data(gold_reward, std::move(reward_card_strs), std::move(relic_ids), std::move(potion_ids));
+                    ui.set_reward_screen_active(true);
+                }
+                int reward_pick = -2;
+                if (ui.pollRewardCardPick(reward_pick)) {
+                    if (reward_pick >= 0) {
+                        const std::string cid = ui.get_reward_card_id_at(static_cast<size_t>(reward_pick));
+                        if (!cid.empty()) battleEngine_.add_card_to_master_deck(cid);
+                    }
+                }
+                if (ui.pollContinueToNextBattleRequest()) {
+                    ui.set_reward_screen_active(false);
+                    runningBattleScene = false;
+                }
+            }
         }
     }
 
     if (battleEngine_.is_battle_over() && battleEngine_.is_victory()) {
-        battleEngine_.grant_victory_gold();
-        std::vector<CardId> rewards = battleEngine_.get_reward_cards(3);
-        if (!rewards.empty()) {
-            const CardId picked = rewards[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(rewards.size())))];
-            battleEngine_.add_card_to_master_deck(picked);
-        }
         BattleState state = battleEngine_.get_battle_state();
         playerState_ = state.player;
 

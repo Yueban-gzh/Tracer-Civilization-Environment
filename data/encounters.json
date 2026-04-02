@@ -1,0 +1,79 @@
+{
+  "maps": [
+    {
+      "enemy_groups": [
+        ["buguguiqi"],
+        ["dading"],
+        ["fashengjiangli"],
+        ["liejianshusheng"],
+        ["buguguiqi", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["buguguiqi", "dading"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "fashengjiangli"]
+      ],
+      "elite_groups": [
+        ["buguguiqi", "dading"],
+        ["buguguiqi", "fashengjiangli"],
+        ["buguguiqi", "liejianshusheng"],
+        ["dading", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "fashengjiangli"],
+        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
+        ["dading", "fashengjiangli", "liejianshusheng"]
+      ],
+      "boss": ["yazhongzhihun"]
+    },
+    {
+      "enemy_groups": [
+        ["buguguiqi"],
+        ["dading"],
+        ["fashengjiangli"],
+        ["liejianshusheng"],
+        ["buguguiqi", "dading"],
+        ["buguguiqi", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "liejianshusheng"]
+      ],
+      "elite_groups": [
+        ["buguguiqi", "dading"],
+        ["buguguiqi", "fashengjiangli"],
+        ["buguguiqi", "liejianshusheng"],
+        ["dading", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "fashengjiangli"],
+        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
+        ["dading", "fashengjiangli", "liejianshusheng"]
+      ],
+      "boss": ["yazhongzhihun"]
+    },
+    {
+      "enemy_groups": [
+        ["buguguiqi"],
+        ["dading"],
+        ["fashengjiangli"],
+        ["liejianshusheng"],
+        ["buguguiqi", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["buguguiqi", "dading"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "fashengjiangli"]
+      ],
+      "elite_groups": [
+        ["buguguiqi", "dading"],
+        ["buguguiqi", "fashengjiangli"],
+        ["buguguiqi", "liejianshusheng"],
+        ["dading", "fashengjiangli"],
+        ["dading", "liejianshusheng"],
+        ["fashengjiangli", "liejianshusheng"],
+        ["buguguiqi", "dading", "fashengjiangli"],
+        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
+        ["dading", "fashengjiangli", "liejianshusheng"]
+      ],
+      "boss": ["yazhongzhihun"]
+    }
+  ]
+}

@@ -1,276 +1,366 @@
 /**
- * 《溯源者：文明环境》课设 - 程序入口
- *
- * 正式主流程由 tce::GameFlowController 统一调度（地图 → 战斗 / 事件 / 商店 / 休息 / 宝藏），
- * 实现与细节见 src/GameFlow/GameFlowController.cpp、include/GameFlow/GameFlowController.hpp。
- *
- * 下方保留事件/商店/休息、纯地图 UI 的独立测试函数；调试时可暂时改 main 调用它们。
+ * 临时入口：仅运行战斗模块（便于怪物/卡牌战斗测试）
  */
-
 #include <SFML/Graphics.hpp>
+#include <SFML/System/Clock.hpp>
+#include <SFML/Window/ContextSettings.hpp>
 #include <algorithm>
+#include <cstdio>
+#include <exception>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <vector>
 
-#include "GameFlow/GameFlowController.hpp"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
+#include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
+#include "BattleCoreRefactor/BattleEngine.hpp"
+#include "BattleEngine/BattleUI.hpp"
+#include "BattleEngine/BattleUISnapshotAdapter.hpp"
+#include "BattleEngine/MonsterBehaviors.hpp"
+#include "CardSystem/CardSystem.hpp"
+#include "Common/RunRng.hpp"
+#include "DataLayer/DataLayer.h"
 #include "DataLayer/DataLayer.hpp"
-#include "EventEngine/EventEngine.hpp"
-#include "EventEngine/EventShopRestUI.hpp"
-#include "EventEngine/EventShopRestUIData.hpp"
-#include "MapEngine/MapEngine.hpp"
-#include "MapEngine/MapUI.hpp"
-#include "MapEngine/MapConfig.hpp"
-#include "Common/NodeTypes.hpp"
+#include "Effects/CardEffects.hpp"
 
-static void runEventShopRestUITest(sf::RenderWindow& window);
-static void runMapUITest(sf::RenderWindow& window);
-
-// 将事件结果转为展示文案（用于结果页）
-static std::string eventResultToSummary(const tce::EventEngine::EventResult& res) {
-    auto effectToSummary = [](const DataLayer::EventEffect& eff) {
-        const int v = eff.value;
-        if (eff.type == "gold") {
-            if (v >= 0) return std::string("获得了 ") + std::to_string(v) + " 金币。";
-            return std::string("失去了 ") + std::to_string(-v) + " 金币。";
-        }
-        if (eff.type == "heal") {
-            if (v >= 0) return std::string("恢复了 ") + std::to_string(v) + " 点生命。";
-            return std::string("失去了 ") + std::to_string(-v) + " 点生命。";
-        }
-        if (eff.type == "max_hp") {
-            if (v >= 0) return std::string("最大生命值提升了 ") + std::to_string(v) + "。";
-            return std::string("最大生命值降低了 ") + std::to_string(-v) + "。";
-        }
-        if (eff.type == "card_reward") return std::string("获得了 ") + std::to_string(v) + " 张新卡牌。";
-        if (eff.type == "card_reward_choose") return std::string("可选获得 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
-        if (eff.type == "remove_card") return std::string("移除了牌组中的 ") + std::to_string(v) + " 张卡牌。";
-        if (eff.type == "remove_card_choose") return std::string("自选移除牌组中的 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
-        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
-        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
-        if (eff.type == "upgrade_random") return std::string("升级了 ") + std::to_string(v) + " 张卡牌。";
-        if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
-        if (eff.type == "none") return std::string("无事发生。");
-        return std::string("事件结算：") + eff.type;
-    };
-
-    if (!res.effects.empty()) {
-        std::string out;
-        for (size_t i = 0; i < res.effects.size(); ++i) {
-            if (i) out += " ";
-            out += effectToSummary(res.effects[i]);
-        }
-        return out.empty() ? std::string("无事发生。") : out;
-    }
-
-    DataLayer::EventEffect eff{ res.type, res.value };
-    return effectToSummary(eff);
+#ifdef _WIN32
+static std::string get_exe_directory() {
+    char buf[MAX_PATH]{};
+    if (GetModuleFileNameA(nullptr, buf, MAX_PATH) == 0) return {};
+    std::string full(buf);
+    const size_t pos = full.find_last_of("\\/");
+    if (pos == std::string::npos) return {};
+    return full.substr(0, pos);
 }
 
-// ---------- 事件/商店/休息 UI 测试（真实事件数据：DataLayer + EventEngine）----------
-static void runEventShopRestUITest(sf::RenderWindow& window) {
-    using namespace tce;
-    DataLayer::DataLayerImpl data;
-    if (!data.load_events("")) {
-        std::cerr << "[EventShopRest] events.json 加载失败，将使用占位事件。\n";
-    }
-    EventEngine engine(
-        [&data](EventEngine::EventId id) { return data.get_event_by_id(id); },
-        [](CardId) {},
-        [](InstanceId) { return false; },
-        [](InstanceId) { return false; }
-    );
-    constexpr const char* ROOT_EVENT_ID = "event_001";
-    if (data.get_event_by_id(ROOT_EVENT_ID))
-        engine.start_event(ROOT_EVENT_ID);
+/** 从资源管理器双击 build\\xxx.exe 时，当前目录往往是 build\\，导致找不到上一级的 data/、assets/。若 exe 在名为 build 的目录下，则把 cwd 设为上一级（项目根）。 */
+static void setup_working_directory_for_assets_and_data() {
+    const std::string exeDir = get_exe_directory();
+    if (exeDir.empty()) return;
+    std::string trim = exeDir;
+    while (!trim.empty() && (trim.back() == '\\' || trim.back() == '/')) trim.pop_back();
+    const size_t slash = trim.find_last_of("\\/");
+    const std::string leaf = (slash == std::string::npos) ? trim : trim.substr(slash + 1);
+    if (leaf == "build")
+        SetCurrentDirectoryA((exeDir + "\\..").c_str());
     else
-        std::cerr << "[EventShopRest] 未找到根事件 \"" << ROOT_EVENT_ID << "\"，请确保 data/events.json 存在且含该 id。\n";
+        SetCurrentDirectoryA(exeDir.c_str());
+}
 
-    EventShopRestUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
-    if (!ui.loadFont("assets/fonts/Sanji.ttf") && !ui.loadFont("assets/fonts/default.ttf"))
-        ui.loadFont("data/font.ttf");
-    if (!ui.loadChineseFont("assets/fonts/simkai.ttf") &&
-        !ui.loadChineseFont("assets/fonts/Sanji.ttf") &&
-        !ui.loadChineseFont("C:/Windows/Fonts/simkai.ttf") &&
-        !ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc") &&
-        !ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
-        ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+static std::string startup_log_path() {
+    const std::string d = get_exe_directory();
+    if (!d.empty()) return d + "\\TracerCE_startup.log";
+    return "TracerCE_startup.log";
+}
+
+static void init_startup_log() {
+    std::ofstream f(startup_log_path(), std::ios::trunc);
+    if (f) {
+        f << "=== TracerCE startup log ===\nexe_dir=" << get_exe_directory() << "\n";
+        f.flush();
+    }
+}
+
+static void log_startup(const std::string& line) {
+    std::ofstream f(startup_log_path(), std::ios::app);
+    if (f) {
+        f << line << "\n";
+        f.flush();
+    }
+    OutputDebugStringA(("[TracerCE] " + line + "\n").c_str());
+}
+
+static void show_error_message(const char* text) {
+    MessageBoxA(nullptr, text, "Tracer Civilization", MB_OK | MB_ICONERROR);
+}
+#else
+static void setup_working_directory_for_assets_and_data() {}
+static void init_startup_log() {}
+static void log_startup(const std::string& line) { std::cerr << line << "\n" << std::flush; }
+static void show_error_message(const char* text) { std::cerr << text << "\n"; }
+#endif
+
+int main() {
+    setup_working_directory_for_assets_and_data();
+    init_startup_log();
+    log_startup("working directory adjusted (if exe in build\\)");
+
+    try {
+    using namespace tce;
+
+    // 先加载数据再创建窗口：若 cards.json 找不到会 return，避免先弹出游戏窗口再立刻退出（看起来像「闪退」）
+    DataLayer::DataLayerImpl data;
+    if (!data.load_cards("") || !data.load_monsters("") || !data.load_encounters("")) {
+        const char* msg =
+            "Data load failed (data/cards.json).\n"
+            "See TracerCE_startup.log next to the exe.\n"
+            "Or run from project root / copy data folder beside exe.";
+        log_startup("ERROR: load_cards or load_monsters returned false");
+        std::cerr << "[BattleOnly] " << msg << "\n";
+        show_error_message(msg);
+        return 1;
+    }
+    log_startup("load_cards + load_monsters + load_encounters OK");
+
+    // 客户端设计分辨率 1920×1080（BattleUI 内像素常量按此基准）；若桌面更小则缩小以完整显示
+    constexpr unsigned kDesignW = 1920u;
+    constexpr unsigned kDesignH = 1080u;
+    sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
+    unsigned winW = kDesignW;
+    unsigned winH = kDesignH;
+    if (desktop.size.x > 0u && static_cast<unsigned>(desktop.size.x) < winW)
+        winW = static_cast<unsigned>(desktop.size.x);
+    if (desktop.size.y > 0u && static_cast<unsigned>(desktop.size.y) < winH)
+        winH = static_cast<unsigned>(desktop.size.y);
+    log_startup("VideoMode request " + std::to_string(winW) + "x" + std::to_string(winH) +
+                " (design " + std::to_string(kDesignW) + "x" + std::to_string(kDesignH) +
+                ", desktop " + std::to_string(static_cast<unsigned>(desktop.size.x)) + "x" +
+                std::to_string(static_cast<unsigned>(desktop.size.y)) + ")");
+
+    sf::ContextSettings gl;
+    gl.depthBits = 0;
+    gl.stencilBits = 0;
+    gl.antiAliasingLevel = 0;
+
+    sf::RenderWindow window(
+        sf::VideoMode({winW, winH}),
+        "Tracer Civilization - Battle Only",
+        sf::Style::Default,
+        sf::State::Windowed,
+        gl);
+    // 与 setFramerateLimit 二选一；垂直同步可降低 GPU 空转与驱动超时风险
+    window.setVerticalSyncEnabled(true);
+    window.setFramerateLimit(0);
+    log_startup("RenderWindow created (vsync on, framerateLimit 0, GL depth 0)");
+    // 窗口刚显示时 Windows 可能注入合成鼠标事件；若仍用全局 Mouse::getPosition 做命中测试，易误点「结束回合」并瞬间走完多段敌方阶段。
+    sf::Clock bootClock;
+    bootClock.restart();
+
+    RunRng runRng(0x20260401ULL);
+    CardSystem cardSystem(get_card_by_id, &runRng);
+    register_all_card_effects(cardSystem);
+    log_startup("CardSystem + register_all_card_effects OK");
+
+    PlayerBattleState player;
+    player.playerName = "Telys";
+    player.character = "Ironclad";
+    player.currentHp = 80;
+    player.maxHp = 80;
+    player.energy = 3;
+    player.maxEnergy = 3;
+    player.gold = 99;
+    player.cardsToDrawPerTurn = 5;
+    player.relics = {"burning_blood"};
+
+    // 战斗专用简牌组：避免依赖“需要额外选牌”的复杂卡，先稳定测核心战斗循环。
+    cardSystem.init_master_deck({
+        "strike", "strike", "strike", "strike", "strike",
+        "defend", "defend", "defend", "defend",
+        "bash"
+    });
+    log_startup("init_master_deck OK");
+
+    BattleEngine battleEngine(
+        cardSystem,
+        get_monster_by_id,
+        get_card_by_id,
+        execute_monster_behavior,
+        &runRng);
+
+    // 使用新怪物进行默认战斗调试（与 encounters.json / monster_behaviors.json 保持一致）
+    battleEngine.start_battle(
+        {"buguguiqi", "dading"},
+        player,
+        cardSystem.get_master_deck_card_ids(),
+        player.relics);
+    log_startup("start_battle OK, monsters=" + std::to_string(battleEngine.get_battle_state().monsters.size()) +
+                " is_battle_over=" + (battleEngine.is_battle_over() ? std::string("1") : std::string("0")));
+
+    BattleUI ui(static_cast<unsigned>(window.getSize().x), static_cast<unsigned>(window.getSize().y));
+    if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadFont("assets/fonts/default.ttf")) {
+            ui.loadFont("data/font.ttf");
+        }
+    }
+    if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
+            if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
+                ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+            }
+        }
+    }
+    log_startup("BattleUI fonts attempted");
+
+    // 为本场战斗的怪物加载贴图：约定文件名为 assets/monsters/<monster_id>.png 或 .jpg
+    auto exists = [](const std::string& p) {
+        return std::filesystem::exists(std::filesystem::u8path(p));
+    };
+    const BattleState& initState = battleEngine.get_battle_state();
+    for (const auto& m : initState.monsters) {
+        const std::string basePng = "assets/monsters/" + m.id + ".png";
+        const std::string baseJpg = "assets/monsters/" + m.id + ".jpg";
+        if (exists(basePng)) {
+            ui.loadMonsterTexture(m.id, basePng);
+        } else if (exists(baseJpg)) {
+            ui.loadMonsterTexture(m.id, baseJpg);
+        }
     }
 
-    ui.setScreen(EventShopRestScreen::Event);
-    if (!engine.get_current_event())
-        ui.setEventDataFromUtf8("（未加载事件）", "请确保 data/events.json 存在且含 event_001。", { "离开" }, "");
-    bool showingResult = false;
-    int screenIndex = 0;
-    const EventEngine::Event* lastDisplayedEvent = nullptr;  // 仅当“当前事件”变化时刷新 UI，避免每帧 clear 选项矩形导致点击无效
+    bool battleOverLogged = false;
+    bool reward_phase_started = false;
+    static unsigned loop_frame = 0;
+    sf::Clock loopWallClock;
+    loopWallClock.restart();
+    log_startup(
+        "entering main loop: first 16 frames log each tick; then every 60 frames + elapsed seconds "
+        "(gaps are normal, not crash)");
     while (window.isOpen()) {
-        const EventEngine::Event* current = engine.get_current_event();
-        if (current && !showingResult && current != lastDisplayedEvent) {
-            ui.setEventDataFromEvent(current);
-            lastDisplayedEvent = current;
+        const unsigned fi = loop_frame++;
+        const float tsec = loopWallClock.getElapsedTime().asSeconds();
+        if (fi < 16u || (fi % 60u) == 0u) {
+            char buf[96];
+            std::snprintf(buf, sizeof(buf), "loop frame %u t=%.2fs", fi, static_cast<double>(tsec));
+            log_startup(buf);
         }
-        if (showingResult) lastDisplayedEvent = nullptr;
-        if (screenIndex == 0 && !current && !showingResult) lastDisplayedEvent = nullptr;
-
         while (const std::optional ev = window.pollEvent()) {
-            if (ev->is<sf::Event::Closed>()) { window.close(); return; }
+            if (ev->is<sf::Event::Closed>()) {
+                log_startup("Event::Closed -> window.close()");
+                window.close();
+                break;
+            }
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
-                if (key->scancode == sf::Keyboard::Scancode::Escape) return;
-                if (key->scancode == sf::Keyboard::Scancode::Num1 || key->scancode == sf::Keyboard::Scancode::Numpad1) {
-                    screenIndex = 0;
-                    ui.setScreen(EventShopRestScreen::Event);
-                    showingResult = false;
-                    if (data.get_event_by_id(ROOT_EVENT_ID)) engine.start_event(ROOT_EVENT_ID);
+                if (key->code == sf::Keyboard::Key::Escape) {
+                    if (bootClock.getElapsedTime().asSeconds() < 0.5f) {
+                        log_startup("Key::Escape ignored (startup debounce)");
+                        continue;
+                    }
+                    log_startup("Key::Escape -> window.close()");
+                    window.close();
+                    break;
                 }
-                if (key->scancode == sf::Keyboard::Scancode::Num2 || key->scancode == sf::Keyboard::Scancode::Numpad2) {
-                    screenIndex = 1;
-                    ui.setScreen(EventShopRestScreen::Shop);
-                    ShopDisplayData shop;
-                    shop.playerGold = 99;
-                    shop.playerCurrentHp = 72;
-                    shop.playerMaxHp = 80;
-                    shop.potionSlotsMax = 3;
-                    shop.potionSlotsUsed = 1;
-                    shop.playerTitle = L"稷下学子";
-                    shop.chapterLine = L"先秦溯源 · 第 6 层";
-                    shop.removeServicePrice = 75;
-                    shop.forSale = {
-                        { "iron_wave", L"铁斩波", 50 }, { "cleave", L"顺劈斩", 60 }, { "shrug_it_off", L"耸肩无视", 45 },
-                        { "quick_slash", L"快斩", 55 }, { "strike", L"打击", 40 },
-                    };
-                    shop.colorlessForSale = {
-                        { "card_001", L"与子同袍", 85 }, { "card_007", L"雨雪霏霏", 55 },
-                    };
-                    shop.relicsForSale = {
-                        { "vajra", L"金刚杵", 180 }, { "anchor", L"船锚", 160 }, { "strawberry", L"草莓", 120 },
-                    };
-                    shop.potionsForSale = {
-                        { "block_potion", L"砌墙灵液", 40 }, { "strength_potion", L"蛮力灵液", 45 },
-                        { "poison_potion", L"淬毒灵液", 50 },
-                    };
-                    shop.deckForRemove = { { 1, "strike", L"打击" }, { 2, "defend", L"防御" } };
-                    ui.setShopData(shop);
-                }
-                if (key->scancode == sf::Keyboard::Scancode::Num3 || key->scancode == sf::Keyboard::Scancode::Numpad3) {
-                    screenIndex = 2;
-                    ui.setScreen(EventShopRestScreen::Rest);
-                    RestDisplayData rest;
-                    rest.healAmount = 20;
-                    rest.deckForUpgrade = { { 1, "strike", L"打击" }, { 2, "cleave", L"铁斩波" } };
-                    ui.setRestData(rest);
+            }
+            // 忽略启动后极短时间内的左键按下，避免误触「结束回合」
+            if (const auto* mb0 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                if (mb0->button == sf::Mouse::Button::Left && bootClock.getElapsedTime().asSeconds() < 0.40f) {
+                    log_startup("MouseButtonPressed Left ignored (startup debounce)");
+                    continue;
                 }
             }
             sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
-            ui.handleEvent(*ev, mousePos);
+            if (const auto* mb = ev->getIf<sf::Event::MouseButtonPressed>())
+                mousePos = window.mapPixelToCoords(sf::Vector2i(mb->position));
+            else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>())
+                mousePos = window.mapPixelToCoords(sf::Vector2i(mr->position));
+            else if (const auto* mm = ev->getIf<sf::Event::MouseMoved>())
+                mousePos = window.mapPixelToCoords(sf::Vector2i(mm->position));
+            else if (const auto* mw = ev->getIf<sf::Event::MouseWheelScrolled>())
+                mousePos = window.mapPixelToCoords(sf::Vector2i(mw->position));
+
+            if (ui.handleEvent(*ev, mousePos)) {
+                log_startup("handleEvent returned true -> end_turn()");
+                battleEngine.end_turn();
+            }
         }
-        sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        if (!window.isOpen()) break;
+
+        const sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         ui.setMousePosition(mousePos);
 
-        int outIndex = -1;
-        if (ui.pollEventOption(outIndex)) {
-            if (showingResult) {
-                if (outIndex == 0) showingResult = false;
-            } else if (engine.get_current_event() && engine.choose_option(outIndex)) {
-                EventEngine::EventResult res;
-                if (engine.get_event_result(res)) {
-                    engine.apply_event_result(res, [](int v) { std::cout << "[事件] 获得金币: " << v << "\n"; }, [](int v) { std::cout << "[事件] 恢复生命: " << v << "\n"; });
-                    ui.setEventResultFromUtf8(eventResultToSummary(res));
-                    showingResult = true;
-                }
-            }
+        int handIndex = -1;
+        int targetMonsterIndex = -1;
+        if (ui.pollPlayCardRequest(handIndex, targetMonsterIndex)) {
+            battleEngine.play_card(handIndex, targetMonsterIndex);
         }
-        CardId outCardId;
-        if (ui.pollShopBuyCard(outCardId)) std::cout << "[EventShopRestUI] 购买卡牌: " << outCardId << std::endl;
-        if (ui.pollShopPayRemoveService()) std::cout << "[EventShopRestUI] 净简付费" << std::endl;
-        int ri = -1, pi = -1;
-        if (ui.pollShopBuyRelic(ri)) std::cout << "[EventShopRestUI] 购买遗物: " << ri << std::endl;
-        if (ui.pollShopBuyPotion(pi)) std::cout << "[EventShopRestUI] 购买灵液: " << pi << std::endl;
-        if (ui.pollShopLeave()) std::cout << "[EventShopRestUI] 离开商店" << std::endl;
-        InstanceId outInstId;
-        if (ui.pollShopRemoveCard(outInstId)) std::cout << "[EventShopRestUI] 删除牌实例: " << outInstId << std::endl;
-        if (ui.pollRestHeal()) std::cout << "[EventShopRestUI] 选择休息回血" << std::endl;
-        if (ui.pollRestUpgradeCard(outInstId)) std::cout << "[EventShopRestUI] 升级牌实例: " << outInstId << std::endl;
 
-        window.clear(sf::Color(40, 38, 45));
-        ui.draw(window);
-        window.display();
-    }
-}
+        int potionSlotIndex = -1;
+        int potionTargetIndex = -1;
+        if (ui.pollPotionRequest(potionSlotIndex, potionTargetIndex)) {
+            battleEngine.use_potion(potionSlotIndex, potionTargetIndex);
+        }
 
-// ---------- 地图 UI 测试 ----------
-static void runMapUITest(sf::RenderWindow& window) {
-    MapEngine::MapConfigManager configManager;
-    MapEngine::MapEngine engine;
-    engine.setContentIdGenerator([](NodeType type, int layer, int index) -> std::string {
-        const char* t[] = { "enemy", "elite", "event", "rest", "merchant", "treasure", "boss" };
-        int i = static_cast<int>(type);
-        return std::string(i >= 0 && i < 7 ? t[i] : "node") + "_" + std::to_string(layer) + "_" + std::to_string(index);
-    });
-    engine.setNodeEnterCallback([](const MapEngine::MapNode& node) {
-        std::cout << "[MapUI] 进入节点: " << node.id << " 类型:" << static_cast<int>(node.type) << " content_id:" << node.content_id << std::endl;
-    });
+        if (!ui.is_reward_screen_active() && !battleEngine.is_battle_over()) {
+            battleEngine.step_turn_phase();
+        }
 
-    if (!configManager.getCurrentConfig()) { std::cerr << "无地图配置" << std::endl; return; }
-    engine.init_fixed_map(*configManager.getCurrentConfig());
-
-    MapEngine::MapUI ui;
-    if (!ui.initialize(&window)) { std::cerr << "地图 UI 初始化失败" << std::endl; return; }
-    ui.loadLegendTexture("assets/images/menu.png");
-    ui.setLegendPosition(1800.f, 900.f);
-    ui.loadBackgroundTexture("assets/images/background.png");
-    ui.setMap(&engine);
-    ui.setCurrentLayer(0);
-
-    while (window.isOpen()) {
-        while (const std::optional ev = window.pollEvent()) {
-            if (ev->is<sf::Event::Closed>()) { window.close(); return; }
-            if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
-                if (key->scancode == sf::Keyboard::Scancode::Escape) return;
-                if (key->scancode == sf::Keyboard::Scancode::Left) {
-                    configManager.prevMap();
-                    engine.init_fixed_map(*configManager.getCurrentConfig());
+        if (battleEngine.is_battle_over()) {
+            if (battleEngine.is_victory()) {
+                if (!reward_phase_started) {
+                    reward_phase_started = true;
+                    const int gold_reward = battleEngine.get_victory_gold();
+                    battleEngine.grant_victory_gold();
+                    std::vector<tce::CardId> reward_cards = battleEngine.get_reward_cards(3);
+                    std::vector<std::string> reward_strs;
+                    reward_strs.reserve(reward_cards.size());
+                    for (const auto& c : reward_cards) reward_strs.push_back(c);
+                    std::vector<std::string> relic_ids;
+                    std::vector<std::string> potion_ids;
+                    const tce::RelicId r = battleEngine.grant_reward_relic();
+                    if (!r.empty()) relic_ids.push_back(r);
+                    const tce::PotionId p = battleEngine.grant_reward_potion();
+                    if (!p.empty()) potion_ids.push_back(p);
+                    ui.set_reward_data(gold_reward, std::move(reward_strs), std::move(relic_ids), std::move(potion_ids));
+                    ui.set_reward_screen_active(true);
+                    std::cout << "[BattleOnly] 战斗胜利 — 请选择奖励卡牌或跳过，然后点继续。\n";
                 }
-                if (key->scancode == sf::Keyboard::Scancode::Right) {
-                    configManager.nextMap();
-                    engine.init_fixed_map(*configManager.getCurrentConfig());
-                }
-            }
-            if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
-                if (mouse->button == sf::Mouse::Button::Left) {
-                    sf::Vector2i pos = mouse->position;
-                    std::string nodeId = ui.handleClick(pos.x, pos.y);
-                    if (!nodeId.empty()) {
-                        MapEngine::MapNode node = engine.get_node_by_id(nodeId);
-                        if (!engine.hasCurrentNode() && node.layer == 0) {
-                            engine.set_current_node(nodeId);
-                            engine.update_reachable_nodes();
-                        } else if (node.is_reachable) {
-                            engine.set_current_node(nodeId);
-                            engine.update_reachable_nodes();
-                        }
+                int reward_pick = -2;
+                if (ui.pollRewardCardPick(reward_pick)) {
+                    if (reward_pick >= 0) {
+                        const std::string cid = ui.get_reward_card_id_at(static_cast<size_t>(reward_pick));
+                        if (!cid.empty()) battleEngine.add_card_to_master_deck(cid);
                     }
                 }
+                if (ui.pollContinueToNextBattleRequest()) {
+                    ui.set_reward_screen_active(false);
+                    reward_phase_started = false;
+                    battleOverLogged = false;
+                    const PlayerBattleState nextPlayer = battleEngine.get_battle_state().player;
+                    battleEngine.start_battle(
+                        {"cultist", "fat_gremlin"},
+                        nextPlayer,
+                        cardSystem.get_master_deck_card_ids(),
+                        nextPlayer.relics);
+                    std::cout << "[BattleOnly] 奖励已确认，已进入新战斗。\n";
+                }
+            } else if (!battleOverLogged) {
+                battleOverLogged = true;
+                std::cout << "[BattleOnly] 战斗失败\n";
             }
         }
-        window.clear(sf::Color(255, 255, 255));
-        ui.draw();
+
+        if (fi == 0u) log_startup("frame0: before snapshot");
+        BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(battleEngine.get_battle_state(), &cardSystem);
+        if (fi == 0u) log_startup("frame0: before draw");
+        SnapshotBattleUIDataProvider adapter(&snapshot);
+        window.clear(sf::Color(28, 26, 32));
+        ui.draw(window, adapter);
+        if (fi == 0u) log_startup("frame0: before display");
         window.display();
+        if (fi == 0u) log_startup("frame0: after display OK");
+
+        battleEngine.tick_damage_displays();
     }
-}
 
-int main() {
-    const unsigned int winW = 1920, winH = 1080;
-    sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 溯源者");
-    window.setFramerateLimit(60);
+    log_startup("main loop exited normally");
+    return 0;
 
-    tce::GameFlowController game(window);
-    if (!game.initialize()) {
-        std::cerr << "[启动] GameFlowController::initialize 失败（请检查地图配置、资源路径等）。\n";
+    } catch (const std::exception& e) {
+        const std::string what = e.what();
+        log_startup(std::string("std::exception: ") + what);
+        std::string box = "Fatal error (exception). See TracerCE_startup.log next to exe.\n\n";
+        box += what;
+        show_error_message(box.c_str());
+        return 1;
+    } catch (...) {
+        log_startup("unknown non-std exception");
+        show_error_message("Fatal error (unknown). See TracerCE_startup.log next to the exe.");
         return 1;
     }
-    game.run();
-    return 0;
 }
-
-// 调试：可将 main 内改为 runEventShopRestUITest(window) 或 runMapUITest(window)（单独测 UI）。
