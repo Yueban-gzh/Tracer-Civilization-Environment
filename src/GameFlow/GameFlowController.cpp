@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <ctime>
-#include <filesystem>
 
 #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -116,6 +115,13 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
                    static_cast<unsigned>(window.getSize().y)) {}
 
 bool GameFlowController::initialize() {
+    // 每次新开一局前重置运行级状态
+    hasPendingSceneAfterLoad_ = false;
+    sceneAfterLoad_           = LastSceneKind::Map;
+    exitToStartRequested_     = false;
+    hudBattleUi_.set_deck_view_active(false);
+    hudBattleUi_.set_pause_menu_active(false);
+
     dataLayer_.load_cards("");
     dataLayer_.load_monsters("");
     dataLayer_.load_events("");
@@ -181,9 +187,54 @@ bool GameFlowController::initialize() {
 }
 
 void GameFlowController::run() {
+    // 若是从读档进入（且读档记录了非地图界面），在正式进入地图循环前先跳转一次对应界面
+    if (hasPendingSceneAfterLoad_) {
+        hasPendingSceneAfterLoad_ = false;
+        if (mapEngine_.hasCurrentNode()) {
+            // 通过快照查找当前节点
+            MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
+            MapEngine::MapNode node{};
+            for (const auto& n : snap.all_nodes) {
+                if (n.is_current) {
+                    node = n;
+                    break;
+                }
+            }
+            if (node.id.empty()) {
+                // 找不到当前节点，则直接进入地图循环
+                sceneAfterLoad_ = LastSceneKind::Map;
+            }
+            switch (sceneAfterLoad_) {
+            case LastSceneKind::Battle:
+                if (node.type == NodeType::Enemy ||
+                    node.type == NodeType::Elite ||
+                    node.type == NodeType::Boss) {
+                    runBattleScene(node.type);
+                }
+                break;
+            case LastSceneKind::Event:
+                // 读档后重新进入事件界面（带完整交互），而不是直接结算事件
+                runEventScene(node.content_id);
+                break;
+            case LastSceneKind::Shop:
+                runShopScene();
+                break;
+            case LastSceneKind::Rest:
+                runRestScene();
+                break;
+            case LastSceneKind::Treasure:
+                runTreasureScene();
+                break;
+            case LastSceneKind::Map:
+            default:
+                break;
+            }
+        }
+    }
+
     while (window_.isOpen()) {
         while (const std::optional ev = window_.pollEvent()) {
-            if (ev->is<sf::Event::Closed>()) {
+        if (ev->is<sf::Event::Closed>()) {
                 window_.close();
                 return;
             }
@@ -208,7 +259,28 @@ void GameFlowController::run() {
                         statusText_ = "已切换到下一张地图。";
                     }
                 }
+                if (key->scancode == sf::Keyboard::Scancode::S) {
+                    lastSceneForSave_ = LastSceneKind::Map;
+                    if (saveRun()) {
+                        statusText_ = "存档已保存到 saves/run_auto_save.json。";
+                    } else {
+                        statusText_ = "存档失败：无法写入 saves/run_auto_save.json。";
+                    }
+                }
             }
+            // 先把事件交给全局 HUD（BattleUI 顶栏）处理：用于右上角「牌组」按钮等
+            {
+                sf::Vector2f mp;
+                if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                } else if (const auto* mr = ev->getIf<sf::Event::MouseMoved>()) {
+                    mp = window_.mapPixelToCoords(mr->position);
+                } else {
+                    mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                }
+                hudBattleUi_.handleEvent(*ev, mp);
+            }
+
             if (gameOver_ || gameCleared_) continue;
             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button != sf::Mouse::Button::Left) continue;
@@ -218,10 +290,50 @@ void GameFlowController::run() {
             }
         }
 
+        // 更新全局 HUD 鼠标位置（用于悬停提示）
+        {
+            sf::Vector2f mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+            hudBattleUi_.setMousePosition(mp);
+        }
+
+        // 若用户点击了右上角「牌组」按钮，则根据 master deck 打开牌组视图
+        {
+            int deckMode = 0;
+            if (hudBattleUi_.pollOpenDeckViewRequest(deckMode)) {
+                // 目前在地图/事件界面，仅展示主牌组（master deck）
+                std::vector<CardInstance> cards = cardSystem_.get_master_deck();
+                hudBattleUi_.set_deck_view_cards(std::move(cards));
+                hudBattleUi_.set_deck_view_active(true);
+            }
+        }
+
+        // 处理全局 HUD 暂停菜单选择（地图界面）
+        {
+            int pauseChoice = 0;
+            if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 1) {
+                    // 返回游戏：不做其它事
+                } else if (pauseChoice == 2) {
+                    // 保存并退出：写入存档后关闭窗口
+                    lastSceneForSave_ = LastSceneKind::Map;
+                    saveRun();
+                    exitToStartRequested_ = true;  // 请求回到开始界面
+                    return;
+                } else if (pauseChoice == 3) {
+                    // 进入二级设置界面：仅在 HUD 内部处理（显示占位项）
+                }
+            }
+        }
+
         window_.clear(sf::Color(245, 245, 245));
         mapUI_.draw();
         drawHud();
         window_.display();
+
+        if (exitToStartRequested_) {
+            exitToStartRequested_ = false;
+            return;  // 结束本次 run，回到 main 逻辑（开始界面）
+        }
     }
 }
 
@@ -370,6 +482,24 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
 
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
+
+        // 处理战斗内的暂停菜单选择
+        {
+            int pauseChoice = 0;
+            if (ui.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 1) {
+                    // 返回游戏：不做额外逻辑
+                } else if (pauseChoice == 2) {
+                    // 保存并退出：写入存档并关闭窗口
+                    lastSceneForSave_ = LastSceneKind::Battle;
+                    saveRun();
+                    exitToStartRequested_ = true;  // 请求回到开始界面
+                    return false;
+                } else if (pauseChoice == 3) {
+                    // 进入设置页面：UI 内部已处理为二级界面，占位功能
+                }
+            }
+        }
 
         int handIndex = -1;
         int targetMonsterIndex = -1;
@@ -886,6 +1016,20 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                     inScene = false;
                 }
             }
+
+            // 先交给全局 HUD（右上角按钮）处理
+            {
+                sf::Vector2f mp;
+                if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                } else if (const auto* mr = ev->getIf<sf::Event::MouseMoved>()) {
+                    mp = window_.mapPixelToCoords(mr->position);
+                } else {
+                    mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                }
+                hudBattleUi_.handleEvent(*ev, mp);
+            }
+
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 mousePos = window_.mapPixelToCoords(mp->position);
@@ -897,6 +1041,32 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
 
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
+
+        // HUD 悬停位置
+        hudBattleUi_.setMousePosition(mousePos);
+
+        // 处理 HUD 牌组按钮
+        {
+            int deckMode = 0;
+            if (hudBattleUi_.pollOpenDeckViewRequest(deckMode)) {
+                std::vector<CardInstance> cards = cardSystem_.get_master_deck();
+                hudBattleUi_.set_deck_view_cards(std::move(cards));
+                hudBattleUi_.set_deck_view_active(true);
+            }
+        }
+
+        // 处理 HUD 暂停菜单（事件界面）
+        {
+            int pauseChoice = 0;
+            if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 2) {
+                    lastSceneForSave_ = LastSceneKind::Event;
+                    saveRun();
+                    exitToStartRequested_ = true;  // 请求回到开始界面
+                    return false;
+                }
+            }
+        }
 
         int outIndex = -1;
         if (ui.pollEventOption(outIndex)) {
@@ -1271,12 +1441,52 @@ bool GameFlowController::runTreasureScene() {
                 window_.close();
                 return false;
             }
+
+            // HUD 右上角按钮（牌组 / 设置）
+            {
+                sf::Vector2f mp;
+                if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                } else if (const auto* mr = ev->getIf<sf::Event::MouseMoved>()) {
+                    mp = window_.mapPixelToCoords(mr->position);
+                } else {
+                    mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                }
+                hudBattleUi_.handleEvent(*ev, mp);
+            }
+
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             ui.handleEvent(*ev, mousePos);
         }
 
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
+
+        // HUD 悬停
+        hudBattleUi_.setMousePosition(mousePos);
+
+        // HUD 牌组
+        {
+            int deckMode = 0;
+            if (hudBattleUi_.pollOpenDeckViewRequest(deckMode)) {
+                std::vector<CardInstance> cards = cardSystem_.get_master_deck();
+                hudBattleUi_.set_deck_view_cards(std::move(cards));
+                hudBattleUi_.set_deck_view_active(true);
+            }
+        }
+
+        // HUD 暂停
+        {
+            int pauseChoice = 0;
+            if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 2) {
+                    lastSceneForSave_ = LastSceneKind::Treasure;
+                    saveRun();
+                    exitToStartRequested_ = true;
+                    return false;
+                }
+            }
+        }
 
         if (ui.pollLeave()) {
             std::string detail = std::string(treasure_chest_kind_label_cn(tr.chest_kind)) + "：";
@@ -1308,6 +1518,7 @@ bool GameFlowController::runTreasureScene() {
 
         window_.clear(sf::Color(12, 10, 18));
         ui.draw(window_);
+        drawHud();  // 宝箱界面上方叠加全局顶栏 + 遗物栏 + 顶部按钮
         window_.display();
     }
 
@@ -1421,12 +1632,52 @@ bool GameFlowController::runShopScene() {
                     if (!ui.tryDismissShopRemoveConfirm()) inScene = false;
                 }
             }
+
+            // HUD 右上角按钮
+            {
+                sf::Vector2f mp;
+                if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                } else if (const auto* mr = ev->getIf<sf::Event::MouseMoved>()) {
+                    mp = window_.mapPixelToCoords(mr->position);
+                } else {
+                    mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                }
+                hudBattleUi_.handleEvent(*ev, mp);
+            }
+
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             ui.handleEvent(*ev, mousePos);
         }
 
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
+
+        // HUD 悬停
+        hudBattleUi_.setMousePosition(mousePos);
+
+        // HUD 牌组
+        {
+            int deckMode = 0;
+            if (hudBattleUi_.pollOpenDeckViewRequest(deckMode)) {
+                std::vector<CardInstance> cards = cardSystem_.get_master_deck();
+                hudBattleUi_.set_deck_view_cards(std::move(cards));
+                hudBattleUi_.set_deck_view_active(true);
+            }
+        }
+
+        // HUD 暂停（商店界面）
+        {
+            int pauseChoice = 0;
+            if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 2) {
+                    lastSceneForSave_ = LastSceneKind::Shop;
+                    saveRun();
+                    exitToStartRequested_ = true;  // 请求回到开始界面
+                    return false;
+                }
+            }
+        }
 
         if (ui.pollShopLeave()) {
             inScene = false;
@@ -1590,6 +1841,20 @@ bool GameFlowController::runRestScene() {
                     if (!ui.tryDismissRestForgeUpgradeConfirm()) inScene = false;
                 }
             }
+
+            // HUD 右上角按钮
+            {
+                sf::Vector2f mp;
+                if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    mp = window_.mapPixelToCoords(m2->position);
+                } else if (const auto* mr = ev->getIf<sf::Event::MouseMoved>()) {
+                    mp = window_.mapPixelToCoords(mr->position);
+                } else {
+                    mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+                }
+                hudBattleUi_.handleEvent(*ev, mp);
+            }
+
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 mousePos = window_.mapPixelToCoords(mp->position);
@@ -1602,6 +1867,32 @@ bool GameFlowController::runRestScene() {
         sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
         ui.syncRestForgeScrollbarDrag(mousePos);
+
+        // HUD 悬停
+        hudBattleUi_.setMousePosition(mousePos);
+
+        // HUD 牌组
+        {
+            int deckMode = 0;
+            if (hudBattleUi_.pollOpenDeckViewRequest(deckMode)) {
+                std::vector<CardInstance> cards = cardSystem_.get_master_deck();
+                hudBattleUi_.set_deck_view_cards(std::move(cards));
+                hudBattleUi_.set_deck_view_active(true);
+            }
+        }
+
+        // HUD 暂停（休息界面）
+        {
+            int pauseChoice = 0;
+            if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
+                if (pauseChoice == 2) {
+                    lastSceneForSave_ = LastSceneKind::Rest;
+                    saveRun();
+                    exitToStartRequested_ = true;  // 请求回到开始界面
+                    return false;
+                }
+            }
+        }
 
         if (ui.pollRestHeal()) {
             playerState_.currentHp = std::min(playerState_.maxHp, playerState_.currentHp + rest.healAmount);

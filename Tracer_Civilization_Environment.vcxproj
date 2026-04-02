@@ -180,6 +180,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\MapEngine\MapEngine.cpp" />
     <ClCompile Include="src\MapEngine\MapUI.cpp" />
     <ClCompile Include="src\GameFlow\GameFlowController.cpp" />
+    <ClCompile Include="src\GameFlow\SaveSystem.cpp" />
+    <ClCompile Include="src\GameFlow\StartScreen.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />

@@ -19,9 +19,24 @@ namespace tce {
 
 class GameFlowController {
 public:
+    enum class LastSceneKind {
+        Map,
+        Battle,
+        Event,
+        Shop,
+        Rest,
+        Treasure
+    };
+
     explicit GameFlowController(sf::RenderWindow& window);
     bool initialize();
     void run();
+
+    /** 将当前 Run 状态写入存档文件（默认：saves/run_auto_save.json）。成功返回 true。 */
+    bool saveRun(const std::string& path = "saves/run_auto_save.json") const;
+
+    /** 从存档文件读取 Run 状态并恢复到当前控制器，成功返回 true。 */
+    bool loadRun(const std::string& path = "saves/run_auto_save.json");
 
     /** 存档用：当前 Run 伪随机状态（与抽牌/奖励等同源）。读档后 set 再继续游戏可复现序列。 */
     uint64_t get_run_rng_state() const { return runRng_.get_state(); }
@@ -65,6 +80,17 @@ private:
     bool gameOver_ = false;
     bool gameCleared_ = false;
     std::string statusText_;
+
+    // 存档/读档用：记录最后所在界面，以及读档后应直接进入的界面
+    LastSceneKind lastSceneForSave_         = LastSceneKind::Map;
+    LastSceneKind sceneAfterLoad_           = LastSceneKind::Map;
+    bool          hasPendingSceneAfterLoad_ = false;
+
+    // 从暂停菜单“保存并退出”返回开始界面，而不是直接关游戏
+    bool exitToStartRequested_ = false;
 };
+
+/** 开始界面：在进入 GameFlowController::run 之前调用，提供“新游戏 / 继续游戏”选项。 */
+void runStartScreen(sf::RenderWindow& window, GameFlowController& controller);
 
 } // namespace tce

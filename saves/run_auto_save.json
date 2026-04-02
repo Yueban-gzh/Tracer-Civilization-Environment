@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "run_rng_state": "4840042184888273495",
+  "map": {
+    "current_layer": 5,
+    "current_node_id": "5-0"
+  },
+  "player": {
+    "name": "Telys",
+    "character_id": "Ironclad",
+    "current_hp": 80,
+    "max_hp": 80,
+    "block": 0,
+    "gold": 64,
+    "max_energy": 3,
+    "potion_slots": 3,
+    "potions": ["poison_potion", "block_potion", "strength_potion"],
+    "relics": ["burning_blood", "ceramic_fish", "happy_flower", "marble_bag"]
+  },
+  "last_scene": "battle"
+}

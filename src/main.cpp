@@ -270,7 +270,16 @@ int main() {
         std::cerr << "[启动] GameFlowController::initialize 失败（请检查地图配置、资源路径等）。\n";
         return 1;
     }
-    game.run();
+
+    // 循环：开始界面 → 一次游戏流程 → 回到开始界面，直到窗口被关闭
+    while (window.isOpen()) {
+        // 开始界面：提供“开始新游戏 / 继续游戏”选项
+        tce::runStartScreen(window, game);
+        if (!window.isOpen()) break;
+
+        game.run();  // 可能在地图/战斗/事件等界面的“保存并退出”中提前 return，回到本循环顶部
+    }
+
     return 0;
 }
 

@@ -580,6 +580,38 @@ namespace tce {
             return false;
         }
 
+        // 若暂停菜单 / 设置界面打开：仅处理暂停相关点击，屏蔽其它交互
+        if (pause_menu_active_ || settings_panel_active_) {
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left) {
+                    if (!settings_panel_active_) {
+                        if (pauseResumeRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 1;   // 返回游戏
+                            pause_menu_active_ = false;
+                            return false;
+                        }
+                        if (pauseSaveQuitRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 2;   // 保存并退出
+                            // 保持菜单打开直到上层处理完关闭窗口
+                            return false;
+                        }
+                        if (pauseSettingsRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 3;   // 进入设置页面
+                            settings_panel_active_ = true;
+                            return false;
+                        }
+                    } else {
+                        if (settingsBackRect_.contains(mousePos)) {
+                            settings_panel_active_ = false;    // 返回到一级暂停菜单
+                            return false;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
         // 奖励界面：处理卡牌选择、跳过、继续；返回 false 表示事件已消费
         if (reward_screen_active_) {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
@@ -645,15 +677,23 @@ namespace tce {
             return false;
         }
 
-        // 非牌组界面：点击顶栏「牌组」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应牌组视图
+        // 非牌组界面：点击顶栏「牌组」「设置」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应视图
         if (ev.is<sf::Event::MouseButtonPressed>()) {
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (btn && btn->button == sf::Mouse::Button::Left) {
                 const float right = width_ - 28.f;
                 const float btnW = 58.f, btnH = 48.f, gap = 18.f;
-                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;  // 牌组按钮左边界
+                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;  // 牌组按钮左边界（中间按钮）
                 if (mousePos.x >= deckBtnLeft && mousePos.x <= deckBtnLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
                     pending_deck_view_mode_ = 1;  // 牌组（主牌组）
+                    return false;
+                }
+                // 顶栏右上角第三个按钮为“设置”：打开暂停菜单
+                const float settingsBtnLeft = right - btnW;  // 最右侧按钮
+                if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
+                    mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                    pause_menu_active_ = true;
+                    settings_panel_active_ = false;
                     return false;
                 }
                 const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
@@ -829,6 +869,21 @@ namespace tce {
         if (pending_deck_view_mode_ == 0) return false;
         outMode = pending_deck_view_mode_;
         pending_deck_view_mode_ = 0;
+        return true;
+    }
+
+    void BattleUI::set_pause_menu_active(bool active) {
+        pause_menu_active_ = active;
+        if (!active) {
+            settings_panel_active_ = false;
+            pending_pause_menu_choice_ = 0;
+        }
+    }
+
+    bool BattleUI::pollPauseMenuSelection(int& outChoice) {
+        if (pending_pause_menu_choice_ == 0) return false;
+        outChoice = pending_pause_menu_choice_;
+        pending_pause_menu_choice_ = 0;
         return true;
     }
 
@@ -1289,8 +1344,87 @@ namespace tce {
 
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
         draw_pile_card_anims_(window);
-        drawTopRight(window, s);                    // 右上角：地图/牌组/设置按钮、回合数
+        drawTopRight(window, s, true);              // 右上角：地图/牌组/设置按钮、回合数（战斗界面显示回合数）
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
+
+        // 战斗界面中的暂停菜单 / 设置界面（与全局 HUD 版本保持一致）
+        if (pause_menu_active_ || settings_panel_active_) {
+            const float viewTop    = TOP_BAR_BG_H;
+            const float viewHeight = static_cast<float>(height_) - viewTop;
+            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+            dimBg.setFillColor(sf::Color(10, 10, 16, 220));
+            window.draw(dimBg);
+
+            const float panelW = 720.f;
+            const float panelH = settings_panel_active_ ? 460.f : 400.f;
+            const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
+            const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+
+            sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
+            panel.setPosition(sf::Vector2f(panelX, panelY));
+            panel.setFillColor(sf::Color(32, 30, 40, 255));
+            panel.setOutlineColor(sf::Color(200, 190, 150));
+            panel.setOutlineThickness(2.f);
+            window.draw(panel);
+
+            const float titleY = panelY + 36.f;
+            sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
+            title.setFillColor(sf::Color(245, 240, 225));
+            const sf::FloatRect tb = title.getLocalBounds();
+            title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+            title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
+            window.draw(title);
+
+            if (!settings_panel_active_) {
+                const float btnW = 320.f;
+                const float btnH = 60.f;
+                const float firstY = panelY + 120.f;
+                const float gap = 24.f;
+                const float centerX = panelX + panelW * 0.5f;
+
+                auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
+                    const float x = centerX - btnW * 0.5f;
+                    outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                    sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+                    btn.setPosition(sf::Vector2f(x, y));
+                    btn.setFillColor(sf::Color(70, 65, 75));
+                    btn.setOutlineColor(sf::Color(170, 160, 130));
+                    btn.setOutlineThickness(2.f);
+                    window.draw(btn);
+
+                    sf::Text t(fontForChinese(), sf::String(label), 26);
+                    t.setFillColor(sf::Color(235, 230, 220));
+                    const sf::FloatRect lb = t.getLocalBounds();
+                    t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                    t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+                    window.draw(t);
+                };
+
+                drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
+                drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
+                drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+            } else {
+                const float btnW = 240.f;
+                const float btnH = 56.f;
+                const float x = panelX + (panelW - btnW) * 0.5f;
+                const float y = panelY + panelH - btnH - 40.f;
+                settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+                btn.setPosition(sf::Vector2f(x, y));
+                btn.setFillColor(sf::Color(70, 65, 75));
+                btn.setOutlineColor(sf::Color(170, 160, 130));
+                btn.setOutlineThickness(2.f);
+                window.draw(btn);
+
+                sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
+                t.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect lb = t.getLocalBounds();
+                t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+                window.draw(t);
+            }
+        }
     }
 
     void BattleUI::drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s) {
@@ -1301,8 +1435,97 @@ namespace tce {
         topBg.setFillColor(TOP_BAR_BG_COLOR);
         window.draw(topBg);
 
+        // 顶栏 + 遗物行 + 右上角三个按钮（非战斗界面不显示回合数）
         drawTopBar(window, s);
         drawRelicsRow(window, s);
+        drawTopRight(window, s, false);
+
+        // 在地图/事件/商店/休息/宝箱等界面上，同样支持顶栏遗物/药水的悬停提示
+        drawRelicPotionTooltip(window, s);
+
+        // 在地图/事件/商店/休息等界面上叠加牌组视图（含遮罩）
+        if (deck_view_active_) {
+            drawDeckView(window, s);
+        }
+
+        // 在地图/事件/商店/休息等界面上叠加暂停菜单 / 设置界面（布局与战斗界面保持一致）
+        if (pause_menu_active_ || settings_panel_active_) {
+            const float viewTop    = TOP_BAR_BG_H;
+            const float viewHeight = static_cast<float>(height_) - viewTop;
+            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+            dimBg.setFillColor(sf::Color(10, 10, 16, 220));
+            window.draw(dimBg);
+
+            const float panelW = 720.f;
+            const float panelH = settings_panel_active_ ? 460.f : 400.f;
+            const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
+            const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+
+            sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
+            panel.setPosition(sf::Vector2f(panelX, panelY));
+            panel.setFillColor(sf::Color(32, 30, 40, 255));
+            panel.setOutlineColor(sf::Color(200, 190, 150));
+            panel.setOutlineThickness(2.f);
+            window.draw(panel);
+
+            const float titleY = panelY + 36.f;
+            sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
+            title.setFillColor(sf::Color(245, 240, 225));
+            const sf::FloatRect tb = title.getLocalBounds();
+            title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+            title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
+            window.draw(title);
+
+            if (!settings_panel_active_) {
+                const float btnW = 320.f;
+                const float btnH = 60.f;
+                const float firstY = panelY + 120.f;
+                const float gap = 24.f;
+                const float centerX = panelX + panelW * 0.5f;
+
+                auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
+                    const float x = centerX - btnW * 0.5f;
+                    outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                    sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+                    btn.setPosition(sf::Vector2f(x, y));
+                    btn.setFillColor(sf::Color(70, 65, 75));
+                    btn.setOutlineColor(sf::Color(170, 160, 130));
+                    btn.setOutlineThickness(2.f);
+                    window.draw(btn);
+
+                    sf::Text t(fontForChinese(), sf::String(label), 26);
+                    t.setFillColor(sf::Color(235, 230, 220));
+                    const sf::FloatRect lb = t.getLocalBounds();
+                    t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                    t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+                    window.draw(t);
+                };
+
+                drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
+                drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
+                drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+            } else {
+                const float btnW = 240.f;
+                const float btnH = 56.f;
+                const float x = panelX + (panelW - btnW) * 0.5f;
+                const float y = panelY + panelH - btnH - 40.f;
+                settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+                btn.setPosition(sf::Vector2f(x, y));
+                btn.setFillColor(sf::Color(70, 65, 75));
+                btn.setOutlineColor(sf::Color(170, 160, 130));
+                btn.setOutlineThickness(2.f);
+                window.draw(btn);
+
+                sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
+                t.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect lb = t.getLocalBounds();
+                t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+                window.draw(t);
+            }
+        }
     }
 
     // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽（1~5 槽）、层数占位、难度占位
@@ -1932,6 +2155,16 @@ namespace tce {
 
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        // 半透明遮罩：覆盖顶栏下方整个区域，让下层内容变暗
+        {
+            const float viewTop    = TOP_BAR_BG_H;
+            const float viewHeight = static_cast<float>(height_) - viewTop;
+            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+            dimBg.setFillColor(sf::Color(10, 10, 16, 210)); // 深灰略透明
+            window.draw(dimBg);
+        }
+
         constexpr float DECK_CARD_W = 190.f;           // 牌组界面卡牌宽
         constexpr float DECK_CARD_H = 300.f;          // 牌组界面卡牌高
         constexpr float COL_CENTER_TO_CENTER = 260.f; // 单行内相邻牌中心间距
@@ -3319,8 +3552,8 @@ namespace tce {
         window.draw(btnText);
     }
 
-    // 右上角：地图、牌组、设置三个按钮 + 回合数（顶栏下方居中）
-    void BattleUI::drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+    // 右上角：地图、牌组、设置三个按钮；可选在下方显示“回合 N”
+    void BattleUI::drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter) {
         const float btnW = 58.f;
         const float btnH = 48.f;
         const float gap = 18.f;
@@ -3347,18 +3580,20 @@ namespace tce {
         drawBtn(L"牌组");
         drawBtn(L"设置");
 
-        // 顶栏下方显示当前回合数，居中对齐在这三个按钮下方
-        const float groupWidth = btnW * 3.f + gap * 2.f;  // 按钮组总宽
-        const float turnCenterX = right - groupWidth * 0.5f;
-        const float turnRowY = rowY + btnH + 18.f;  // 回合文本再往下
-        int turn = std::max(1, s.turnNumber);
-        std::wstring turnStr = L"回合 " + std::to_wstring(turn);
-        sf::Text turnText(fontForChinese(), sf::String(turnStr), 38);  // 字体变大
-        turnText.setFillColor(sf::Color(220, 210, 200));
-        const sf::FloatRect tb = turnText.getLocalBounds();
-        turnText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
-        turnText.setPosition(sf::Vector2f(turnCenterX, turnRowY));
-        window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
+        if (showTurnCounter) {
+            // 顶栏下方显示当前回合数，居中对齐在这三个按钮下方
+            const float groupWidth = btnW * 3.f + gap * 2.f;  // 按钮组总宽
+            const float turnCenterX = right - groupWidth * 0.5f;
+            const float turnRowY = rowY + btnH + 18.f;  // 回合文本再往下
+            int turn = std::max(1, s.turnNumber);
+            std::wstring turnStr = L"回合 " + std::to_wstring(turn);
+            sf::Text turnText(fontForChinese(), sf::String(turnStr), 38);  // 字体变大
+            turnText.setFillColor(sf::Color(220, 210, 200));
+            const sf::FloatRect tb = turnText.getLocalBounds();
+            turnText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
+            turnText.setPosition(sf::Vector2f(turnCenterX, turnRowY));
+            window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
+        }
     }
 
 } // namespace tce

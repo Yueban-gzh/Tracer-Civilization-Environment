@@ -258,7 +258,11 @@ int burn_end_turn_damage_for_id(const CardId& id) {
     }
  
     const bool force_exhaust = corruption_active;                       // 腐化：打出的技能进入消耗堆
-    if ((cd && cd->exhaust) || force_exhaust) {
+
+    // 能力牌（Power）：按你的设计，打出后只生效一次，不再进入弃牌或消耗堆
+    if (cd && cd->cardType == CardType::Power) {
+        // 不调用 add_to_discard / add_to_exhaust，直接“从本场战斗中移除”
+    } else if ((cd && cd->exhaust) || force_exhaust) {
         card_system_->add_to_exhaust(played);                          // 消耗 / 腐化技能
         apply_exhaust_passives_from_hand(1);
     } else if (cd && cd->retain) {
