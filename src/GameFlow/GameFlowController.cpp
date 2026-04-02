@@ -1419,7 +1419,6 @@ bool GameFlowController::runTreasureScene() {
     if (dd.has_relic)
         dd.relic_line = esr_detail::utf8_to_wstring(std::string("遗物「") + relic_name_cn(tr.relic_id) + "」");
     dd.relic_icon_path = relicIconPath;
-    dd.has_curse = tr.grants_curse;
 
     TreasureRoomUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
     if (!ui.loadFont("assets/fonts/Sanji.ttf") && !ui.loadFont("assets/fonts/default.ttf"))
@@ -1506,10 +1505,6 @@ bool GameFlowController::runTreasureScene() {
                 detail += "遗物「" + relic_name_cn(tr.relic_id) + "」；";
             } else {
                 detail += "遗物池已空；";
-            }
-            if (tr.grants_curse) {
-                cardSystem_.add_to_master_deck("parasite");
-                detail += "诅咒：寄生；";
             }
             if (!detail.empty() && detail.back() == '；') detail.pop_back();
             statusText_ = detail;

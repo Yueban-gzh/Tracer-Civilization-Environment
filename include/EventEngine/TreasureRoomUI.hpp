@@ -15,7 +15,6 @@ struct TreasureRoomDisplayData {
     bool         has_relic = false;
     std::wstring relic_line;   // 如：遗物「草莓」
     std::string  relic_icon_path; // assets/relics/xxx.png，空则仅文字
-    bool         has_curse = false;
 };
 
 /**

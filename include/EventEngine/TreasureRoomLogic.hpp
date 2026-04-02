@@ -20,7 +20,6 @@ enum class TreasureRelicTier { Common, Uncommon, Rare };
  * - 小型：遗物 75% 普通 / 25% 罕见 / 0% 稀有；金币 50% × 基数 25（±10%）。
  * - 中型：遗物 35% / 50% / 15%；金币 35% × 基数 50（±10%）。
  * - 大型：遗物 0% / 75% / 25%；金币 50% × 基数 75（±10%）。
- * 诅咒：表未给数值，实现内单独调参。
  */
 struct TreasureRoomOutcome {
     TreasureChestKind chest_kind = TreasureChestKind::Small;
@@ -28,7 +27,6 @@ struct TreasureRoomOutcome {
     bool grants_gold = false;
     int  gold_amount = 0;
     RelicId relic_id;       // 池已空时为空串
-    bool grants_curse = false;
 };
 
 TreasureRoomOutcome roll_and_resolve_treasure_room(RunRng& rng, const std::vector<RelicId>& owned_relics);

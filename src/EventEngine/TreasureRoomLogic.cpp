@@ -100,15 +100,6 @@ RelicId pick_relic(RunRng& rng, TreasureRelicTier preferred, const std::vector<R
     return {};
 }
 
-int curse_chance_for(TreasureChestKind k) {
-    switch (k) {
-    case TreasureChestKind::Small: return 12;
-    case TreasureChestKind::Medium: return 28;
-    case TreasureChestKind::Large:
-    default: return 42;
-    }
-}
-
 } // namespace
 
 TreasureRoomOutcome roll_and_resolve_treasure_room(RunRng& rng, const std::vector<RelicId>& owned_relics) {
@@ -133,7 +124,6 @@ TreasureRoomOutcome roll_and_resolve_treasure_room(RunRng& rng, const std::vecto
 
     out.relic_tier = roll_relic_tier(rng, out.chest_kind);
     out.relic_id = pick_relic(rng, out.relic_tier, owned_relics);
-    out.grants_curse = roll_percent(rng, curse_chance_for(out.chest_kind));
     return out;
 }
 

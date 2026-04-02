@@ -211,8 +211,6 @@ void TreasureRoomUI::draw(sf::RenderWindow& window) {
             drawLine(sf::String(data_.relic_line), TEXT_COLOR);
         else if (!data_.has_relic)
             drawLine(sf::String(L"遗物池已空"), DESC_COLOR);
-        if (data_.has_curse)
-            drawLine(sf::String(L"诅咒：向牌组加入「寄生」"), sf::Color(200, 120, 140));
     }
 
     layoutContinueButton();
