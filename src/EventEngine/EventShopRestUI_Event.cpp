@@ -7,6 +7,8 @@
 #include <SFML/Graphics.hpp>
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 
 namespace tce {
 using namespace esr_detail;
@@ -167,8 +169,36 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
     const float illustTop = contentTop + illustMarginV;
     const float illustCx = illustLeft + illustW * 0.5f;
     const float illustCy = illustTop + illustH * 0.5f;
-    const bool illustIsCard = (eventData_.imagePath.rfind("__cardid:", 0) == 0) ||
+    const bool illustIsCardsRelic = (eventData_.imagePath.rfind("__cards_relic:", 0) == 0);
+    const bool illustIsCard = illustIsCardsRelic ||
+                              (eventData_.imagePath.rfind("__cardid:", 0) == 0) ||
                               (eventData_.imagePath.rfind("__cards:", 0) == 0);
+    const bool illustIsRelic = (eventData_.imagePath.rfind("__relic:", 0) == 0);
+    const bool illustIsPotion = (eventData_.imagePath.rfind("__potion:", 0) == 0);
+    auto resolveOfferIconTexture = [](const std::string& kind, const std::string& id) -> const sf::Texture* {
+        if (id.empty()) return nullptr;
+        static std::unordered_map<std::string, sf::Texture> cache;
+        static std::unordered_map<std::string, bool> loaded;
+        const std::string key = kind + ":" + id;
+        const auto itLoaded = loaded.find(key);
+        if (itLoaded != loaded.end()) {
+            if (!itLoaded->second) return nullptr;
+            auto it = cache.find(key);
+            return (it != cache.end()) ? &it->second : nullptr;
+        }
+        loaded[key] = false;
+        std::string path;
+        if (kind == "relic") path = "assets/relics/" + id + ".png";
+        else if (kind == "potion") path = "assets/potions/" + id + ".png";
+        else return nullptr;
+        sf::Texture tex;
+        if (!tex.loadFromFile(path)) return nullptr;
+        tex.setSmooth(true);
+        cache.emplace(key, std::move(tex));
+        loaded[key] = true;
+        auto it = cache.find(key);
+        return (it != cache.end()) ? &it->second : nullptr;
+    };
     if (eventIllustLoaded_ && eventIllustTexture_.getSize().x > 0) {
         sf::Sprite sprite(eventIllustTexture_);
         const sf::Vector2u texSize = eventIllustTexture_.getSize();
@@ -181,7 +211,23 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         window.draw(sprite);
     } else if (illustIsCard) {
         std::vector<std::string> cardIds;
-        if (eventData_.imagePath.rfind("__cardid:", 0) == 0) {
+        std::string comboRelicId;
+        if (illustIsCardsRelic) {
+            const std::string payload = eventData_.imagePath.substr(14); // "__cards_relic:"
+            const std::size_t hashPos = payload.find('#');
+            const std::string cardPayload = (hashPos == std::string::npos) ? payload : payload.substr(0, hashPos);
+            if (hashPos != std::string::npos && hashPos + 1 < payload.size()) {
+                comboRelicId = payload.substr(hashPos + 1);
+            }
+            std::size_t s = 0;
+            while (s <= cardPayload.size()) {
+                const std::size_t p = cardPayload.find('|', s);
+                const std::string id = (p == std::string::npos) ? cardPayload.substr(s) : cardPayload.substr(s, p - s);
+                if (!id.empty()) cardIds.push_back(id);
+                if (p == std::string::npos) break;
+                s = p + 1;
+            }
+        } else if (eventData_.imagePath.rfind("__cardid:", 0) == 0) {
             cardIds.push_back(eventData_.imagePath.substr(9));
         } else if (eventData_.imagePath.rfind("__cards:", 0) == 0) {
             const std::string payload = eventData_.imagePath.substr(8);
@@ -323,6 +369,63 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             const float cardH = cardW * BATTLE_CARD_ASPECT_H_OVER_W;
             drawCardInRect(cardIds[0],
                 sf::FloatRect(sf::Vector2f(illustCx - cardW * 0.5f, illustCy - cardH * 0.5f), sf::Vector2f(cardW, cardH)));
+        }
+
+        // 同时获得卡牌与遗物时：在左侧插图区追加遗物角标（避免“二选一”）
+        if (!comboRelicId.empty()) {
+            const sf::Texture* relicTex = resolveOfferIconTexture("relic", comboRelicId);
+            const float bubbleR = std::max(26.f, std::min(illustW, illustH) * 0.16f);
+            const sf::Vector2f bubbleCenter(
+                illustLeft + illustW - bubbleR - 8.f,
+                illustTop + illustH - bubbleR - 6.f);
+
+            sf::CircleShape bubble(bubbleR);
+            bubble.setOrigin(sf::Vector2f(bubbleR, bubbleR));
+            bubble.setPosition(bubbleCenter);
+            bubble.setFillColor(sf::Color(38, 34, 30, 215));
+            bubble.setOutlineThickness(2.f);
+            bubble.setOutlineColor(sf::Color(225, 190, 105, 245));
+            window.draw(bubble);
+
+            if (relicTex && relicTex->getSize().x > 0 && relicTex->getSize().y > 0) {
+                sf::Sprite rs(*relicTex);
+                const sf::Vector2u ts = relicTex->getSize();
+                const float target = bubbleR * 1.45f;
+                const float s = std::min(target / static_cast<float>(ts.x), target / static_cast<float>(ts.y));
+                rs.setScale(sf::Vector2f(s, s));
+                rs.setOrigin(sf::Vector2f(ts.x * 0.5f, ts.y * 0.5f));
+                rs.setPosition(bubbleCenter);
+                window.draw(rs);
+            }
+        }
+    } else if (illustIsRelic || illustIsPotion) {
+        const std::string itemId = eventData_.imagePath.substr(illustIsRelic ? 8 : 9);
+        const sf::Texture* tex = resolveOfferIconTexture(illustIsRelic ? "relic" : "potion", itemId);
+        if (tex && tex->getSize().x > 0 && tex->getSize().y > 0) {
+            sf::Sprite icon(*tex);
+            const float maxW = std::max(40.f, illustW * 0.72f);
+            const float maxH = std::max(40.f, illustH * 0.72f);
+            const float s = std::min(maxW / static_cast<float>(tex->getSize().x),
+                                     maxH / static_cast<float>(tex->getSize().y));
+            icon.setScale(sf::Vector2f(s, s));
+            icon.setOrigin(sf::Vector2f(tex->getSize().x * 0.5f, tex->getSize().y * 0.5f));
+            icon.setPosition(sf::Vector2f(illustCx, illustCy - 10.f));
+            window.draw(icon);
+
+            const sf::String label = illustIsRelic ? sf::String(L"遗物") : sf::String(L"药水");
+            sf::Text tag(fontForText(), label, static_cast<unsigned>(std::max(16u, bodySize)));
+            tag.setFillColor(sf::Color(232, 220, 180));
+            const sf::FloatRect b = tag.getLocalBounds();
+            tag.setOrigin(sf::Vector2f(b.position.x + b.size.x * 0.5f, b.position.y + b.size.y * 0.5f));
+            tag.setPosition(sf::Vector2f(illustCx, illustCy + maxH * 0.5f + 8.f));
+            window.draw(tag);
+        } else {
+            sf::Text illustHint(fontForText(), sf::String(L"[ 图标加载失败 ]"), static_cast<unsigned>(BODY_CHAR_SIZE - 2));
+            illustHint.setFillColor(sf::Color(120, 95, 95));
+            const sf::FloatRect ihb = illustHint.getLocalBounds();
+            illustHint.setOrigin(sf::Vector2f(ihb.position.x + ihb.size.x * 0.5f, ihb.position.y + ihb.size.y * 0.5f));
+            illustHint.setPosition(sf::Vector2f(illustCx, illustCy));
+            window.draw(illustHint);
         }
     } else {
         sf::Text illustHint(fontForText(), sf::String(L"[ 插图 ]"), static_cast<unsigned>(BODY_CHAR_SIZE - 2));

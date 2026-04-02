@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 
 #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -71,6 +73,43 @@ std::string relic_name_cn(const std::string& id) {
     return id;
 }
 
+std::string read_debug_event_override_id() {
+    namespace fs = std::filesystem;
+    const fs::path p("data/debug_event_id.txt");
+    if (!fs::exists(p)) return "";
+    std::ifstream in(p, std::ios::binary);
+    if (!in) return "";
+    std::string line;
+    std::getline(in, line);
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ' || line.back() == '\t')) {
+        line.pop_back();
+    }
+    size_t start = 0;
+    while (start < line.size() && (line[start] == ' ' || line[start] == '\t')) ++start;
+    return (start < line.size()) ? line.substr(start) : std::string();
+}
+
+void preload_relic_and_potion_icons(BattleUI& ui) {
+    static const std::vector<std::string> kRelics = {
+        "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
+        "clockwork_boots", "copper_scales", "data_disk", "hand_drum", "happy_flower", "lantern",
+        "marble_bag", "nunchaku", "orichalcum", "pen_nib", "potion_belt", "preparation_pack",
+        "red_skull", "small_blood_vial", "smooth_stone", "snake_skull", "strawberry",
+        "toy_ornithopter", "vajra", "relic_strength_plus"
+    };
+    static const std::vector<std::string> kPotions = {
+        "attack_potion", "block_potion", "blood_potion", "dexterity_potion", "energy_potion",
+        "explosion_potion", "fear_potion", "fire_potion", "focus_potion", "poison_potion",
+        "speed_potion", "steroid_potion", "strength_potion", "swift_potion", "weak_potion"
+    };
+    for (const auto& rid : kRelics) {
+        ui.loadRelicTexture(rid, "assets/relics/" + rid + ".png");
+    }
+    for (const auto& pid : kPotions) {
+        ui.loadPotionTexture(pid, "assets/potions/" + pid + ".png");
+    }
+}
+
 void applyBattleTestMock(PlayerBattleState& p) {
     if (std::find(p.relics.begin(), p.relics.end(), "burning_blood") == p.relics.end()) {
         p.relics.push_back("burning_blood");
@@ -119,6 +158,7 @@ bool GameFlowController::initialize() {
     hasPendingSceneAfterLoad_ = false;
     sceneAfterLoad_           = LastSceneKind::Map;
     exitToStartRequested_     = false;
+    seenEventRootsByLayer_.clear();
     hudBattleUi_.set_deck_view_active(false);
     hudBattleUi_.set_pause_menu_active(false);
 
@@ -183,6 +223,7 @@ bool GameFlowController::initialize() {
     // 顶栏/遗物栏 UI 使用与战斗一致的字体配置
     hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
     hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
+    preload_relic_and_potion_icons(hudBattleUi_);
 
     statusText_ = "选择第一个节点开始爬塔。";
     // 初始检查点：即使还未进入节点，也允许写入稳定基线存档。
@@ -271,6 +312,7 @@ void GameFlowController::run() {
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     mapConfigManager_.prevMap();
                     mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    seenEventRootsByLayer_.clear();
                     mapUI_.setMap(&mapEngine_);
                     mapUI_.setCurrentLayer(0);
                     statusText_ = "已切换到上一张地图。";
@@ -278,6 +320,7 @@ void GameFlowController::run() {
                 if (key->scancode == sf::Keyboard::Scancode::Right) {
                     mapConfigManager_.nextMap();
                     mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    seenEventRootsByLayer_.clear();
                     mapUI_.setMap(&mapEngine_);
                     mapUI_.setCurrentLayer(0);
                     statusText_ = "已切换到下一张地图。";
@@ -446,6 +489,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
     }
+    preload_relic_and_potion_icons(ui);
 
     auto exists = [](const std::string& p) {
         return std::filesystem::exists(std::filesystem::u8path(p));
@@ -927,25 +971,39 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         }
     }
 
-    std::vector<DataLayer::RootEventCandidate> candidates =
-        dataLayer_.get_root_event_candidates_for_layer(layer);
-
     std::string eventId;
+    const std::string debugEventId = read_debug_event_override_id();
+    if (!debugEventId.empty() && dataLayer_.get_event_by_id(debugEventId) != nullptr) {
+        eventId = debugEventId;
+        statusText_ = "调试事件覆盖已启用：" + debugEventId;
+    } else {
+        std::vector<DataLayer::RootEventCandidate> candidates =
+            dataLayer_.get_root_event_candidates_for_layer(layer);
     if (!candidates.empty()) {
+        auto& seenInLayer = seenEventRootsByLayer_[layer];
+        std::vector<DataLayer::RootEventCandidate> freshCandidates;
+        freshCandidates.reserve(candidates.size());
+        for (const auto& c : candidates) {
+            if (seenInLayer.find(c.id) == seenInLayer.end()) freshCandidates.push_back(c);
+        }
+        const auto& pickPool = freshCandidates.empty() ? candidates : freshCandidates;
+
         int totalWeight = 0;
-        for (const auto& c : candidates) totalWeight += std::max(1, c.weight);
+        for (const auto& c : pickPool) totalWeight += std::max(1, c.weight);
         if (totalWeight <= 0) totalWeight = 1;
 
         int pick = randomIndex(runRng_, totalWeight);
-        for (const auto& c : candidates) {
+        for (const auto& c : pickPool) {
             const int w = std::max(1, c.weight);
             if (pick < w) { eventId = c.id; break; }
             pick -= w;
         }
     }
+    }
 
     if (eventId.empty()) eventId = "event_001";
     if (dataLayer_.get_event_by_id(eventId) == nullptr) return false;
+    seenEventRootsByLayer_[layer].insert(eventId);
 
     eventEngine_.start_event(eventId);
 
@@ -1140,6 +1198,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                 DataLayer::EventResult res{};
                 if (eventEngine_.get_event_result(res)) {
                         std::vector<std::string> detailMessages;
+                        std::vector<std::string> gainedRelicIds;
                         const auto pushCardPreview = [&](const std::string& cid) {
                             if (cid.empty()) return;
                             if (resultCardPreviewIds.size() < 4) resultCardPreviewIds.push_back(cid);
@@ -1361,6 +1420,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                     if (available.empty()) break;
                                     const RelicId gained = available[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(available.size())))];
                                     playerState_.relics.push_back(gained);
+                                    gainedRelicIds.push_back(gained);
                                     gainedRelics.push_back(relic_name_cn(gained));
 
                                     if (gained == "strawberry") {
@@ -1401,11 +1461,21 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                         }
                         std::string resultImage;
                         if (!uniqueIds.empty()) {
-                            resultImage = "__cards:";
+                            if (!gainedRelicIds.empty()) {
+                                resultImage = "__cards_relic:";
+                            } else {
+                                resultImage = "__cards:";
+                            }
                             for (size_t i = 0; i < uniqueIds.size(); ++i) {
                                 if (i > 0) resultImage += "|";
                                 resultImage += uniqueIds[i];
                             }
+                            if (!gainedRelicIds.empty()) {
+                                resultImage += "#";
+                                resultImage += gainedRelicIds.front();
+                            }
+                        } else if (!gainedRelicIds.empty()) {
+                            resultImage = "__relic:" + gainedRelicIds.front();
                         }
                         std::string finalSummary = summarizeResult(res);
                         if (!detailMessages.empty()) {

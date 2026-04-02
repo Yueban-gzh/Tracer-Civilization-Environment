@@ -10,6 +10,7 @@
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 namespace tce {
 using namespace esr_detail;
@@ -31,6 +32,24 @@ sf::Color rarity_outline(Rarity r) {
     case Rarity::Special: return sf::Color(180, 100, 220);
     default: return sf::Color(210, 175, 95);
     }
+}
+
+const sf::Texture* resolve_offer_icon_texture(const std::string& id, bool relicStyle) {
+    static std::unordered_map<std::string, sf::Texture> relicCache;
+    static std::unordered_map<std::string, sf::Texture> potionCache;
+    auto& cache = relicStyle ? relicCache : potionCache;
+    auto it = cache.find(id);
+    if (it != cache.end()) return &it->second;
+
+    sf::Texture tex;
+    const std::string baseDir = relicStyle ? "assets/relics/" : "assets/potions/";
+    const std::string p1 = baseDir + id + ".png";
+    const std::string p2 = "./" + p1;
+    if (tex.loadFromFile(p1) || tex.loadFromFile(p2)) {
+        auto [insIt, _] = cache.emplace(id, std::move(tex));
+        return &insIt->second;
+    }
+    return nullptr;
 }
 
 void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Vector2f& mousePos,
@@ -358,19 +377,41 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
 
 void draw_icon_offer(sf::RenderWindow& window, const sf::Font& font, const sf::Vector2f& mousePos,
     const sf::FloatRect& rect, const std::wstring& name, int price, bool relicStyle, bool canAfford,
-    unsigned nameFontSize, unsigned priceFontSize,
+    unsigned nameFontSize, unsigned priceFontSize, const sf::Texture* iconTexture,
     std::wstring& outTooltip, bool& outHover) {
     outHover = rect.contains(mousePos);
     outTooltip.clear();
 
-    const sf::Color fill = relicStyle ? sf::Color(55, 48, 38) : sf::Color(38, 48, 58);
-    const sf::Color edge = relicStyle ? sf::Color(200, 170, 90) : sf::Color(130, 180, 210);
-    sf::RectangleShape box(rect.size);
-    box.setPosition(rect.position);
-    box.setFillColor(fill);
-    box.setOutlineColor(outHover ? sf::Color(255, 235, 180) : edge);
-    box.setOutlineThickness(outHover ? 2.5f : 2.f);
-    window.draw(box);
+    if (iconTexture && iconTexture->getSize().x > 0 && iconTexture->getSize().y > 0) {
+        sf::Sprite icon(*iconTexture);
+        const sf::Vector2u ts = iconTexture->getSize();
+        // 商店遗物/药水改为纯图标展示：去外框，并略微放大图标
+        const float innerPad = std::max(1.5f, std::min(rect.size.x, rect.size.y) * 0.04f);
+        const float targetW = std::max(6.f, rect.size.x - innerPad * 2.f);
+        const float targetH = std::max(6.f, rect.size.y - innerPad * 2.f);
+        const float sx = targetW / static_cast<float>(ts.x);
+        const float sy = targetH / static_cast<float>(ts.y);
+        const float baseS = std::min(sx, sy);
+        const float hoverMul = outHover ? 1.08f : 1.0f;
+        const float s = baseS * hoverMul;
+        icon.setScale(sf::Vector2f(s, s));
+        icon.setOrigin(sf::Vector2f(ts.x * 0.5f, ts.y * 0.5f));
+        icon.setPosition(sf::Vector2f(rect.position.x + rect.size.x * 0.5f, rect.position.y + rect.size.y * 0.5f));
+
+        if (outHover) {
+            const sf::Color glowCol = relicStyle ? sf::Color(255, 220, 140, 120) : sf::Color(150, 220, 255, 110);
+            sf::CircleShape glow(std::max(rect.size.x, rect.size.y) * 0.42f);
+            glow.setOrigin(sf::Vector2f(glow.getRadius(), glow.getRadius()));
+            glow.setPosition(sf::Vector2f(rect.position.x + rect.size.x * 0.5f, rect.position.y + rect.size.y * 0.5f));
+            glow.setFillColor(glowCol);
+            window.draw(glow);
+        }
+
+        icon.setColor(canAfford
+            ? (outHover ? sf::Color(255, 255, 255, 255) : sf::Color(255, 255, 255, 245))
+            : sf::Color(165, 165, 165, 215));
+        window.draw(icon);
+    }
 
     sf::Text shortName(font, truncate_to_width(font, sf::String(name), nameFontSize, rect.size.x - 2.f), nameFontSize);
     shortName.setFillColor(sf::Color(220, 215, 208));
@@ -799,8 +840,9 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
         bool canAfford = shopData_.playerGold >= o.price;
         std::wstring tip;
         bool hover = false;
+        const sf::Texture* iconTex = resolve_offer_icon_texture(o.id, true);
         draw_icon_offer(window, fontForText(), mousePos_, r, o.name, o.price, true, canAfford, shopOfferNameFont,
-            shopPriceFont, tip, hover);
+            shopPriceFont, iconTex, tip, hover);
     }
 
     shopPotionRects_.clear();
@@ -812,8 +854,9 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
         bool canAfford = shopData_.playerGold >= o.price;
         std::wstring tip;
         bool hover = false;
+        const sf::Texture* iconTex = resolve_offer_icon_texture(o.id, false);
         draw_icon_offer(window, fontForText(), mousePos_, r, o.name, o.price, false, canAfford, shopOfferNameFont,
-            shopPriceFont, tip, hover);
+            shopPriceFont, iconTex, tip, hover);
     }
 
     const size_t nCol = std::min<std::size_t>(2, shopData_.colorlessForSale.size());

@@ -107,6 +107,7 @@ bool GameFlowController::saveRun(const std::string& path) const {
 bool GameFlowController::loadRun(const std::string& path) {
     namespace fs = std::filesystem;
     try {
+        seenEventRootsByLayer_.clear();
         if (!fs::exists(path)) {
             return false;
         }

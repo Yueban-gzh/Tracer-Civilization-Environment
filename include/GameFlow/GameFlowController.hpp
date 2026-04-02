@@ -3,6 +3,8 @@
 #include <SFML/Graphics.hpp>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "BattleCoreRefactor/BattleEngine.hpp"
@@ -98,6 +100,9 @@ private:
 
     // 从暂停菜单“保存并退出”返回开始界面，而不是直接关游戏
     bool exitToStartRequested_ = false;
+
+    // 事件去重：同一地图层中已经触发过的根事件 id（尽量避免同层重复事件）
+    std::unordered_map<int, std::unordered_set<std::string>> seenEventRootsByLayer_;
 };
 
 /** 开始界面：在进入 GameFlowController::run 之前调用，提供“新游戏 / 继续游戏”选项。 */
