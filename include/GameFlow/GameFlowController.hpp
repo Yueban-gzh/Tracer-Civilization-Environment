@@ -45,6 +45,7 @@ public:
 private:
     bool tryMoveToNode(const std::string& nodeId);
     void resolveNode(const MapEngine::MapNode& node);
+    void captureCheckpointForCurrentNode();  // 固定存档点：进入节点瞬间的 Run 状态
 
     bool runBattleScene(NodeType nodeType);
     void resolveEvent(const std::string& contentId);
@@ -80,6 +81,15 @@ private:
     bool gameOver_ = false;
     bool gameCleared_ = false;
     std::string statusText_;
+
+    // 固定存档点：每次进入节点（房间）瞬间记录一份检查点；之后任意时刻存档都只写这个检查点，
+    // 防止通过 SL 改变宝箱/事件等奖励结果（run_rng_state 不随房间内操作变化）。
+    bool            checkpointValid_ = false;
+    uint64_t        checkpointRunRngState_ = 0;
+    PlayerBattleState checkpointPlayerState_{};
+    std::vector<CardId> checkpointMasterDeck_{};
+    int             checkpointCurrentLayer_ = 0;
+    std::string     checkpointCurrentNodeId_;
 
     // 存档/读档用：记录最后所在界面，以及读档后应直接进入的界面
     LastSceneKind lastSceneForSave_         = LastSceneKind::Map;

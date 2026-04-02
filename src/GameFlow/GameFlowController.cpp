@@ -183,7 +183,30 @@ bool GameFlowController::initialize() {
     hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
 
     statusText_ = "选择第一个节点开始爬塔。";
+    // 初始检查点：即使还未进入节点，也允许写入稳定基线存档。
+    captureCheckpointForCurrentNode();
     return true;
+}
+
+void GameFlowController::captureCheckpointForCurrentNode() {
+    // 固定存档点：进入节点（房间）瞬间的检查点。之后在房间内任意时刻存档都只写这份状态，
+    // 以避免通过 SL 改变宝箱/事件等奖励结果（RNG 状态不随房间内操作变化）。
+    checkpointValid_       = true;
+    checkpointRunRngState_ = runRng_.get_state();
+    checkpointPlayerState_ = playerState_;
+    checkpointMasterDeck_  = cardSystem_.get_master_deck_card_ids();
+
+    checkpointCurrentLayer_ = mapEngine_.get_current_layer();
+    checkpointCurrentNodeId_.clear();
+    {
+        MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
+        for (const auto& n : snap.all_nodes) {
+            if (n.is_current) {
+                checkpointCurrentNodeId_ = n.id;
+                break;
+            }
+        }
+    }
 }
 
 void GameFlowController::run() {
@@ -352,6 +375,8 @@ bool GameFlowController::tryMoveToNode(const std::string& nodeId) {
     mapEngine_.set_node_visited(nodeId);
     mapEngine_.update_reachable_nodes();
     mapUI_.setCurrentLayer(node.layer);
+    // 进入节点瞬间先记录检查点（之后在该节点界面里存档都只写这份）。
+    captureCheckpointForCurrentNode();
     resolveNode(node);
     return true;
 }
