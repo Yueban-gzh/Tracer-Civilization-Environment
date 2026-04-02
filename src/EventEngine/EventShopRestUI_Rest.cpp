@@ -24,7 +24,8 @@ void EventShopRestUI::drawRestScreen(sf::RenderWindow& window) {
         dim.setFillColor(sf::Color(12, 10, 18, 210));
         window.draw(dim);
 
-        constexpr float kTopMargin = 44.f;
+        // 顶部有全局状态栏，列表区域需下移避免首行卡牌被遮挡
+        constexpr float kTopMargin = 116.f;
         constexpr float kBottomBand = 96.f;
         constexpr float kGridPadTop = 14.f;
         constexpr float kGridPadBottom = 22.f;

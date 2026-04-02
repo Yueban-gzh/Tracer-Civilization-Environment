@@ -162,14 +162,15 @@ bool GameFlowController::initialize() {
         "well_laid_plans",
     });
 
-    const MapEngine::MapConfig* config = mapConfigManager_.getCurrentConfig();
-    if (!config) return false;
     mapEngine_.set_run_rng(&runRng_);
-    mapEngine_.init_fixed_map(*config);
+    // 使用新版 12 层随机地图生成（替代旧 fixed_map 5/6 层配置）
+    const int mapIndex = mapConfigManager_.getCurrentIndex();
+    mapEngine_.init_random_map(mapIndex);
 
     if (!mapUI_.initialize(&window_)) return false;
     mapUI_.loadLegendTexture("assets/images/menu.png");
-    mapUI_.setLegendPosition(1600.f, 120.f);
+    mapUI_.setLegendPosition(1550.f, 550.f);
+    mapUI_.setLegendScale(1.0f);
     mapUI_.loadBackgroundTexture("assets/images/background.png");
     mapUI_.setMap(&mapEngine_);
     mapUI_.setCurrentLayer(0);
@@ -269,19 +270,17 @@ void GameFlowController::run() {
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     mapConfigManager_.prevMap();
-                    if (const auto* cfg = mapConfigManager_.getCurrentConfig()) {
-                        mapEngine_.init_fixed_map(*cfg);
-                        mapUI_.setCurrentLayer(0);
-                        statusText_ = "已切换到上一张地图。";
-                    }
+                    mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    mapUI_.setMap(&mapEngine_);
+                    mapUI_.setCurrentLayer(0);
+                    statusText_ = "已切换到上一张地图。";
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Right) {
                     mapConfigManager_.nextMap();
-                    if (const auto* cfg = mapConfigManager_.getCurrentConfig()) {
-                        mapEngine_.init_fixed_map(*cfg);
-                        mapUI_.setCurrentLayer(0);
-                        statusText_ = "已切换到下一张地图。";
-                    }
+                    mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    mapUI_.setMap(&mapEngine_);
+                    mapUI_.setCurrentLayer(0);
+                    statusText_ = "已切换到下一张地图。";
                 }
                 if (key->scancode == sf::Keyboard::Scancode::S) {
                     lastSceneForSave_ = LastSceneKind::Map;
@@ -306,6 +305,12 @@ void GameFlowController::run() {
             }
 
             if (gameOver_ || gameCleared_) continue;
+            if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
+                    mapUI_.scroll(wheel->delta * 40.0f);
+                    continue;
+                }
+            }
             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button != sf::Mouse::Button::Left) continue;
                 const std::string nodeId = mapUI_.handleClick(mouse->position.x, mouse->position.y);
