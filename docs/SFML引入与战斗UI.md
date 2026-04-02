@@ -6,12 +6,12 @@
 
 ## 当前工程已配置的 SFML 路径
 
-- **SFML 目录**：`D:\C++Project\SFML-3.0.2`（在 vcxproj 中通过宏 `SFML_DIR` 引用，可统一修改）。
+- **SFML 目录**：`$(ProjectDir)SFML-3.0.2-windows-vc17-64-bit\SFML-3.0.2`（在 `Tracer_Civilization_Environment.vcxproj` 中通过宏 `SFML_DIR` 引用，可统一修改）。
 - **已配置**：Debug|x64、Release|x64 的**包含目录**、**库目录**、**附加依赖项**；生成后自动把 `$(SFML_DIR)\bin\*.*` 复制到 exe 输出目录。
-- **请确认你本机目录结构**：
-  - `D:\C++Project\SFML-3.0.2\include`（头文件）
-  - `D:\C++Project\SFML-3.0.2\lib`（.lib，Debug 用带 `-d` 的库名）
-  - `D:\C++Project\SFML-3.0.2\bin`（.dll，运行前会复制到 exe 同目录）
+- **请确认目录结构**（相对 `$(SFML_DIR)`）：
+  - `$(SFML_DIR)\include`（头文件）
+  - `$(SFML_DIR)\lib`（.lib，Debug 用带 `-d` 的库名）
+  - `$(SFML_DIR)\bin`（.dll，运行前会复制到 exe 同目录）
 - 若你的 lib 在子目录（如 `lib\x64`），请在项目属性 → 链接器 → 附加库目录中改为 `$(SFML_DIR)\lib\x64`。
 
 ---

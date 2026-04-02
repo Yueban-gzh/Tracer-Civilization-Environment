@@ -1,5 +1,10 @@
-//include/MapEngine/MapEngine.hpp
+ï»¿// include/MapEngine/MapEngine.hpp
 #pragma once
+
+namespace tce {
+    class RunRng;
+}
+
 #include "../Common/NodeTypes.hpp"
 #include <vector>
 #include <unordered_map>
@@ -22,6 +27,7 @@ namespace MapEngine {
         bool is_visited = false;
         bool is_current = false;
         bool is_reachable = true;
+        bool is_completed = false;  // ã€æ–°å¢ã€‘èŠ‚ç‚¹æ˜¯å¦å·²å®Œæˆï¼ˆæˆ˜æ–—/äº‹ä»¶å·²å¤„ç†ï¼‰
 
         MapNode() : layer(0) {}
     };
@@ -39,11 +45,11 @@ namespace MapEngine {
 
     class MapEngine {
     public:
-        // ÀàĞÍ¶¨Òå
+        // ç±»å‹å®šä¹‰
         using ContentIdGenerator = std::function<ContentId(NodeType type, int layer, int index)>;
         using NodeEnterCallback = std::function<void(const MapNode& node)>;
 
-        // ÔÚ MapEngine ÀàµÄ public ²¿·ÖÌí¼Ó
+        // è¾…åŠ©æ–¹æ³•
         int get_current_layer() const {
             for (const auto& pair : nodes_) {
                 if (pair.second.is_current) {
@@ -56,49 +62,62 @@ namespace MapEngine {
         MapEngine();
         ~MapEngine();
 
-        // ºËĞÄ½Ó¿Ú
+        // æ ¸å¿ƒæ¥å£
         void init_map(int layers, int nodes_per_layer,
             const std::vector<NodeType>& layer_types = {});
-        void init_fixed_map(const class MapConfig& config);  // ĞèÒªÇ°ÏòÉùÃ÷ MapConfig
+        void init_fixed_map(const class MapConfig& config);
 
+        // ========== æ–°å¢ï¼šéšæœºåœ°å›¾ç”Ÿæˆ ==========
+        void init_random_map(int map_index);
+
+        // æŸ¥è¯¢æ¥å£
         std::vector<MapNode> get_nodes_at_layer(int layer) const;
         MapNode get_node_by_id(const NodeId& node_id) const;
         std::vector<MapNode> get_next_nodes(const NodeId& node_id) const;
         std::vector<MapNode> get_prev_nodes(const NodeId& node_id) const;
 
-        // Ëã·¨½Ó¿Ú
+        // ç®—æ³•æ¥å£
         bool is_reachable(const NodeId& from_node, const NodeId& to_node) const;
         std::vector<NodeId> find_shortest_path(const NodeId& from_node,
             const NodeId& to_node) const;
         std::vector<std::vector<NodeId>> find_all_paths_to_boss() const;
         MapSnapshot get_map_snapshot() const;
 
-        // ½Úµã×´Ì¬¸üĞÂ
+        // èŠ‚ç‚¹çŠ¶æ€æ›´æ–°
         void set_node_visited(const NodeId& node_id);
         void set_current_node(const NodeId& node_id);
         void update_reachable_nodes();
 
-        // ==== ĞÂÔö£º¼ì²éÊÇ·ñÓĞµ±Ç°½Úµã ====
+        // æ£€æŸ¥æ˜¯å¦æœ‰å½“å‰èŠ‚ç‚¹
         bool hasCurrentNode() const;
 
-        // ==== ĞÂÔö£ºÉèÖÃ»Øµ÷º¯Êı ====
+        // è®¾ç½®å›è°ƒå‡½æ•°
         void setContentIdGenerator(ContentIdGenerator generator) { m_contentIdGenerator = generator; }
         void setNodeEnterCallback(NodeEnterCallback callback) { m_nodeEnterCallback = callback; }
+        void set_run_rng(tce::RunRng* rng) { run_rng_ = rng; }
 
     private:
+        // ========== æˆå‘˜å˜é‡ ==========
         std::unordered_map<NodeId, MapNode> nodes_;
         std::unordered_map<int, std::vector<NodeId>> layers_;
         int total_layers_;
 
-        // ==== ĞÂÔö£º»Øµ÷º¯Êı³ÉÔ± ====
         ContentIdGenerator m_contentIdGenerator;
         NodeEnterCallback m_nodeEnterCallback;
+        tce::RunRng* run_rng_ = nullptr;
 
+        // ========== ç§æœ‰æ–¹æ³• ==========
         NodeId generate_node_id(int layer, int index);
         NodeType random_node_type(int layer, int total_layers);
         void build_connections();
         bool validate_path_exists();
         void build_fixed_connections(const std::vector<std::vector<std::pair<int, int>>>& connections);
+
+        // ========== éšæœºåœ°å›¾ç”Ÿæˆè¾…åŠ©æ–¹æ³• ==========
+        void build_random_connections();       // æ„å»ºéšæœºè¿æ¥
+        void auto_layout_nodes();              // è‡ªåŠ¨å¸ƒå±€èŠ‚ç‚¹
+        void adjust_positions_by_connections(); // æ ¹æ®è¿æ¥å¾®è°ƒä½ç½®
+
     };
 
 }

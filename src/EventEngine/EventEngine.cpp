@@ -13,11 +13,18 @@
 
 namespace tce {
 
-// 构造函数：通过可调用对象 get_event_by_id 将 EventEngine 与 DataLayer 解耦
-// - 正式联调时传入 DataLayerImpl::get_event_by_id 的包装 lambda；
-// - 单元测试或 E 未就绪时可以传入 Mock 函数（返回写死的事件树）。
-EventEngine::EventEngine(EventEngine::GetEventByIdFn get_event_by_id)
-    : get_event_by_id_(std::move(get_event_by_id)) {}
+// 构造函数：注入 E 的 get_event_by_id（必选）与 C 的永久牌组操作（可选）。
+// - 不传 C 的回调时，buy_card / rest_upgrade_card / remove_card_from_master_deck 为 no-op 或返回 false。
+EventEngine::EventEngine(
+    EventEngine::GetEventByIdFn get_event_by_id,
+    AddToMasterDeckFn add_to_master_deck,
+    RemoveFromMasterDeckFn remove_from_master_deck,
+    UpgradeCardInMasterDeckFn upgrade_card_in_master_deck)
+    : get_event_by_id_(std::move(get_event_by_id))
+    , add_to_master_deck_(std::move(add_to_master_deck))
+    , remove_from_master_deck_(std::move(remove_from_master_deck))
+    , upgrade_card_in_master_deck_(std::move(upgrade_card_in_master_deck))
+{}
 
 // 开始一次事件流程：根据根事件 id 初始化 current_event_，
 // 同时清空上一次事件留下的结果标记。
@@ -94,7 +101,7 @@ void EventEngine::traverse_level_order(EventEngine::EventId root_id,
     while (!q.empty()) {
         EventEngine::EventId id = q.front();
         q.pop();
-        const Event* e = get_event_by_id_(id);
+        const EventEngine::Event* e = get_event_by_id_(id);
         if (!e) continue;
 
         visit(*e);
@@ -107,25 +114,51 @@ void EventEngine::traverse_level_order(EventEngine::EventId root_id,
     }
 }
 
-// 以下接口为阶段 1 的占位实现：
-// - 阶段 2 中会注入 C 模块的接口（如 add_to_deck / upgrade_card_in_deck）
-//   并与玩家状态联动，真正实现商店与休息逻辑。
+// ---------- 商店 ----------
 void EventEngine::open_shop() {
-    // 阶段 1 占位：仅表示进入商店状态；阶段 2 实现商品列表等
+    // 占位：主流程可据此设置「商店已打开」状态；商品列表/价格由主流程或后续扩展维护。
 }
 
-bool EventEngine::buy_card(const std::string& /* card_id */) {
-    // 阶段 2 注入 C 的 add_to_deck 后实现
-    return false;
+bool EventEngine::buy_card(CardId card_id) {
+    if (!add_to_master_deck_) return false;
+    add_to_master_deck_(card_id);
+    return true;
 }
 
+bool EventEngine::remove_card_from_master_deck(InstanceId instance_id) {
+    if (!remove_from_master_deck_) return false;
+    return remove_from_master_deck_(instance_id);
+}
+
+// ---------- 休息 ----------
 void EventEngine::rest_heal(int /* amount */) {
-    // 血量由主流程/B 维护时由主流程直接改；此处占位
+    // 血量由主流程/B 维护：主流程在选「回血」时直接改玩家 HP，或通过 apply_event_result 的 on_heal 回调处理。
 }
 
-bool EventEngine::rest_upgrade_card(int /* instance_id */) {
-    // 阶段 2 注入 C 的 upgrade_card_in_deck 后实现
-    return false;
+bool EventEngine::rest_upgrade_card(InstanceId instance_id) {
+    if (!upgrade_card_in_master_deck_) return false;
+    return upgrade_card_in_master_deck_(instance_id);
+}
+
+// 应用事件结果：根据 result.type 调用相应逻辑；card_reward 的选牌由主流程根据 get_event_result 自行调 C。
+void EventEngine::apply_event_result(const EventResult& result,
+    std::function<void(int)> on_gold_add,
+    std::function<void(int)> on_heal) {
+    auto applyOne = [&](const DataLayer::EventEffect& eff) {
+        if (eff.type == "gold" && on_gold_add) on_gold_add(eff.value);
+        else if (eff.type == "heal" && on_heal) on_heal(eff.value);
+    };
+
+    if (!result.effects.empty()) {
+        for (const auto& eff : result.effects) applyOne(eff);
+        return;
+    }
+
+    // 兼容旧数据结构：type/value
+    DataLayer::EventEffect eff{ result.type, result.value };
+    applyOne(eff);
+
+    // card_reward/remove_card/relic 等：本函数当前不处理，主流程/其他模块自行结算
 }
 
 } // namespace tce

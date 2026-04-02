@@ -27,12 +27,12 @@ namespace tce {
 
 // 初始内置一组简单卡牌/怪物数据，便于战斗调试；若主流程调用 load_cards/load_monsters 则会覆盖
 std::unordered_map<CardId, CardData> s_cards{
-    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true } },
-    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true } },
-    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false } },
-    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false } },
-    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true } },
-    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true } },
+    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true, false } },
+    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true, false } },
+    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false, false } },
+    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false, false } },
+    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
+    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
 };
 std::unordered_map<MonsterId, MonsterData> s_monsters{
     { "cultist", MonsterData{ "cultist", u8"邪教徒", MonsterType::Normal, 100 } },
@@ -48,6 +48,13 @@ const MonsterData* get_monster_by_id(MonsterId id) {
     auto it = s_monsters.find(id);
     if (it != s_monsters.end()) return &it->second;
     return nullptr;
+}
+
+std::vector<CardId> get_all_card_ids() {
+    std::vector<CardId> out;
+    out.reserve(s_cards.size());
+    for (const auto& p : s_cards) out.push_back(p.first);
+    return out;
 }
 
 } // namespace tce
@@ -113,12 +120,32 @@ std::string DataLayerImpl::resolve_data_path(const std::string& base, const std:
     return b + "data/" + filename;
 }
 
+// 尝试多个路径加载 JSON 文件（解决从 x64/Debug 或项目根目录运行时的路径差异）
+static JsonValue try_parse_json_file_multi_path(const std::string& filename) {
+    std::string candidates[] = {
+        "data/" + filename,
+        "./data/" + filename,
+        "../data/" + filename,
+        "../../data/" + filename,
+    };
+    for (const auto& path : candidates) {
+        JsonValue root = parse_json_file(path);
+        if (root.is_array() || root.is_object()) return root;
+    }
+    return JsonValue();
+}
+
 // 将 JSON 数组中的每条记录直接插入 tce::s_cards（唯一存储，供 B/C 与 DataLayer 共用）
 bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
-    std::string path = resolve_data_path(path_or_base_dir, "cards.json");
-    JsonValue root = parse_json_file(path);
+    JsonValue root;
+    if (path_or_base_dir.empty()) {
+        root = try_parse_json_file_multi_path("cards.json");
+    } else {
+        std::string path = resolve_data_path(path_or_base_dir, "cards.json");
+        root = parse_json_file(path);
+    }
     if (!root.is_array()) {
-        log_error("load_cards: file \"" + path + "\" is not a JSON array or failed to parse");
+        log_error("load_cards: data/cards.json not found or not a JSON array (tried data/, ./data/, ../data/, ../../data/)");
         return false;
     }
     tce::s_cards.clear();
@@ -147,6 +174,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("retain")) cd.retain = p->as_bool();
         if (const JsonValue* p = v.get_key("unplayable")) cd.unplayable = p->as_bool();
         if (const JsonValue* p = v.get_key("requiresTarget")) cd.requiresTarget = p->as_bool();
+        if (const JsonValue* p = v.get_key("irremovable")) cd.irremovableFromDeck = p->as_bool();
         if (!cd.id.empty()) tce::s_cards[cd.id] = std::move(cd);
     }
     return !tce::s_cards.empty();
@@ -154,10 +182,17 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
 
 // 将怪物表每条记录直接插入 tce::s_monsters（唯一存储，供 B 与 DataLayer 共用）
 bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
-    std::string path = resolve_data_path(path_or_base_dir, "monsters.json");
-    JsonValue root = parse_json_file(path);
+    JsonValue root;
+    std::string path;
+    if (path_or_base_dir.empty()) {
+        root = try_parse_json_file_multi_path("monsters.json");
+        path = "data/monsters.json";
+    } else {
+        path = resolve_data_path(path_or_base_dir, "monsters.json");
+        root = parse_json_file(path);
+    }
     if (!root.is_array()) {
-        log_error("load_monsters: file \"" + path + "\" is not a JSON array or failed to parse");
+        log_error("load_monsters: data/monsters.json not found or not a JSON array");
         return false;
     }
     tce::s_monsters.clear();
@@ -176,6 +211,7 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
         }
         if (const JsonValue* p = v.get_key("name")) md.name = p->as_string();
         if (const JsonValue* p = v.get_key("maxHp")) md.maxHp = p->as_int();
+        if (md.maxHp <= 0) md.maxHp = 10;  // 缺失或无效时默认 10，避免除零
         if (const JsonValue* p = v.get_key("isBoss")) {
             md.type = p->as_bool() ? tce::MonsterType::Boss : tce::MonsterType::Normal;
         } else if (const JsonValue* p = v.get_key("type")) {
@@ -213,8 +249,22 @@ static EventOption parse_option(const JsonValue& v) {
     if (const JsonValue* p = v.get_key("next")) opt.next = p->as_string();
     if (const JsonValue* p = v.get_key("result")) {
         if (p->is_object()) {
-            if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
-            if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            // 新版：result.effects（可携带多个效果）
+            if (const JsonValue* pe = p->get_key("effects")) {
+                if (pe->is_array()) {
+                    for (const JsonValue& ev : pe->arr) {
+                        if (!ev.is_object()) continue;
+                        EventEffect eff;
+                        if (const JsonValue* et = ev.get_key("type")) eff.type = et->as_string();
+                        if (const JsonValue* val = ev.get_key("value")) eff.value = val->as_int();
+                        if (!eff.type.empty()) opt.result.effects.push_back(std::move(eff));
+                    }
+                }
+            } else {
+                // 旧版：result.type + result.value
+                if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
+                if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            }
         }
     }
     return opt;
@@ -244,6 +294,10 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
         }
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
+        if (const JsonValue* p = v.get_key("image")) e.image = p->as_string();
+        if (const JsonValue* p = v.get_key("layer_min")) e.layer_min = p->as_int();
+        if (const JsonValue* p = v.get_key("layer_max")) e.layer_max = p->as_int();
+        if (const JsonValue* p = v.get_key("weight")) e.weight = p->as_int();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插
@@ -282,6 +336,64 @@ const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
     auto it = events_.find(id);
     if (it == events_.end()) return nullptr;
     return &it->second;
+}
+
+std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<EventId> out;
+    out.reserve(events_.size());
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (ok) out.push_back(id);
+    }
+
+    // 为了可复现与 UI 好看：按 id 排序
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<RootEventCandidate> DataLayerImpl::get_root_event_candidates_for_layer(int layer) const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<RootEventCandidate> out;
+    out.reserve(events_.size());
+
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (!ok) continue;
+
+        const Event& e = kv.second;
+        if (layer < e.layer_min || layer > e.layer_max) continue;
+        const int w = e.weight <= 0 ? 1 : e.weight;
+        out.push_back(RootEventCandidate{ e.id, w });
+    }
+
+    // 保证可复现：按 id 排序
+    std::sort(out.begin(), out.end(), [](const RootEventCandidate& a, const RootEventCandidate& b) {
+        return a.id < b.id;
+    });
+    return out;
 }
 
 int DataLayerImpl::rarity_order(tce::Rarity r) {
