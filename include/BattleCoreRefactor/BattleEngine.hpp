@@ -32,7 +32,7 @@ public:
 
     void apply_status_to_player(StatusId id, int stacks, int duration);
     void apply_status_to_monster(int monster_index, StatusId id, int stacks, int duration);
-    /** 设置怪物某状态层数（替换而非叠加），用于内部追踪（如 red_louse 行动历史） */
+    /** 设置怪物某状态层数（替换而非叠加），用于内部追踪（如 *_history） */
     void set_monster_status_stacks(int monster_index, StatusId id, int stacks);
 
     // --- CardEffects 兼容接口 ---

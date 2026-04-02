@@ -78,7 +78,7 @@ namespace tce {
         return s.energy >= effective_hand_card_energy_cost(cd, inst, &s);
     }
 
-    namespace {                                    // 文件内匿名命名空间：常量与辅助函数，仅本文件可见
+    namespace { // 文件内匿名命名空间；像素常量按 1920×1080 设计（与 BattleUI::kDesignWidth/Height 一致）
         constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72 像素
         constexpr float TOP_ROW_Y = 20.f;            // 顶栏内容起始 Y 坐标
         constexpr float TOP_ROW_H = 32.f;            // 顶栏内容行高
@@ -87,7 +87,7 @@ namespace tce {
         constexpr float RELICS_ICON_SZ = 55.f;       // 遗物图标 55×55 像素
         constexpr float RELICS_ICON_Y_OFFSET = 16.f;  // 遗物图标下移偏移量
         constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（屏幕高度 78% 处），留出空间给手牌
-        constexpr float HAND_AREA_BG_H = 220.f;     // 手牌区背景高度
+        // 手牌区条带高度 = height - handBgY（与战场下沿对齐），不再用固定 220，避免压住血条
         constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌图标贴底
         constexpr float SIDE_MARGIN = 24.f;          // 左右边距
 
@@ -116,8 +116,8 @@ namespace tce {
         constexpr float HP_BAR_W = 230.f;            // 血条最大长度（固定，与生命上限无关）
         constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
         constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
-        constexpr float MODEL_PLACEHOLDER_W = 150.f; // 玩家/怪物模型占位矩形宽度
-        constexpr float MODEL_PLACEHOLDER_H = 240.f;  // 玩家/怪物模型占位矩形高度
+        constexpr float MODEL_PLACEHOLDER_W = 180.f;      // 玩家/怪物模型占位矩形宽度（1:1 比例）
+        constexpr float MODEL_PLACEHOLDER_H = 180.f;      // 玩家/怪物模型占位矩形高度（1:1 比例）
         constexpr float MODEL_TOP_OFFSET = 90.f;      // 模型上边距中心，固定则上边框位置不变
         constexpr float MODEL_CENTER_Y_RATIO = 0.58f; // 模型中心 Y 占战场高度的比例
         constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 60.f;  // 模型+血条+效果栏整体下移量
@@ -270,11 +270,16 @@ namespace tce {
     }
 
     BattleUI::BattleUI(unsigned width, unsigned height) : width_(width), height_(height) {
-        const float btnCenterX = static_cast<float>(width_) - END_TURN_CENTER_X_BR;  // 以右下为原点算中心 x
-        const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR;  // 以右下为原点算中心 y
-        const float btnX = btnCenterX - END_TURN_W * 0.5f;  // 按钮左上角 x
-        const float btnY = btnCenterY - END_TURN_H * 0.5f;  // 按钮左上角 y
-        endTurnButton_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(END_TURN_W, END_TURN_H));  // 记录矩形供 handleEvent 点击检测
+        uiScaleX_ = static_cast<float>(width_) / kDesignWidth;
+        uiScaleY_ = static_cast<float>(height_) / kDesignHeight;
+        // 结束回合按钮：常量按 1920×1080，随 uiScale 缩放，避免非设计分辨率下命中框与绘制错位
+        const float btnCenterX = static_cast<float>(width_) - END_TURN_CENTER_X_BR * uiScaleX_;
+        const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR * uiScaleY_;
+        const float btnX = btnCenterX - (END_TURN_W * uiScaleX_) * 0.5f;
+        const float btnY = btnCenterY - (END_TURN_H * uiScaleY_) * 0.5f;
+        endTurnButton_ = sf::FloatRect(
+            sf::Vector2f(btnX, btnY),
+            sf::Vector2f(END_TURN_W * uiScaleX_, END_TURN_H * uiScaleY_));
     }
 
     bool BattleUI::loadFont(const std::string& path) {
@@ -1335,9 +1340,13 @@ namespace tce {
 
         drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏药水槽、遗物行图标）
 
-        // 手牌区背景色块（底栏上方）
-        float handBgY = height_ - HAND_AREA_BG_H;
-        sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), HAND_AREA_BG_H));
+        // 手牌区背景：顶边必须与 drawBattleCenter 战场下边界一致。若用 height 减固定像素，
+        // 会比 BOTTOM_BAR_Y_RATIO 算出的战场更早盖住屏幕，把玩家血条/状态栏压在下面。
+        const float battleTopBg = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+        const float battleHBg = (static_cast<float>(height_) * BOTTOM_BAR_Y_RATIO) - battleTopBg - 16.f;
+        const float handBgY = battleTopBg + battleHBg;
+        const float handStripH = static_cast<float>(height_) - handBgY;
+        sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), handStripH));
         handBg.setPosition(sf::Vector2f(0.f, handBgY));
         handBg.setFillColor(HAND_AREA_BG_COLOR);
         window.draw(handBg);
@@ -2405,7 +2414,7 @@ namespace tce {
 
         // ---------- 怪物区：1~3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
         // monsterModelRects_、monsterIntentRects_ 供出牌瞄准与点击检测
-        constexpr float MONSTER_GAP = 30.f;
+        constexpr float MONSTER_GAP = 80.f;
         float mModelTop = modelCenterY - MODEL_TOP_OFFSET;
         const size_t nMonsters = s.monsters.size();
         monsterModelRects_.clear();
@@ -2427,11 +2436,22 @@ namespace tce {
             sf::FloatRect intentRect(sf::Vector2f(intentLeft, intentTop), sf::Vector2f(intentSz, intentSz));
             monsterIntentRects_.push_back(intentRect);
             // 意图图标：优先用图片，无图则灰色圆球占位
-            const char* intentKey = "Unknown";
-            if (m.currentIntent.kind == MonsterIntentKind::Attack) intentKey = "Attack";
-            else if (m.currentIntent.kind == MonsterIntentKind::Block) intentKey = "Block";
-            else if (m.currentIntent.kind == MonsterIntentKind::Buff) intentKey = "Strategy";
-            auto itTex = intentionTextures_.find(intentKey);
+            std::string iconLookup;
+            if (!m.currentIntent.ui_icon_key.empty())
+                iconLookup = m.currentIntent.ui_icon_key;
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack) iconLookup = "Attack";
+            else if (m.currentIntent.kind == MonsterIntentKind::Mul_Attack) iconLookup = "Attack";
+            else if (m.currentIntent.kind == MonsterIntentKind::Block) iconLookup = "Block";
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Block) iconLookup = "AttackBlock";
+            else if (m.currentIntent.kind == MonsterIntentKind::Ritual) iconLookup = "Ritual";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Weak) iconLookup = "Strategy";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Block) iconLookup = "AttackBlock";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Frail) iconLookup = "Strategy";
+            else if (m.currentIntent.kind == MonsterIntentKind::Player_Dexterity_Down) iconLookup = "Debuff";
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak) iconLookup = "SmallKnife"; // 兼容旧资源名，可用 ui_icon 覆盖
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable) iconLookup = "Unknown";
+            else if (m.currentIntent.kind == MonsterIntentKind::Buff) iconLookup = "Strategy";
+            auto itTex = intentionTextures_.find(iconLookup);
             if (itTex != intentionTextures_.end()) {
                 sf::Sprite intentSprite(itTex->second);
                 const sf::FloatRect tr = intentSprite.getLocalBounds();
@@ -2450,31 +2470,74 @@ namespace tce {
             }
             if (intentRect.contains(mousePos_)) {
                 sf::String intentStr;
-                switch (m.currentIntent.kind) {
-                case MonsterIntentKind::Attack:
-                    intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
-                    break;
-                case MonsterIntentKind::Block:
-                    intentStr = sf::String(L"防御");
-                    break;
-                case MonsterIntentKind::Buff:
-                    intentStr = sf::String(L"强化");
-                    break;
-                case MonsterIntentKind::Debuff:
-                    intentStr = (m.currentIntent.value > 0)
-                        ? (sf::String(L"易伤 ") + sf::String(std::to_wstring(m.currentIntent.value)))
-                        : sf::String(L"施加负面效果");
-                    break;
-                case MonsterIntentKind::Sleep:
-                    intentStr = sf::String(L"睡眠");
-                    break;
-                case MonsterIntentKind::Stun:
-                    intentStr = sf::String(L"晕眩");
-                    break;
-                case MonsterIntentKind::Unknown:
-                default:
-                    intentStr = sf::String(L"？？？");
-                    break;
+                if (!m.currentIntent.ui_label.empty()) {
+                    intentStr = sf::String::fromUtf8(m.currentIntent.ui_label.begin(), m.currentIntent.ui_label.end());
+                    const bool appendVal =
+                        (m.currentIntent.kind == MonsterIntentKind::Attack
+                            || m.currentIntent.kind == MonsterIntentKind::Mul_Attack
+                            || m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak
+                            || m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable
+                            || (m.currentIntent.kind == MonsterIntentKind::Ritual && m.currentIntent.value > 0)
+                            || (m.currentIntent.kind == MonsterIntentKind::Debuff && m.currentIntent.value > 0))
+                        && m.currentIntent.value != 0;
+                    if (appendVal)
+                        intentStr += sf::String(L" ") + sf::String(std::to_wstring(m.currentIntent.value));
+                } else {
+                    switch (m.currentIntent.kind) {
+                    case MonsterIntentKind::Attack:
+                        intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Mul_Attack:
+                        intentStr = sf::String(L"连击总伤害 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Block:
+                        intentStr = sf::String(L"防御");
+                        break;
+                    case MonsterIntentKind::Attack_And_Block:
+                        intentStr = sf::String(L"攻击并防御");
+                        break;
+                    case MonsterIntentKind::Attack_And_Weak:
+                        intentStr = sf::String(L"小刀 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Attack_And_Vulnerable:
+                        intentStr = sf::String(L"攻击+易伤 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Ritual:
+                        intentStr = (m.currentIntent.value > 0)
+                            ? (sf::String(L"仪式 +") + sf::String(std::to_wstring(m.currentIntent.value)))
+                            : sf::String(L"仪式");
+                        break;
+                    case MonsterIntentKind::Strength_And_Player_Weak:
+                        intentStr = sf::String(L"力量+虚弱");
+                        break;
+                    case MonsterIntentKind::Strength_And_Block:
+                        intentStr = sf::String(L"力量+格挡");
+                        break;
+                    case MonsterIntentKind::Strength_And_Player_Frail:
+                        intentStr = sf::String(L"力量+脆弱");
+                        break;
+                    case MonsterIntentKind::Player_Dexterity_Down:
+                        intentStr = sf::String(L"敏捷下降");
+                        break;
+                    case MonsterIntentKind::Buff:
+                        intentStr = sf::String(L"强化");
+                        break;
+                    case MonsterIntentKind::Debuff:
+                        intentStr = (m.currentIntent.value > 0)
+                            ? (sf::String(L"易伤 ") + sf::String(std::to_wstring(m.currentIntent.value)))
+                            : sf::String(L"施加负面效果");
+                        break;
+                    case MonsterIntentKind::Sleep:
+                        intentStr = sf::String(L"睡眠");
+                        break;
+                    case MonsterIntentKind::Stun:
+                        intentStr = sf::String(L"晕眩");
+                        break;
+                    case MonsterIntentKind::Unknown:
+                    default:
+                        intentStr = sf::String(L"？？？");
+                        break;
+                    }
                 }
                 const float tipPad = 8.f;
                 sf::Text tipText(fontForChinese(), intentStr, 18);
@@ -2595,7 +2658,7 @@ namespace tce {
                 int displayIdx = 0;
                 for (size_t si = 0; si < mStatuses.size(); ++si) {
                     const auto& st = mStatuses[si];
-                    if (st.id == "red_louse_history" || st.id == "green_louse_history") continue;  // 内部追踪，不显示
+                    if (st.id.size() >= 8 && st.id.compare(st.id.size() - 8, 8, "_history") == 0) continue;  // 内部追踪，不显示
                     const size_t col = static_cast<size_t>(displayIdx) % 8u;
                     const size_t row = static_cast<size_t>(displayIdx) / 8u;
                     const float mstX = mstBaseX + static_cast<float>(col) * statusGapX;
