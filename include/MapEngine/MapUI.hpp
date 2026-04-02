@@ -1,4 +1,4 @@
-﻿// include/MapEngine/MapUI.hpp
+//include/MapEngine/MapUI.hpp
 #pragma once
 #include <SFML/Graphics.hpp>
 #include "MapEngine.hpp" 
@@ -28,10 +28,6 @@ namespace MapEngine {
         void setLegendScale(float scale) { m_legendScale = scale; }
         void setNodeColors();
 
-        // 滚动功能
-        void scroll(float delta);
-        float getViewOffset() const { return m_viewOffset; }
-
     private:
         void drawEdges();
         void drawNodes();
@@ -44,25 +40,25 @@ namespace MapEngine {
         sf::RenderWindow* m_window;
         const MapEngine* m_mapEngine;
 
-        // 节点图片
+        // �ڵ�ͼƬ
         std::unordered_map<NodeType, sf::Texture> m_nodeTextures;
         std::unordered_map<NodeType, bool> m_textureLoaded;
 
-        // 图例图片
+        // ͼ��ͼƬ
         sf::Texture m_legendTexture;
         sf::Sprite m_legendSprite;
         bool m_legendLoaded;
 
-        // 背景图片 - 使用指针延迟构造
+        // ����ͼƬ - ʹ��ָ���ӳٹ���
         sf::Texture m_backgroundTexture;
-        sf::Sprite* m_backgroundSprite;  // 改为指针
+        sf::Sprite* m_backgroundSprite;  // ��Ϊָ��
         bool m_backgroundLoaded;
 
-        // 节点半径
+        // �ڵ�뾶
         const float NODE_RADIUS = 45.0f;
         const float SELECTED_RADIUS = 54.0f;
 
-        // 颜色定义
+        // ��ɫ����
         sf::Color colorEnemy;
         sf::Color colorElite;
         sf::Color colorEvent;
@@ -80,15 +76,6 @@ namespace MapEngine {
         bool m_showNodeIds;
         sf::Vector2f m_legendPosition;
         float m_legendScale;
-
-        // 滚动相关变量
-        float m_viewOffset = 0.0f;
-        float m_minOffset = 0.0f;
-        float m_maxOffset = 0.0f;
-
-        // 【新增】已访问节点覆盖层
-        sf::Texture m_visitedOverlayTexture;
-        bool m_visitedOverlayLoaded = false;
     };
 
 }
