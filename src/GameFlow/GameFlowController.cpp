@@ -1194,9 +1194,12 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                         inScene = false;
                     }
                 }
-            } else if (eventEngine_.get_current_event() && eventEngine_.choose_option(outIndex)) {
-                DataLayer::EventResult res{};
-                if (eventEngine_.get_event_result(res)) {
+            } else if (const EventEngine::Event* curEv = eventEngine_.get_current_event()) {
+                if (outIndex >= 0 && static_cast<size_t>(outIndex) < curEv->options.size()) {
+                    const std::string chosenOptionText = curEv->options[static_cast<size_t>(outIndex)].text;
+                    if (eventEngine_.choose_option(outIndex)) {
+                        DataLayer::EventResult res{};
+                        if (eventEngine_.get_event_result(res)) {
                         std::vector<std::string> detailMessages;
                         std::vector<std::string> gainedRelicIds;
                         const auto pushCardPreview = [&](const std::string& cid) {
@@ -1477,13 +1480,21 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                         } else if (!gainedRelicIds.empty()) {
                             resultImage = "__relic:" + gainedRelicIds.front();
                         }
-                        std::string finalSummary = summarizeResult(res);
+                        std::string body;
                         if (!detailMessages.empty()) {
-                            finalSummary += "\n";
                             for (size_t i = 0; i < detailMessages.size(); ++i) {
-                                if (i > 0) finalSummary += "\n";
-                                finalSummary += "· " + detailMessages[i];
+                                if (i > 0) body += "\n";
+                                body += "· " + detailMessages[i];
                             }
+                        } else {
+                            body = summarizeResult(res);
+                        }
+                        std::string finalSummary;
+                        if (!chosenOptionText.empty()) {
+                            finalSummary = "本次选择：「" + chosenOptionText + "」";
+                            if (!body.empty()) finalSummary += "\n\n" + body;
+                        } else {
+                            finalSummary = body;
                         }
                     ui.setEventResultFromUtf8(finalSummary, resultImage);
                     showingResult = true;
@@ -1493,6 +1504,8 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                     // 保持在事件场景，等待下一帧按新的 current_event_ 刷新 UI。
                     showingResult = false;
                     lastDisplayedEvent = nullptr;
+                }
+                    }
                 }
             }
         }

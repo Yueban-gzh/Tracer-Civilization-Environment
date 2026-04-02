@@ -580,8 +580,9 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
     const float frameLeft = cx - frameWidth * 0.5f;
     const float frameTop = cy - frameHeight * 0.5f;
     if (eventPanelFrameLoaded_) {
-        draw_texture_fit(window, eventPanelFrameTexture_,
-            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)));
+        draw_texture_fit_crop_bottom(window, eventPanelFrameTexture_,
+            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)),
+            event_panel_frame_bottom_crop_px(eventPanelFrameTexture_));
     }
 
     const float bannerY = panelTop - BANNER_INNER_OVERHANG;

@@ -13,6 +13,157 @@
 namespace tce {
 using namespace esr_detail;
 
+namespace {
+
+std::wstring relic_name_w(const std::string& id) {
+    static const std::unordered_map<std::string, std::wstring> k = {
+        {"burning_blood", L"燃烧之血"},       {"marble_bag", L"弹珠袋"},
+        {"small_blood_vial", L"小血瓶"},       {"copper_scales", L"铜制鳞片"},
+        {"centennial_puzzle", L"百年积木"},   {"clockwork_boots", L"发条靴"},
+        {"happy_flower", L"开心小花"},         {"lantern", L"灯笼"},
+        {"smooth_stone", L"意外光滑的石头"},   {"orichalcum", L"奥利哈钢"},
+        {"red_skull", L"红头骨"},             {"snake_skull", L"异蛇头骨"},
+        {"strawberry", L"草莓"},               {"potion_belt", L"药水腰带"},
+        {"vajra", L"金刚杵"},                  {"nunchaku", L"双截棍"},
+        {"ceramic_fish", L"陶瓷小鱼"},         {"hand_drum", L"手摇鼓"},
+        {"pen_nib", L"钢笔尖"},               {"toy_ornithopter", L"玩具扑翼飞机"},
+        {"preparation_pack", L"准备背包"},     {"anchor", L"锚"},
+        {"art_of_war", L"孙子兵法"},           {"relic_strength_plus", L"力量遗物"},
+        {"akabeko", L"赤牛"},                 {"data_disk", L"数据磁盘"},
+    };
+    const auto it = k.find(id);
+    if (it != k.end()) return it->second;
+    return utf8_to_wstring(id);
+}
+
+std::wstring potion_name_w(const std::string& id) {
+    static const std::unordered_map<std::string, std::wstring> k = {
+        {"block_potion", L"砌墙灵液"},         {"strength_potion", L"蛮力灵液"},
+        {"poison_potion", L"淬毒灵液"},       {"attack_potion", L"攻击灵液"},
+        {"dexterity_potion", L"敏捷灵液"},   {"energy_potion", L"能量灵液"},
+        {"blood_potion", L"鲜血灵液"},       {"fire_potion", L"火焰灵液"},
+        {"weak_potion", L"虚弱灵液"},        {"speed_potion", L"疾速灵液"},
+    };
+    const auto it = k.find(id);
+    if (it != k.end()) return it->second;
+    return utf8_to_wstring(id);
+}
+
+/** 事件结果页：卡牌下方遗物条（柔光图标 + 类型 + 名称，无矩形描边） */
+void draw_relic_combo_strip(sf::RenderWindow& window, const sf::Font& font,
+    float illustLeft, float illustW, float rowY, float rowH,
+    const std::string& relicId, const sf::Texture* relicTex, unsigned bodySize) {
+    sf::RectangleShape hair(sf::Vector2f(illustW - 18.f, 1.f));
+    hair.setPosition(sf::Vector2f(illustLeft + 9.f, rowY));
+    hair.setFillColor(sf::Color(210, 175, 110, 85));
+    window.draw(hair);
+
+    const float iconCy = rowY + rowH * 0.5f;
+    const float iconCx = illustLeft + 46.f;
+    const float iconR = std::min(26.f, rowH * 0.34f);
+    const float maxHaloR = std::max(8.f, rowH * 0.5f - 2.f);
+    const float haloR = std::min(iconR + 14.f, maxHaloR);
+
+    sf::CircleShape halo(haloR);
+    halo.setOrigin(sf::Vector2f(halo.getRadius(), halo.getRadius()));
+    halo.setPosition(sf::Vector2f(iconCx, iconCy));
+    halo.setFillColor(sf::Color(120, 90, 55, 28));
+    window.draw(halo);
+
+    const float padR = std::max(4.f, std::min(iconR + 5.f, maxHaloR - 4.f));
+    sf::CircleShape pad(padR);
+    pad.setOrigin(sf::Vector2f(pad.getRadius(), pad.getRadius()));
+    pad.setPosition(sf::Vector2f(iconCx, iconCy));
+    pad.setFillColor(sf::Color(38, 33, 30, 210));
+    window.draw(pad);
+
+    if (relicTex && relicTex->getSize().x > 0 && relicTex->getSize().y > 0) {
+        sf::Sprite rs(*relicTex);
+        const sf::Vector2u ts = relicTex->getSize();
+        const float target = iconR * 2.15f;
+        const float s = std::min(target / static_cast<float>(ts.x), target / static_cast<float>(ts.y));
+        rs.setScale(sf::Vector2f(s, s));
+        rs.setOrigin(sf::Vector2f(ts.x * 0.5f, ts.y * 0.5f));
+        rs.setPosition(sf::Vector2f(iconCx, iconCy));
+        rs.setColor(sf::Color(255, 252, 245, 255));
+        window.draw(rs);
+    }
+
+    const float textLeft = illustLeft + 88.f;
+    const float nameMaxW = std::max(80.f, illustW - 96.f);
+    const std::wstring nameW = relic_name_w(relicId);
+    const unsigned catSize = static_cast<unsigned>(std::max(11u, bodySize - 5u));
+    const unsigned nameSize = static_cast<unsigned>(std::max(13u, bodySize - 1u));
+
+    sf::Text cat(font, sf::String(L"遗物"), catSize);
+    cat.setFillColor(sf::Color(185, 165, 125));
+    cat.setLetterSpacing(0.6f);
+    cat.setPosition(sf::Vector2f(textLeft, rowY + 10.f));
+    window.draw(cat);
+
+    sf::String nameStr = truncate_to_width(font, sf::String(nameW), nameSize, nameMaxW);
+    sf::Text nameText(font, nameStr, nameSize);
+    nameText.setFillColor(sf::Color(255, 238, 210));
+    nameText.setPosition(sf::Vector2f(textLeft, rowY + 10.f + catSize * 1.05f));
+    window.draw(nameText);
+}
+
+/** 仅遗物/药水占左栏时的居中展示 */
+void draw_event_item_solo(sf::RenderWindow& window, const sf::Font& font,
+    float cx, float topY, float regionH, float regionW,
+    const std::string& itemId, const sf::Texture* tex, unsigned bodySize, bool isRelic) {
+    if (!tex || tex->getSize().x == 0 || tex->getSize().y == 0) return;
+
+    const float iconMax = std::min(regionW * 0.42f, regionH * 0.5f);
+    const float iconCy = topY + regionH * 0.38f;
+    const sf::Vector2u tsu = tex->getSize();
+    const float s = std::min(iconMax / static_cast<float>(tsu.x), iconMax / static_cast<float>(tsu.y));
+
+    const float maxHaloR = std::max(8.f, regionH * 0.22f);
+    const float haloR = std::min(iconMax * 0.55f, maxHaloR);
+    sf::CircleShape halo(haloR);
+    halo.setOrigin(sf::Vector2f(halo.getRadius(), halo.getRadius()));
+    halo.setPosition(sf::Vector2f(cx, iconCy));
+    halo.setFillColor(sf::Color(110, 85, 55, 32));
+    window.draw(halo);
+
+    sf::CircleShape pad(std::max(4.f, std::min(iconMax * 0.48f, maxHaloR - 3.f)));
+    pad.setOrigin(sf::Vector2f(pad.getRadius(), pad.getRadius()));
+    pad.setPosition(sf::Vector2f(cx, iconCy));
+    pad.setFillColor(sf::Color(38, 34, 30, 200));
+    window.draw(pad);
+
+    sf::Sprite sp(*tex);
+    sp.setScale(sf::Vector2f(s, s));
+    sp.setOrigin(sf::Vector2f(tsu.x * 0.5f, tsu.y * 0.5f));
+    sp.setPosition(sf::Vector2f(cx, iconCy));
+    sp.setColor(sf::Color(255, 252, 245, 255));
+    window.draw(sp);
+
+    const std::wstring nameW = isRelic ? relic_name_w(itemId) : potion_name_w(itemId);
+    const unsigned catSize = static_cast<unsigned>(std::max(11u, bodySize - 4u));
+    const unsigned nameSize = static_cast<unsigned>(std::max(14u, bodySize + 1u));
+    const sf::String catStr = isRelic ? sf::String(L"遗物") : sf::String(L"灵液");
+
+    sf::Text cat(font, catStr, catSize);
+    cat.setFillColor(sf::Color(190, 175, 140));
+    cat.setLetterSpacing(0.5f);
+    const sf::FloatRect cb = cat.getLocalBounds();
+    cat.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
+    cat.setPosition(sf::Vector2f(cx, iconCy + iconMax * 0.55f));
+    window.draw(cat);
+
+    sf::String nameStr = truncate_to_width(font, sf::String(nameW), nameSize, regionW - 24.f);
+    sf::Text nm(font, nameStr, nameSize);
+    nm.setFillColor(sf::Color(255, 235, 200));
+    const sf::FloatRect nb = nm.getLocalBounds();
+    nm.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
+    nm.setPosition(sf::Vector2f(cx, iconCy + iconMax * 0.55f + catSize + 6.f));
+    window.draw(nm);
+}
+
+} // namespace
+
 static std::vector<sf::String> wrap_lines_no_ellipsis(const sf::Font& font,
     const sf::String& text,
     unsigned charSize,
@@ -112,8 +263,9 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         const float frameHeight = baseH * FRAME_SCALE;
         const float frameLeft   = cx - frameWidth * 0.5f;
         const float frameTop    = cy - frameHeight * 0.5f;
-        draw_texture_fit(window, eventPanelFrameTexture_,
-            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)));
+        draw_texture_fit_crop_bottom(window, eventPanelFrameTexture_,
+            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)),
+            event_panel_frame_bottom_crop_px(eventPanelFrameTexture_));
     }
 
     const float bannerY = panelTop - BANNER_INNER_OVERHANG;
@@ -199,6 +351,16 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         auto it = cache.find(key);
         return (it != cache.end()) ? &it->second : nullptr;
     };
+    const sf::View viewBeforeIllust = window.getView();
+    const float lwIll = std::max(1.f, static_cast<float>(width_));
+    const float lhIll = std::max(1.f, static_cast<float>(height_));
+    if (illustW > 1.f && illustH > 1.f) {
+        sf::View clipVI = window.getDefaultView();
+        clipVI.setScissor(sf::FloatRect(
+            sf::Vector2f(illustLeft / lwIll, illustTop / lhIll),
+            sf::Vector2f(illustW / lwIll, illustH / lhIll)));
+        window.setView(clipVI);
+    }
     if (eventIllustLoaded_ && eventIllustTexture_.getSize().x > 0) {
         sf::Sprite sprite(eventIllustTexture_);
         const sf::Vector2u texSize = eventIllustTexture_.getSize();
@@ -339,8 +501,10 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
                 sf::Color(240, 238, 235));
         };
 
+        const float relicRowH = (!comboRelicId.empty()) ? std::max(72.f, illustH * 0.19f) : 0.f;
         const float availW = std::max(40.f, illustW - 16.f);
-        const float availH = std::max(60.f, illustH - 16.f);
+        const float availH = std::max(60.f, illustH - 16.f - relicRowH - (relicRowH > 0.f ? 4.f : 0.f));
+        const float illustCyCards = illustTop + 8.f + availH * 0.5f;
         if (cardIds.size() >= 2) {
             // 结果卡：两列网格排版（2 张=一行，3-4 张=两行）
             const int cols = 2;
@@ -355,7 +519,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             const float totalW = eachW * static_cast<float>(cols) + gapX * static_cast<float>(cols - 1);
             const float totalH = eachH * static_cast<float>(rows) + gapY * static_cast<float>(rows - 1);
             const float startX = illustCx - totalW * 0.5f;
-            const float startY = illustCy - totalH * 0.5f;
+            const float startY = illustCyCards - totalH * 0.5f;
             for (std::size_t i = 0; i < cardIds.size(); ++i) {
                 const int c = static_cast<int>(i % 2);
                 const int r = static_cast<int>(i / 2);
@@ -368,57 +532,21 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             const float cardW = std::min(availW * 0.84f, (availH * 0.84f) / BATTLE_CARD_ASPECT_H_OVER_W);
             const float cardH = cardW * BATTLE_CARD_ASPECT_H_OVER_W;
             drawCardInRect(cardIds[0],
-                sf::FloatRect(sf::Vector2f(illustCx - cardW * 0.5f, illustCy - cardH * 0.5f), sf::Vector2f(cardW, cardH)));
+                sf::FloatRect(sf::Vector2f(illustCx - cardW * 0.5f, illustCyCards - cardH * 0.5f), sf::Vector2f(cardW, cardH)));
         }
 
-        // 同时获得卡牌与遗物时：在左侧插图区追加遗物角标（避免“二选一”）
         if (!comboRelicId.empty()) {
             const sf::Texture* relicTex = resolveOfferIconTexture("relic", comboRelicId);
-            const float bubbleR = std::max(26.f, std::min(illustW, illustH) * 0.16f);
-            const sf::Vector2f bubbleCenter(
-                illustLeft + illustW - bubbleR - 8.f,
-                illustTop + illustH - bubbleR - 6.f);
-
-            sf::CircleShape bubble(bubbleR);
-            bubble.setOrigin(sf::Vector2f(bubbleR, bubbleR));
-            bubble.setPosition(bubbleCenter);
-            bubble.setFillColor(sf::Color(38, 34, 30, 215));
-            bubble.setOutlineThickness(2.f);
-            bubble.setOutlineColor(sf::Color(225, 190, 105, 245));
-            window.draw(bubble);
-
-            if (relicTex && relicTex->getSize().x > 0 && relicTex->getSize().y > 0) {
-                sf::Sprite rs(*relicTex);
-                const sf::Vector2u ts = relicTex->getSize();
-                const float target = bubbleR * 1.45f;
-                const float s = std::min(target / static_cast<float>(ts.x), target / static_cast<float>(ts.y));
-                rs.setScale(sf::Vector2f(s, s));
-                rs.setOrigin(sf::Vector2f(ts.x * 0.5f, ts.y * 0.5f));
-                rs.setPosition(bubbleCenter);
-                window.draw(rs);
-            }
+            const float rowY = illustTop + illustH - relicRowH;
+            draw_relic_combo_strip(window, fontForText(), illustLeft, illustW, rowY, relicRowH, comboRelicId, relicTex,
+                bodySize);
         }
     } else if (illustIsRelic || illustIsPotion) {
         const std::string itemId = eventData_.imagePath.substr(illustIsRelic ? 8 : 9);
         const sf::Texture* tex = resolveOfferIconTexture(illustIsRelic ? "relic" : "potion", itemId);
         if (tex && tex->getSize().x > 0 && tex->getSize().y > 0) {
-            sf::Sprite icon(*tex);
-            const float maxW = std::max(40.f, illustW * 0.72f);
-            const float maxH = std::max(40.f, illustH * 0.72f);
-            const float s = std::min(maxW / static_cast<float>(tex->getSize().x),
-                                     maxH / static_cast<float>(tex->getSize().y));
-            icon.setScale(sf::Vector2f(s, s));
-            icon.setOrigin(sf::Vector2f(tex->getSize().x * 0.5f, tex->getSize().y * 0.5f));
-            icon.setPosition(sf::Vector2f(illustCx, illustCy - 10.f));
-            window.draw(icon);
-
-            const sf::String label = illustIsRelic ? sf::String(L"遗物") : sf::String(L"药水");
-            sf::Text tag(fontForText(), label, static_cast<unsigned>(std::max(16u, bodySize)));
-            tag.setFillColor(sf::Color(232, 220, 180));
-            const sf::FloatRect b = tag.getLocalBounds();
-            tag.setOrigin(sf::Vector2f(b.position.x + b.size.x * 0.5f, b.position.y + b.size.y * 0.5f));
-            tag.setPosition(sf::Vector2f(illustCx, illustCy + maxH * 0.5f + 8.f));
-            window.draw(tag);
+            draw_event_item_solo(window, fontForText(), illustCx, illustTop, illustH, illustW, itemId, tex, bodySize,
+                illustIsRelic);
         } else {
             sf::Text illustHint(fontForText(), sf::String(L"[ 图标加载失败 ]"), static_cast<unsigned>(BODY_CHAR_SIZE - 2));
             illustHint.setFillColor(sf::Color(120, 95, 95));
@@ -435,16 +563,19 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         illustHint.setPosition(sf::Vector2f(illustCx, illustCy));
         window.draw(illustHint);
     }
+    window.setView(viewBeforeIllust);
 
     const float rightLeft = panelLeft + leftW;
     const float contentPad = 38.f;
     const float textAreaW = rightW - contentPad * 2.f;
-    const float descMaxH = std::min(180.f, panelH * 0.26f);
+    const bool isEventResultPage = (eventData_.title == L"事件结果");
+    const float descRegionH = isEventResultPage ? std::min(300.f, panelH * 0.48f) : std::min(180.f, panelH * 0.26f);
     float y = contentTop + contentPad;
     const sf::String effectiveDesc = eventData_.description.empty() ? sf::String(L"(无描述)") : sf::String(eventData_.description);
+    const float wrapMaxH = descRegionH;
     draw_wrapped_text(window, fontForText(), effectiveDesc,
-        bodySize, sf::Vector2f(rightLeft + contentPad, y), textAreaW, descMaxH, DESC_COLOR);
-    y += descMaxH + 16.f;
+        bodySize, sf::Vector2f(rightLeft + contentPad, y), textAreaW, wrapMaxH, DESC_COLOR);
+    y += descRegionH + 16.f;
     sf::RectangleShape sep1(sf::Vector2f(textAreaW, 1.f));
     sep1.setPosition(sf::Vector2f(rightLeft + contentPad, y));
     sep1.setFillColor(sf::Color(90, 85, 95));
