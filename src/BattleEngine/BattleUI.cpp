@@ -1358,81 +1358,7 @@ namespace tce {
 
         // 战斗界面中的暂停菜单 / 设置界面（与全局 HUD 版本保持一致）
         if (pause_menu_active_ || settings_panel_active_) {
-            const float viewTop    = TOP_BAR_BG_H;
-            const float viewHeight = static_cast<float>(height_) - viewTop;
-            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
-            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
-            dimBg.setFillColor(sf::Color(10, 10, 16, 220));
-            window.draw(dimBg);
-
-            const float panelW = 720.f;
-            const float panelH = settings_panel_active_ ? 460.f : 400.f;
-            const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
-            const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
-
-            sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
-            panel.setPosition(sf::Vector2f(panelX, panelY));
-            panel.setFillColor(sf::Color(32, 30, 40, 255));
-            panel.setOutlineColor(sf::Color(200, 190, 150));
-            panel.setOutlineThickness(2.f);
-            window.draw(panel);
-
-            const float titleY = panelY + 36.f;
-            sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
-            title.setFillColor(sf::Color(245, 240, 225));
-            const sf::FloatRect tb = title.getLocalBounds();
-            title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-            title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
-            window.draw(title);
-
-            if (!settings_panel_active_) {
-                const float btnW = 320.f;
-                const float btnH = 60.f;
-                const float firstY = panelY + 120.f;
-                const float gap = 24.f;
-                const float centerX = panelX + panelW * 0.5f;
-
-                auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
-                    const float x = centerX - btnW * 0.5f;
-                    outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
-                    sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
-                    btn.setPosition(sf::Vector2f(x, y));
-                    btn.setFillColor(sf::Color(70, 65, 75));
-                    btn.setOutlineColor(sf::Color(170, 160, 130));
-                    btn.setOutlineThickness(2.f);
-                    window.draw(btn);
-
-                    sf::Text t(fontForChinese(), sf::String(label), 26);
-                    t.setFillColor(sf::Color(235, 230, 220));
-                    const sf::FloatRect lb = t.getLocalBounds();
-                    t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
-                    t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
-                    window.draw(t);
-                };
-
-                drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
-                drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
-                drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
-            } else {
-                const float btnW = 240.f;
-                const float btnH = 56.f;
-                const float x = panelX + (panelW - btnW) * 0.5f;
-                const float y = panelY + panelH - btnH - 40.f;
-                settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
-                sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
-                btn.setPosition(sf::Vector2f(x, y));
-                btn.setFillColor(sf::Color(70, 65, 75));
-                btn.setOutlineColor(sf::Color(170, 160, 130));
-                btn.setOutlineThickness(2.f);
-                window.draw(btn);
-
-                sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
-                t.setFillColor(sf::Color(235, 230, 220));
-                const sf::FloatRect lb = t.getLocalBounds();
-                t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
-                t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
-                window.draw(t);
-            }
+            drawPauseMenuOverlay(window);
         }
     }
 
@@ -1459,67 +1385,48 @@ namespace tce {
 
         // 在地图/事件/商店/休息等界面上叠加暂停菜单 / 设置界面（布局与战斗界面保持一致）
         if (pause_menu_active_ || settings_panel_active_) {
-            const float viewTop    = TOP_BAR_BG_H;
-            const float viewHeight = static_cast<float>(height_) - viewTop;
-            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
-            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
-            dimBg.setFillColor(sf::Color(10, 10, 16, 220));
-            window.draw(dimBg);
+            drawPauseMenuOverlay(window);
+        }
+    }
 
-            const float panelW = 720.f;
-            const float panelH = settings_panel_active_ ? 460.f : 400.f;
-            const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
-            const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+    void BattleUI::drawPauseMenuOverlay(sf::RenderWindow& window) {
+        const float viewTop    = TOP_BAR_BG_H;
+        const float viewHeight = static_cast<float>(height_) - viewTop;
+        sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+        dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+        dimBg.setFillColor(sf::Color(10, 10, 16, 220));
+        window.draw(dimBg);
 
-            sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
-            panel.setPosition(sf::Vector2f(panelX, panelY));
-            panel.setFillColor(sf::Color(32, 30, 40, 255));
-            panel.setOutlineColor(sf::Color(200, 190, 150));
-            panel.setOutlineThickness(2.f);
-            window.draw(panel);
+        const float panelW = 720.f;
+        const float panelH = settings_panel_active_ ? 460.f : 400.f;
+        const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
+        const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
 
-            const float titleY = panelY + 36.f;
-            sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
-            title.setFillColor(sf::Color(245, 240, 225));
-            const sf::FloatRect tb = title.getLocalBounds();
-            title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-            title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
-            window.draw(title);
+        sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
+        panel.setPosition(sf::Vector2f(panelX, panelY));
+        panel.setFillColor(sf::Color(32, 30, 40, 255));
+        panel.setOutlineColor(sf::Color(200, 190, 150));
+        panel.setOutlineThickness(2.f);
+        window.draw(panel);
 
-            if (!settings_panel_active_) {
-                const float btnW = 320.f;
-                const float btnH = 60.f;
-                const float firstY = panelY + 120.f;
-                const float gap = 24.f;
-                const float centerX = panelX + panelW * 0.5f;
+        const float titleY = panelY + 36.f;
+        sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
+        title.setFillColor(sf::Color(245, 240, 225));
+        const sf::FloatRect tb = title.getLocalBounds();
+        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+        title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
+        window.draw(title);
 
-                auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
-                    const float x = centerX - btnW * 0.5f;
-                    outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
-                    sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
-                    btn.setPosition(sf::Vector2f(x, y));
-                    btn.setFillColor(sf::Color(70, 65, 75));
-                    btn.setOutlineColor(sf::Color(170, 160, 130));
-                    btn.setOutlineThickness(2.f);
-                    window.draw(btn);
+        if (!settings_panel_active_) {
+            const float btnW = 320.f;
+            const float btnH = 60.f;
+            const float firstY = panelY + 120.f;
+            const float gap = 24.f;
+            const float centerX = panelX + panelW * 0.5f;
 
-                    sf::Text t(fontForChinese(), sf::String(label), 26);
-                    t.setFillColor(sf::Color(235, 230, 220));
-                    const sf::FloatRect lb = t.getLocalBounds();
-                    t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
-                    t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
-                    window.draw(t);
-                };
-
-                drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
-                drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
-                drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
-            } else {
-                const float btnW = 240.f;
-                const float btnH = 56.f;
-                const float x = panelX + (panelW - btnW) * 0.5f;
-                const float y = panelY + panelH - btnH - 40.f;
-                settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+            auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
+                const float x = centerX - btnW * 0.5f;
+                outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
                 sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
                 btn.setPosition(sf::Vector2f(x, y));
                 btn.setFillColor(sf::Color(70, 65, 75));
@@ -1527,13 +1434,36 @@ namespace tce {
                 btn.setOutlineThickness(2.f);
                 window.draw(btn);
 
-                sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
+                sf::Text t(fontForChinese(), sf::String(label), 26);
                 t.setFillColor(sf::Color(235, 230, 220));
                 const sf::FloatRect lb = t.getLocalBounds();
                 t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
                 t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
                 window.draw(t);
-            }
+            };
+
+            drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
+            drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
+            drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+        } else {
+            const float btnW = 240.f;
+            const float btnH = 56.f;
+            const float x = panelX + (panelW - btnW) * 0.5f;
+            const float y = panelY + panelH - btnH - 40.f;
+            settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+            sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+            btn.setPosition(sf::Vector2f(x, y));
+            btn.setFillColor(sf::Color(70, 65, 75));
+            btn.setOutlineColor(sf::Color(170, 160, 130));
+            btn.setOutlineThickness(2.f);
+            window.draw(btn);
+
+            sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
+            t.setFillColor(sf::Color(235, 230, 220));
+            const sf::FloatRect lb = t.getLocalBounds();
+            t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+            window.draw(t);
         }
     }
 

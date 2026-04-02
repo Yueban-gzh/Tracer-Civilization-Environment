@@ -21,24 +21,13 @@ bool GameFlowController::saveRun(const std::string& path) const {
             return false;
         }
 
-        // --- 运行级随机数状态 ---
-        const uint64_t rng_state = runRng_.get_state();
-
-        // --- 地图当前层与当前节点 ---
-        const int current_layer = mapEngine_.get_current_layer();
-        std::string current_node_id;
-        {
-            MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
-            for (const auto& n : snap.all_nodes) {
-                if (n.is_current) {
-                    current_node_id = n.id;
-                    break;
-                }
-            }
-        }
-
-        // --- 玩家基础状态（对应 PlayerBattleState 的 Run 级部分） ---
-        const PlayerBattleState& p = playerState_;
+        // --- 固定检查点（进入节点瞬间） ---
+        // 规则：无论在宝箱/事件/战斗等界面何时触发保存，都只写进入该节点瞬间的状态。
+        // 这样房间内的 RNG 消耗不会写入存档，从而避免通过 SL 刷宝箱内容/事件结果。
+        const uint64_t rng_state = checkpointValid_ ? checkpointRunRngState_ : runRng_.get_state();
+        const int current_layer = checkpointValid_ ? checkpointCurrentLayer_ : mapEngine_.get_current_layer();
+        const std::string current_node_id = checkpointValid_ ? checkpointCurrentNodeId_ : "";
+        const PlayerBattleState& p = checkpointValid_ ? checkpointPlayerState_ : playerState_;
 
         out << "{\n";
         out << "  \"schema_version\": 1,\n";
@@ -74,6 +63,22 @@ bool GameFlowController::saveRun(const std::string& path) const {
         for (size_t i = 0; i < p.relics.size(); ++i) {
             if (i > 0) out << ", ";
             out << "\"" << p.relics[i] << "\"";
+        }
+        out << "],\n";
+
+        // master deck（永久牌组）：同样使用检查点，避免房间内修改导致存档漂移
+        out << "    \"master_deck\": [";
+        if (checkpointValid_) {
+            for (size_t i = 0; i < checkpointMasterDeck_.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << "\"" << checkpointMasterDeck_[i] << "\"";
+            }
+        } else {
+            const auto& deck = cardSystem_.get_master_deck();
+            for (size_t i = 0; i < deck.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << "\"" << deck[i].id << "\"";
+            }
         }
         out << "]\n";
         out << "  },\n";
@@ -166,6 +171,18 @@ bool GameFlowController::loadRun(const std::string& path) {
                 }
 
                 playerState_ = p;
+
+                // master deck（永久牌组）
+                if (const auto* arr = pVal->get_key("master_deck"); arr && arr->is_array()) {
+                    std::vector<CardId> ids;
+                    ids.reserve(arr->arr.size());
+                    for (const auto& e : arr->arr) {
+                        if (e.is_string()) ids.push_back(e.s);
+                    }
+                    if (!ids.empty()) {
+                        cardSystem_.init_master_deck(ids);
+                    }
+                }
             }
         }
 
@@ -195,6 +212,9 @@ bool GameFlowController::loadRun(const std::string& path) {
         // --- 重置全局 HUD 的临时 UI 状态，避免一进界面就处于“暂停/牌组已打开”的状态 ---
         hudBattleUi_.set_deck_view_active(false);
         hudBattleUi_.set_pause_menu_active(false);
+
+        // --- 读档恢复后，检查点应与存档一致（存档本身即检查点） ---
+        captureCheckpointForCurrentNode();
 
         gameOver_ = false;
         gameCleared_ = false;
