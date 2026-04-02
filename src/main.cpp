@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 《溯源者：文明环境》课设 - 程序入口
  *
  * 正式主流程由 tce::GameFlowController 统一调度（地图 → 战斗 / 事件 / 商店 / 休息 / 宝藏），
@@ -53,7 +53,7 @@ static std::string eventResultToSummary(const tce::EventEngine::EventResult& res
         if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
         if (eff.type == "none") return std::string("无事发生。");
         return std::string("事件结算：") + eff.type;
-        };
+    };
 
     if (!res.effects.empty()) {
         std::string out;
@@ -166,13 +166,13 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
         }
         sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         ui.setMousePosition(mousePos);
+        ui.syncRestForgeScrollbarDrag(mousePos);
 
         int outIndex = -1;
         if (ui.pollEventOption(outIndex)) {
             if (showingResult) {
                 if (outIndex == 0) showingResult = false;
-            }
-            else if (engine.get_current_event() && engine.choose_option(outIndex)) {
+            } else if (engine.get_current_event() && engine.choose_option(outIndex)) {
                 EventEngine::EventResult res;
                 if (engine.get_event_result(res)) {
                     engine.apply_event_result(res, [](int v) { std::cout << "[事件] 获得金币: " << v << "\n"; }, [](int v) { std::cout << "[事件] 恢复生命: " << v << "\n"; });
@@ -201,89 +201,59 @@ static void runEventShopRestUITest(sf::RenderWindow& window) {
 
 // ---------- 地图 UI 测试 ----------
 static void runMapUITest(sf::RenderWindow& window) {
-    // 存储三张固定的地图
-    MapEngine::MapEngine engines[3];
+    MapEngine::MapConfigManager configManager;
+    MapEngine::MapEngine engine;
+    engine.setContentIdGenerator([](NodeType type, int layer, int index) -> std::string {
+        const char* t[] = { "enemy", "elite", "event", "rest", "merchant", "treasure", "boss" };
+        int i = static_cast<int>(type);
+        return std::string(i >= 0 && i < 7 ? t[i] : "node") + "_" + std::to_string(layer) + "_" + std::to_string(index);
+    });
+    engine.setNodeEnterCallback([](const MapEngine::MapNode& node) {
+        std::cout << "[MapUI] 进入节点: " << node.id << " 类型:" << static_cast<int>(node.type) << " content_id:" << node.content_id << std::endl;
+    });
 
-    // 设置回调函数（三张地图共用）
-    for (int i = 0; i < 3; ++i) {
-        engines[i].setContentIdGenerator([](NodeType type, int layer, int index) -> std::string {
-            const char* t[] = { "enemy", "elite", "event", "rest", "merchant", "treasure", "boss" };
-            int idx = static_cast<int>(type);
-            return std::string(idx >= 0 && idx < 7 ? t[idx] : "node") + "_" + std::to_string(layer) + "_" + std::to_string(index);
-            });
-        engines[i].setNodeEnterCallback([](const MapEngine::MapNode& node) {
-            std::cout << "[MapUI] 进入节点: " << node.id << " 类型:" << static_cast<int>(node.type) << " content_id:" << node.content_id << std::endl;
-            });
-    }
+    if (!configManager.getCurrentConfig()) { std::cerr << "无地图配置" << std::endl; return; }
+    engine.init_fixed_map(*configManager.getCurrentConfig());
 
-    // 生成三张固定地图（索引 0,1,2）
-    std::cout << "========== 生成三张固定地图 ==========" << std::endl;
-    for (int i = 0; i < 3; ++i) {
-        engines[i].init_random_map(i);
-        std::cout << "地图 " << i << " 生成完成，共 " << engines[i].get_map_snapshot().all_nodes.size() << " 个节点" << std::endl;
-    }
-    std::cout << "=====================================" << std::endl;
-
-    // 当前显示的地图索引
-    int current_map = 0;
-
-    // 初始化 UI 并设置第一张地图
     MapEngine::MapUI ui;
     if (!ui.initialize(&window)) { std::cerr << "地图 UI 初始化失败" << std::endl; return; }
     ui.loadLegendTexture("assets/images/menu.png");
-    ui.setLegendPosition(1550.f, 550.f);
-    ui.setLegendScale(1.0f);
+    ui.setLegendPosition(1800.f, 900.f);
     ui.loadBackgroundTexture("assets/images/background.png");
-    ui.setMap(&engines[current_map]);
+    ui.setMap(&engine);
     ui.setCurrentLayer(0);
 
     while (window.isOpen()) {
         while (const std::optional ev = window.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) { window.close(); return; }
-
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) return;
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
-                    current_map = (current_map + 2) % 3;  // 上一张
-                    ui.setMap(&engines[current_map]);
-                    ui.setCurrentLayer(0);
-                    std::cout << "切换到地图 " << current_map << std::endl;
+                    configManager.prevMap();
+                    engine.init_fixed_map(*configManager.getCurrentConfig());
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Right) {
-                    current_map = (current_map + 1) % 3;  // 下一张
-                    ui.setMap(&engines[current_map]);
-                    ui.setCurrentLayer(0);
-                    std::cout << "切换到地图 " << current_map << std::endl;
+                    configManager.nextMap();
+                    engine.init_fixed_map(*configManager.getCurrentConfig());
                 }
             }
-
-            // 鼠标滚轮滚动
-            if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
-                if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
-                    ui.scroll(wheel->delta * 40.0f);
-                }
-            }
-
-            // 鼠标左键点击选择节点
             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button == sf::Mouse::Button::Left) {
                     sf::Vector2i pos = mouse->position;
                     std::string nodeId = ui.handleClick(pos.x, pos.y);
                     if (!nodeId.empty()) {
-                        MapEngine::MapNode node = engines[current_map].get_node_by_id(nodeId);
-                        if (!engines[current_map].hasCurrentNode() && node.layer == 0) {
-                            engines[current_map].set_current_node(nodeId);
-                            engines[current_map].update_reachable_nodes();
-                        }
-                        else if (node.is_reachable) {
-                            engines[current_map].set_current_node(nodeId);
-                            engines[current_map].update_reachable_nodes();
+                        MapEngine::MapNode node = engine.get_node_by_id(nodeId);
+                        if (!engine.hasCurrentNode() && node.layer == 0) {
+                            engine.set_current_node(nodeId);
+                            engine.update_reachable_nodes();
+                        } else if (node.is_reachable) {
+                            engine.set_current_node(nodeId);
+                            engine.update_reachable_nodes();
                         }
                     }
                 }
             }
         }
-
         window.clear(sf::Color(255, 255, 255));
         ui.draw();
         window.display();
@@ -295,16 +265,22 @@ int main() {
     sf::RenderWindow window(sf::VideoMode({ winW, winH }), "Tracer Civilization - 溯源者");
     window.setFramerateLimit(60);
 
-    // ========== 临时：测试地图 UI ==========
-    runMapUITest(window);
+    tce::GameFlowController game(window);
+    if (!game.initialize()) {
+        std::cerr << "[启动] GameFlowController::initialize 失败（请检查地图配置、资源路径等）。\n";
+        return 1;
+    }
 
-    // ========== 正式游戏（暂时注释） ==========
-    // tce::GameFlowController game(window);
-    // if (!game.initialize()) {
-    //     std::cerr << "[启动] GameFlowController::initialize 失败（请检查地图配置、资源路径等）。\n";
-    //     return 1;
-    // }
-    // game.run();
+    // 循环：开始界面 → 一次游戏流程 → 回到开始界面，直到窗口被关闭
+    while (window.isOpen()) {
+        // 开始界面：提供“开始新游戏 / 继续游戏”选项
+        tce::runStartScreen(window, game);
+        if (!window.isOpen()) break;
+
+        game.run();  // 可能在地图/战斗/事件等界面的“保存并退出”中提前 return，回到本循环顶部
+    }
 
     return 0;
 }
+
+// 调试：可将 main 内改为 runEventShopRestUITest(window) 或 runMapUITest(window)（单独测 UI）。
