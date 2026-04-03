@@ -507,6 +507,15 @@ namespace MapEngine {
             }
         }
 
+        /** 读档用：恢复到指定配置页（爬塔进度所在地图）。 */
+        void setCurrentIndex(int idx) {
+            if (configs.empty()) return;
+            if (idx < 0) idx = 0;
+            const int maxIdx = static_cast<int>(configs.size()) - 1;
+            if (idx > maxIdx) idx = maxIdx;
+            currentConfigIndex = idx;
+        }
+
         std::string getCurrentMapName() const {
             auto* config = getCurrentConfig();
             return config ? config->getName() : "未知地图";

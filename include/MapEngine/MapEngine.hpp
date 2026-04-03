@@ -82,6 +82,8 @@ namespace MapEngine {
             const NodeId& to_node) const;
         std::vector<std::vector<NodeId>> find_all_paths_to_boss() const;
         MapSnapshot get_map_snapshot() const;
+        /** 从快照完整恢复地图拓扑、位置与节点标记（用于读档）。 */
+        void restore_from_snapshot(const MapSnapshot& snapshot);
 
         // 节点状态更新
         void set_node_visited(const NodeId& node_id);
