@@ -218,7 +218,6 @@ bool GameFlowController::loadRun(const std::string& path) {
         captureCheckpointForCurrentNode();
 
         gameOver_ = false;
-        gameCleared_ = false;
         statusText_ = "继续旅程。";
         return true;
     } catch (...) {

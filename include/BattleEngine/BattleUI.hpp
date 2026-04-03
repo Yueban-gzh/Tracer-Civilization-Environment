@@ -57,6 +57,13 @@ public:
     /** 轮询一次是否请求打开牌组界面；outMode: 1=牌组(右上角)，2=抽牌堆(左下角)，3=弃牌堆(右下角)，4=消耗堆(弃牌堆上方) */
     bool pollOpenDeckViewRequest(int& outMode);
 
+    /** 主地图界面应隐藏右上角「地图」按钮；其它界面显示并可切换「仅浏览地图」浮层 */
+    void set_hide_top_right_map_button(bool hide) { hide_top_right_map_button_ = hide; }
+    /** 打开全屏地图浏览层时，屏蔽打牌/奖励等，仅保留顶栏与牌组/设置 */
+    void set_map_overlay_blocks_world_input(bool block) { map_overlay_blocks_world_input_ = block; }
+    /** 轮询：用户点击「地图」按钮，请求切换浏览地图浮层开/关 */
+    bool pollMapBrowseToggleRequest();
+
     /** 屏幕中央短时提示（如“抽牌堆为空”），seconds 为显示秒数 */
     void showTip(std::wstring text, float seconds = 1.2f);
 
@@ -230,6 +237,9 @@ private:
     float                         deck_view_scroll_y_ = 0.f;   // 牌组视图纵向滚动偏移
     int                           pending_deck_view_mode_ = 0;  // 0 无，1 整个牌组，2 抽牌堆，3 弃牌堆
     sf::FloatRect                 deckViewReturnButton_;       // 牌组界面返回按钮矩形
+    bool                          hide_top_right_map_button_ = false;
+    bool                          map_overlay_blocks_world_input_ = false;
+    int                           pending_map_browse_toggle_ = 0;
 
     // 奖励界面（战斗胜利后）
     bool                          reward_screen_active_ = false;

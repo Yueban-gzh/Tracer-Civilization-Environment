@@ -21,7 +21,7 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
 
     sf::Font font;
     if (!font.openFromFile("assets/fonts/Sanji.ttf")) {
-        font.openFromFile("data/font.ttf");
+        (void)font.openFromFile("data/font.ttf");
     }
 
     bool running = true;

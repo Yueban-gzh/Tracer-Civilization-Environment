@@ -1,4 +1,4 @@
-﻿// include/MapEngine/MapUI.hpp
+// include/MapEngine/MapUI.hpp
 #pragma once
 #include <SFML/Graphics.hpp>
 #include "MapEngine.hpp" 
@@ -31,6 +31,12 @@ namespace MapEngine {
         // 滚动功能
         void scroll(float delta);
         float getViewOffset() const { return m_viewOffset; }
+        /** 为 false 时 handleClick 始终返回空串（仅浏览地图，不触发进节点） */
+        void set_nodes_clickable(bool clickable) { m_nodesClickable = clickable; }
+        bool nodes_clickable() const { return m_nodesClickable; }
+        /** 为 true 时，忽略“是否可达/是否已完成”等限制，点击任意节点都返回其 id（作弊/调试用） */
+        void set_allow_any_node_click(bool allow) { m_allowAnyNodeClick = allow; }
+        bool allow_any_node_click() const { return m_allowAnyNodeClick; }
 
     private:
         void drawEdges();
@@ -89,6 +95,8 @@ namespace MapEngine {
         // 【新增】已访问节点覆盖层
         sf::Texture m_visitedOverlayTexture;
         bool m_visitedOverlayLoaded = false;
+        bool m_nodesClickable = true;
+        bool m_allowAnyNodeClick = false;
     };
 
 }

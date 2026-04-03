@@ -89,6 +89,8 @@ namespace tce {
         constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（屏幕高度 78% 处），留出空间给手牌
         // 手牌区条带高度 = height - handBgY（与战场下沿对齐），不再用固定 220，避免压住血条
         constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌图标贴底
+        // 牌组视图滚到最底时，最后一行牌底边与窗口底之间多留的像素（再往上推一截）
+        constexpr float DECK_VIEW_SCROLL_BOTTOM_INSET = 48.f;
         constexpr float SIDE_MARGIN = 24.f;          // 左右边距
 
         constexpr float CARD_W = 190.f;              // 手牌默认宽度
@@ -590,6 +592,19 @@ namespace tce {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
                 if (btn && btn->button == sf::Mouse::Button::Left) {
+                    // 再次点击顶栏「设置」：关闭暂停菜单 / 设置二级页（与再点一次退出一致）
+                    {
+                        const float right = width_ - 28.f;
+                        const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                        const float settingsBtnLeft = right - btnW;
+                        if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
+                            mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                            pause_menu_active_    = false;
+                            settings_panel_active_ = false;
+                            pending_pause_menu_choice_ = 0;
+                            return false;
+                        }
+                    }
                     if (!settings_panel_active_) {
                         if (pauseResumeRect_.contains(mousePos)) {
                             pending_pause_menu_choice_ = 1;   // 返回游戏
@@ -617,7 +632,158 @@ namespace tce {
             return false;
         }
 
-        // 奖励界面：处理卡牌选择、跳过、继续；返回 false 表示事件已消费
+        // 牌组界面：只处理滚轮滚动与返回按钮点击，其它事件忽略
+        if (deck_view_active_) {
+            if (ev.is<sf::Event::MouseWheelScrolled>()) {
+                auto const& wheel = ev.getIf<sf::Event::MouseWheelScrolled>();
+                if (wheel) {
+                    constexpr float CARD_H = 300.f;
+                    constexpr float ROW_CENTER_TO_CENTER = 360.f;
+                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
+                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+                    const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
+                    const float firstRowTop = FIRST_ROW_CENTER_Y - CARD_H * 0.5f;
+                    const float padTop = firstRowTop - contentTop;
+                    // 最后一行牌底边在窗口中的 Y；maxScroll 必须按「世界坐标 − 窗口底」算，否则会少滚一截（contentTop 低于顶栏下沿）
+                    const float lastCardBottomY = numRows > 0
+                        ? contentTop + padTop + (numRows - 1) * ROW_CENTER_TO_CENTER + CARD_H
+                        : contentTop + padTop;
+                    const float maxScroll = (numRows > 0)
+                        ? std::max(0.f, lastCardBottomY - static_cast<float>(height_) + DECK_VIEW_SCROLL_BOTTOM_INSET)
+                        : 0.f;
+                    const float step = 80.f;
+                    deck_view_scroll_y_ -= wheel->delta * step;  // 滚轮 delta 控制垂直滚动
+                    if (maxScroll <= 0.f) deck_view_scroll_y_ = 0.f;
+                    else {
+                        if (deck_view_scroll_y_ < 0.f) deck_view_scroll_y_ = 0.f;
+                        if (deck_view_scroll_y_ > maxScroll) deck_view_scroll_y_ = maxScroll;
+                    }
+                }
+                return false;
+            }
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left) {
+                    // 再次点击顶栏「牌组」：关闭牌组视图
+                    {
+                        const float right = width_ - 28.f;
+                        const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                        const int topBtnCount = hide_top_right_map_button_ ? 2 : 3;
+                        float rowLeft = right - (static_cast<float>(topBtnCount) * btnW + static_cast<float>(topBtnCount - 1) * gap);
+                        if (!hide_top_right_map_button_)
+                            rowLeft += btnW + gap;
+                        if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                            deck_view_active_ = false;
+                            deck_view_scroll_y_ = 0.f;
+                            return false;
+                        }
+                    }
+                    if (deckViewReturnButton_.contains(mousePos)) {  // 点击返回
+                        deck_view_active_ = false;
+                        deck_view_scroll_y_ = 0.f;
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 全屏地图浏览浮层：仅响应顶栏「地图 / 牌组 / 设置」（不设牌堆快捷入口）
+        if (map_overlay_blocks_world_input_) {
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left) {
+                    const float right = width_ - 28.f;
+                    const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                    const int topBtnCount = hide_top_right_map_button_ ? 2 : 3;
+                    float rowLeft = right - (static_cast<float>(topBtnCount) * btnW + static_cast<float>(topBtnCount - 1) * gap);
+                    if (!hide_top_right_map_button_) {
+                        if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                            pending_map_browse_toggle_ = 1;
+                            return false;
+                        }
+                        rowLeft += btnW + gap;
+                    }
+                    if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                        pending_deck_view_mode_ = 1;
+                        return false;
+                    }
+                    const float settingsBtnLeft = right - btnW;
+                    if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
+                        mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                        if (pause_menu_active_ || settings_panel_active_) {
+                            pause_menu_active_    = false;
+                            settings_panel_active_ = false;
+                            pending_pause_menu_choice_ = 0;
+                        } else {
+                            pause_menu_active_ = true;
+                            settings_panel_active_ = false;
+                        }
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 非牌组界面：点击顶栏「地图」「牌组」「设置」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应视图
+        if (ev.is<sf::Event::MouseButtonPressed>()) {
+            auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+            if (btn && btn->button == sf::Mouse::Button::Left) {
+                const float right = width_ - 28.f;
+                const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                const int topBtnCount = hide_top_right_map_button_ ? 2 : 3;
+                float rowLeft = right - (static_cast<float>(topBtnCount) * btnW + static_cast<float>(topBtnCount - 1) * gap);
+                if (!hide_top_right_map_button_) {
+                    if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                        pending_map_browse_toggle_ = 1;
+                        return false;
+                    }
+                    rowLeft += btnW + gap;
+                }
+                if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                    pending_deck_view_mode_ = 1;  // 牌组（主牌组）
+                    return false;
+                }
+                // 顶栏右上角「设置」：打开暂停菜单；再点一次关闭
+                const float settingsBtnLeft = right - btnW;  // 最右侧按钮
+                if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
+                    mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                    if (pause_menu_active_ || settings_panel_active_) {
+                        pause_menu_active_       = false;
+                        settings_panel_active_   = false;
+                        pending_pause_menu_choice_ = 0;
+                    } else {
+                        pause_menu_active_ = true;
+                        settings_panel_active_ = false;
+                    }
+                    return false;
+                }
+                const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
+                const float drawPileY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+                if (mousePos.x >= drawPileX && mousePos.x <= drawPileX + PILE_ICON_W && mousePos.y >= drawPileY && mousePos.y <= drawPileY + PILE_ICON_H) {
+                    pending_deck_view_mode_ = 2;  // 抽牌堆
+                    return false;
+                }
+                const float discardX = width_ - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;
+                const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
+                if (mousePos.x >= discardX && mousePos.x <= discardX + PILE_ICON_W && mousePos.y >= discardY && mousePos.y <= discardY + PILE_ICON_H) {
+                    pending_deck_view_mode_ = 3;  // 弃牌堆
+                    return false;
+                }
+                // 消耗堆：弃牌堆上方的小图标区域（与绘制位置一致）
+                const float exhaustX = discardX + 3.f;
+                const float exhaustY = discardY - 56.f;
+                const float exhaustW = PILE_ICON_W - 6.f;
+                const float exhaustH = 48.f;
+                if (mousePos.x >= exhaustX && mousePos.x <= exhaustX + exhaustW && mousePos.y >= exhaustY && mousePos.y <= exhaustY + exhaustH) {
+                    pending_deck_view_mode_ = 4;  // 消耗堆
+                    return false;
+                }
+            }
+        }
+
+        // 奖励界面：处理卡牌选择、跳过、继续（在顶栏之后，以便战斗中仍可打开地图/牌组浏览）
         if (reward_screen_active_) {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
@@ -644,85 +810,6 @@ namespace tce {
                 }
             }
             return false;
-        }
-
-        // 牌组界面：只处理滚轮滚动与返回按钮点击，其它事件忽略
-        if (deck_view_active_) {
-            if (ev.is<sf::Event::MouseWheelScrolled>()) {
-                auto const& wheel = ev.getIf<sf::Event::MouseWheelScrolled>();
-                if (wheel) {
-                    constexpr float CARD_H = 300.f;
-                    constexpr float ROW_CENTER_TO_CENTER = 360.f;
-                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
-                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
-                    const float viewH = static_cast<float>(height_) - TOP_BAR_BG_H;  // 可见区域：顶栏下到屏幕底
-                    const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
-                    const float firstRowTop = FIRST_ROW_CENTER_Y - CARD_H * 0.5f;
-                    const float padTop = firstRowTop - contentTop;
-                    const float contentH = padTop + (numRows > 0 ? (numRows * ROW_CENTER_TO_CENTER - (ROW_CENTER_TO_CENTER - CARD_H)) : 0.f);
-                    const float maxScroll = std::max(0.f, contentH - viewH);
-                    const float step = 80.f;
-                    deck_view_scroll_y_ -= wheel->delta * step;  // 滚轮 delta 控制垂直滚动
-                    if (maxScroll <= 0.f) deck_view_scroll_y_ = 0.f;
-                    else {
-                        if (deck_view_scroll_y_ < 0.f) deck_view_scroll_y_ = 0.f;
-                        if (deck_view_scroll_y_ > maxScroll) deck_view_scroll_y_ = maxScroll;
-                    }
-                }
-                return false;
-            }
-            if (ev.is<sf::Event::MouseButtonPressed>()) {
-                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
-                if (btn && btn->button == sf::Mouse::Button::Left && deckViewReturnButton_.contains(mousePos)) {  // 点击返回
-                    deck_view_active_ = false;
-                    deck_view_scroll_y_ = 0.f;
-                    return false;
-                }
-            }
-            return false;
-        }
-
-        // 非牌组界面：点击顶栏「牌组」「设置」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应视图
-        if (ev.is<sf::Event::MouseButtonPressed>()) {
-            auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
-            if (btn && btn->button == sf::Mouse::Button::Left) {
-                const float right = width_ - 28.f;
-                const float btnW = 58.f, btnH = 48.f, gap = 18.f;
-                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;  // 牌组按钮左边界（中间按钮）
-                if (mousePos.x >= deckBtnLeft && mousePos.x <= deckBtnLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
-                    pending_deck_view_mode_ = 1;  // 牌组（主牌组）
-                    return false;
-                }
-                // 顶栏右上角第三个按钮为“设置”：打开暂停菜单
-                const float settingsBtnLeft = right - btnW;  // 最右侧按钮
-                if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
-                    mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
-                    pause_menu_active_ = true;
-                    settings_panel_active_ = false;
-                    return false;
-                }
-                const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
-                const float drawPileY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
-                if (mousePos.x >= drawPileX && mousePos.x <= drawPileX + PILE_ICON_W && mousePos.y >= drawPileY && mousePos.y <= drawPileY + PILE_ICON_H) {
-                    pending_deck_view_mode_ = 2;  // 抽牌堆
-                    return false;
-                }
-                const float discardX = width_ - SIDE_MARGIN - PILE_ICON_W - PILE_CENTER_OFFSET + 4.f;
-                const float discardY = height_ - BOTTOM_MARGIN - PILE_ICON_H - 4.f;
-                if (mousePos.x >= discardX && mousePos.x <= discardX + PILE_ICON_W && mousePos.y >= discardY && mousePos.y <= discardY + PILE_ICON_H) {
-                    pending_deck_view_mode_ = 3;  // 弃牌堆
-                    return false;
-                }
-                // 消耗堆：弃牌堆上方的小图标区域（与绘制位置一致）
-                const float exhaustX = discardX + 3.f;
-                const float exhaustY = discardY - 56.f;
-                const float exhaustW = PILE_ICON_W - 6.f;
-                const float exhaustH = 48.f;
-                if (mousePos.x >= exhaustX && mousePos.x <= exhaustX + exhaustW && mousePos.y >= exhaustY && mousePos.y <= exhaustY + exhaustH) {
-                    pending_deck_view_mode_ = 4;  // 消耗堆
-                    return false;
-                }
-            }
         }
 
         if (ev.is<sf::Event::MouseButtonPressed>()) {
@@ -856,12 +943,15 @@ namespace tce {
         const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
         const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
         const float padTop = firstRowTop - contentTop;
-        const float contentViewH = static_cast<float>(height_) - TOP_BAR_BG_H;  // 可见区域：顶栏下到屏幕底
         const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
-        const float contentH = padTop + (numRows > 0 ? (numRows * ROW_CENTER_TO_CENTER - (ROW_CENTER_TO_CENTER - DECK_CARD_H)) : 0.f);
-        const float maxScroll = std::max(0.f, contentH - contentViewH);
+        const float lastCardBottomY = numRows > 0
+            ? contentTop + padTop + (numRows - 1) * ROW_CENTER_TO_CENTER + DECK_CARD_H
+            : contentTop + padTop;
+        const float maxScroll = (numRows > 0)
+            ? std::max(0.f, lastCardBottomY - static_cast<float>(height_) + DECK_VIEW_SCROLL_BOTTOM_INSET)
+            : 0.f;
         if (numRows >= 3)
-            deck_view_scroll_y_ = std::min(padTop + ROW_CENTER_TO_CENTER, maxScroll);  // 第二行顶对齐视口顶
+            deck_view_scroll_y_ = 40.f; // 第二行顶对齐视口顶
         else
             deck_view_scroll_y_ = 0.f;
     }
@@ -874,6 +964,12 @@ namespace tce {
         if (pending_deck_view_mode_ == 0) return false;
         outMode = pending_deck_view_mode_;
         pending_deck_view_mode_ = 0;
+        return true;
+    }
+
+    bool BattleUI::pollMapBrowseToggleRequest() {
+        if (pending_map_browse_toggle_ == 0) return false;
+        pending_map_browse_toggle_ = 0;
         return true;
     }
 
@@ -3553,7 +3649,8 @@ namespace tce {
         const float right = width_ - 28.f;          // 右边界
         const float rowY = TOP_ROW_Y;               // 按钮整体上移一点
 
-        float x = right - (btnW * 3.f + gap * 2.f);  // 三个按钮总宽，从右往左排
+        const int topBtnCount = hide_top_right_map_button_ ? 2 : 3;
+        float x = right - (static_cast<float>(topBtnCount) * btnW + static_cast<float>(topBtnCount - 1) * gap);
 
         auto drawBtn = [&](const std::wstring& label) {
             sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
@@ -3569,13 +3666,14 @@ namespace tce {
             x += btnW + gap;
             };
 
-        drawBtn(L"地图");
+        if (!hide_top_right_map_button_)
+            drawBtn(L"地图");
         drawBtn(L"牌组");
         drawBtn(L"设置");
 
         if (showTurnCounter) {
-            // 顶栏下方显示当前回合数，居中对齐在这三个按钮下方
-            const float groupWidth = btnW * 3.f + gap * 2.f;  // 按钮组总宽
+            // 顶栏下方显示当前回合数，居中对齐在这组按钮下方
+            const float groupWidth = btnW * static_cast<float>(topBtnCount) + gap * static_cast<float>(topBtnCount - 1);  // 按钮组总宽
             const float turnCenterX = right - groupWidth * 0.5f;
             const float turnRowY = rowY + btnH + 18.f;  // 回合文本再往下
             int turn = std::max(1, s.turnNumber);

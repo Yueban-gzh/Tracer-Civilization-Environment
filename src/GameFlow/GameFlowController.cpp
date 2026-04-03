@@ -125,6 +125,138 @@ void applyBattleTestMock(PlayerBattleState& p) {
 
     p.potions = {"poison_potion", "block_potion", "strength_potion"};
 }
+
+/** 战斗结束全屏遮罩：victory=true 为通关界面，false 为失败界面（视觉与文案不同）。 */
+void runPostBattleExitOverlay(sf::RenderWindow& window,
+                              BattleUI& ui,
+                              const BattleState& state,
+                              CardSystem& cardSystem,
+                              bool victory,
+                              const sf::Font& hudFont,
+                              bool hudFontLoaded) {
+    constexpr float kFadeInSec            = 1.0f;
+    constexpr float kShowButtonAfterSec   = 1.1f;
+    constexpr float kAutoReturnSec        = 3.2f;
+    sf::Clock clock;
+
+    const float w = static_cast<float>(window.getSize().x);
+    const float h = static_cast<float>(window.getSize().y);
+    const sf::Vector2f center(w * 0.5f, h * 0.5f);
+
+    const float btnW = 260.f;
+    const float btnH = 56.f;
+    const sf::FloatRect backRect(
+        sf::Vector2f(center.x - btnW * 0.5f, center.y + 120.f),
+        sf::Vector2f(btnW, btnH));
+
+    bool leaving = false;
+    while (window.isOpen() && !leaving) {
+        while (const std::optional ev = window.pollEvent()) {
+            if (ev->is<sf::Event::Closed>()) {
+                window.close();
+                leaving = true;
+                break;
+            }
+            if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                if (key->scancode == sf::Keyboard::Scancode::Escape) {
+                    leaving = true;
+                    break;
+                }
+            }
+            if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                if (m->button == sf::Mouse::Button::Left) {
+                    const sf::Vector2f p = window.mapPixelToCoords(m->position);
+                    const float t = clock.getElapsedTime().asSeconds();
+                    if (t >= kShowButtonAfterSec && backRect.contains(p)) {
+                        leaving = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const float t = clock.getElapsedTime().asSeconds();
+        if (t >= kAutoReturnSec) leaving = true;
+
+        window.clear(sf::Color(12, 10, 18));
+
+        BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem);
+        tce::SnapshotBattleUIDataProvider adapter(&snapshot);
+        ui.draw(window, adapter);
+
+        float a01 = (kFadeInSec <= 0.f) ? 1.f : std::min(1.f, std::max(0.f, t / kFadeInSec));
+        const std::uint8_t a = static_cast<std::uint8_t>(220.f * a01);
+        sf::RectangleShape dim(sf::Vector2f(w, h));
+        dim.setPosition(sf::Vector2f(0.f, 0.f));
+        dim.setFillColor(sf::Color(0, 0, 0, a));
+        window.draw(dim);
+
+        if (hudFontLoaded) {
+            if (victory) {
+                sf::Text title(hudFont, sf::String(L"通关成功"), 72);
+                title.setFillColor(sf::Color(220, 200, 90, static_cast<std::uint8_t>(255.f * a01)));
+                const sf::FloatRect tb = title.getLocalBounds();
+                title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+                title.setPosition(sf::Vector2f(center.x, center.y - 90.f));
+                window.draw(title);
+
+                sf::Text line2(hudFont, sf::String(L"三图 Boss 已全部击败"), 26);
+                line2.setFillColor(sf::Color(200, 220, 180, static_cast<std::uint8_t>(210.f * a01)));
+                const sf::FloatRect l2 = line2.getLocalBounds();
+                line2.setOrigin(sf::Vector2f(l2.position.x + l2.size.x * 0.5f, l2.position.y + l2.size.y * 0.5f));
+                line2.setPosition(sf::Vector2f(center.x, center.y - 35.f));
+                window.draw(line2);
+
+                sf::Text sub(hudFont, sf::String(L"点击返回主界面"), 26);
+                sub.setFillColor(sf::Color(230, 220, 210, static_cast<std::uint8_t>(210.f * a01)));
+                const sf::FloatRect sb = sub.getLocalBounds();
+                sub.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
+                sub.setPosition(sf::Vector2f(center.x, center.y + 5.f));
+                window.draw(sub);
+            } else {
+                sf::Text title(hudFont, sf::String(L"战斗失败"), 72);
+                title.setFillColor(sf::Color(230, 80, 80, static_cast<std::uint8_t>(255.f * a01)));
+                const sf::FloatRect tb = title.getLocalBounds();
+                title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+                title.setPosition(sf::Vector2f(center.x, center.y - 90.f));
+                window.draw(title);
+
+                sf::Text sub(hudFont, sf::String(L"点击返回主界面"), 26);
+                sub.setFillColor(sf::Color(230, 220, 210, static_cast<std::uint8_t>(210.f * a01)));
+                const sf::FloatRect sb = sub.getLocalBounds();
+                sub.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
+                sub.setPosition(sf::Vector2f(center.x, center.y - 20.f));
+                window.draw(sub);
+            }
+        }
+
+        if (t >= kShowButtonAfterSec) {
+            sf::RectangleShape btn(sf::Vector2f(backRect.size.x, backRect.size.y));
+            btn.setPosition(backRect.position);
+            if (victory) {
+                btn.setFillColor(sf::Color(45, 95, 60, 240));
+                btn.setOutlineColor(sf::Color(130, 210, 140, 255));
+            } else {
+                btn.setFillColor(sf::Color(120, 50, 50, 240));
+                btn.setOutlineColor(sf::Color(210, 95, 95, 255));
+            }
+            btn.setOutlineThickness(2.f);
+            window.draw(btn);
+
+            if (hudFontLoaded) {
+                sf::Text label(hudFont, sf::String(L"返回主界面"), 26);
+                label.setFillColor(sf::Color::White);
+                const sf::FloatRect lb = label.getLocalBounds();
+                label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                label.setPosition(sf::Vector2f(backRect.position.x + backRect.size.x * 0.5f,
+                                               backRect.position.y + backRect.size.y * 0.5f));
+                window.draw(label);
+            }
+        }
+
+        window.display();
+    }
+}
 } // namespace
 
 GameFlowController::GameFlowController(sf::RenderWindow& window)
@@ -214,6 +346,7 @@ bool GameFlowController::initialize() {
     mapUI_.loadBackgroundTexture("assets/images/background.png");
     mapUI_.setMap(&mapEngine_);
     mapUI_.setCurrentLayer(0);
+    mapUI_.set_allow_any_node_click(false);
 
     if (hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
         hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
@@ -250,6 +383,104 @@ void GameFlowController::captureCheckpointForCurrentNode() {
             }
         }
     }
+}
+
+void GameFlowController::layout_map_browse_return_button() {
+    constexpr float returnW = 180.f;
+    constexpr float returnH = 50.f;
+    constexpr float returnX = 28.f;
+    constexpr float bottomMargin = 200.f;
+    const float returnY = static_cast<float>(window_.getSize().y) - bottomMargin - returnH;
+    map_browse_return_rect_ = sf::FloatRect(sf::Vector2f(returnX, returnY), sf::Vector2f(returnW, returnH));
+}
+
+bool GameFlowController::hit_map_browse_return_button(const sf::Vector2f& p) {
+    layout_map_browse_return_button();
+    return map_browse_return_rect_.contains(p);
+}
+
+void GameFlowController::draw_cheat_mode_hint() {
+    if (!map_cheat_free_travel_ || !hudFontLoaded_)
+        return;
+    const float padX = 14.f;
+    const float padY = 10.f;
+    const float x = 18.f;
+    const float y = 88.f; // 顶栏下方、遗物行附近
+
+    sf::Text line1(hudFont_, sf::String(L"作弊模式 ON"), 22);
+    line1.setFillColor(sf::Color(255, 220, 120));
+    line1.setOutlineThickness(2);
+    line1.setOutlineColor(sf::Color(40, 20, 10, 200));
+
+    sf::Text line2(hudFont_, sf::String(L"F2 关闭  |  战斗中按 K 秒杀全部怪物"), 17);
+    line2.setFillColor(sf::Color(235, 235, 245));
+    line2.setOutlineThickness(1);
+    line2.setOutlineColor(sf::Color(0, 0, 0, 180));
+
+    const sf::FloatRect b1 = line1.getLocalBounds();
+    const sf::FloatRect b2 = line2.getLocalBounds();
+    const float boxW = std::max(b1.size.x, b2.size.x) + padX * 2.f;
+    const float boxH = b1.size.y + b2.size.y + padY * 3.f;
+
+    sf::RectangleShape box(sf::Vector2f(boxW, boxH));
+    box.setPosition(sf::Vector2f(x, y));
+    box.setFillColor(sf::Color(20, 12, 18, 200));
+    box.setOutlineColor(sf::Color(255, 180, 60, 220));
+    box.setOutlineThickness(2.f);
+    window_.draw(box);
+
+    line1.setPosition(sf::Vector2f(x + padX, y + padY));
+    line2.setPosition(sf::Vector2f(x + padX, y + padY + b1.size.y + 6.f));
+    window_.draw(line1);
+    window_.draw(line2);
+}
+
+void GameFlowController::draw_map_browse_return_button() {
+    layout_map_browse_return_button();
+    sf::RectangleShape btn(sf::Vector2f(map_browse_return_rect_.size.x, map_browse_return_rect_.size.y));
+    btn.setPosition(sf::Vector2f(map_browse_return_rect_.position.x, map_browse_return_rect_.position.y));
+    btn.setFillColor(sf::Color(120, 50, 50));
+    btn.setOutlineColor(sf::Color(200, 90, 90));
+    btn.setOutlineThickness(2.f);
+    window_.draw(btn);
+    if (hudFontLoaded_) {
+        sf::Text label(hudFont_, sf::String(L"返回"), 24);
+        label.setFillColor(sf::Color::White);
+        const sf::FloatRect lb = label.getLocalBounds();
+        label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+        label.setPosition(sf::Vector2f(map_browse_return_rect_.position.x + map_browse_return_rect_.size.x * 0.5f,
+                                       map_browse_return_rect_.position.y + map_browse_return_rect_.size.y * 0.5f));
+        window_.draw(label);
+    }
+}
+
+void GameFlowController::open_map_browse_overlay(BattleUI* battleUiOrNull) {
+    map_browse_overlay_active_ = true;
+    mapUI_.set_nodes_clickable(false);
+    if (battleUiOrNull)
+        battleUiOrNull->set_map_overlay_blocks_world_input(true);
+    else
+        hudBattleUi_.set_map_overlay_blocks_world_input(true);
+}
+
+void GameFlowController::close_map_browse_overlay(BattleUI* battleUiOrNull) {
+    map_browse_overlay_active_ = false;
+    mapUI_.set_nodes_clickable(true);
+    hudBattleUi_.set_map_overlay_blocks_world_input(false);
+    if (battleUiOrNull)
+        battleUiOrNull->set_map_overlay_blocks_world_input(false);
+}
+
+void GameFlowController::poll_map_browse_toggle(BattleUI* battleUiOrNull) {
+    bool t = hudBattleUi_.pollMapBrowseToggleRequest();
+    if (battleUiOrNull && battleUiOrNull->pollMapBrowseToggleRequest())
+        t = true;
+    if (!t)
+        return;
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(battleUiOrNull);
+    else
+        open_map_browse_overlay(battleUiOrNull);
 }
 
 void GameFlowController::run() {
@@ -299,6 +530,10 @@ void GameFlowController::run() {
     }
 
     while (window_.isOpen()) {
+        hudBattleUi_.set_hide_top_right_map_button(true);
+        if (map_browse_overlay_active_)
+            close_map_browse_overlay(nullptr);
+
         while (const std::optional ev = window_.pollEvent()) {
         if (ev->is<sf::Event::Closed>()) {
                 window_.close();
@@ -308,6 +543,13 @@ void GameFlowController::run() {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
                     window_.close();
                     return;
+                }
+                if (key->scancode == sf::Keyboard::Scancode::F2) {
+                    map_cheat_free_travel_ = !map_cheat_free_travel_;
+                    mapUI_.set_allow_any_node_click(map_cheat_free_travel_);
+                    statusText_ = map_cheat_free_travel_
+                        ? "作弊模式 ON：地图任意节点；战斗按 K 秒杀（F2 关闭）"
+                        : "作弊模式已关闭";
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     mapConfigManager_.prevMap();
@@ -346,8 +588,9 @@ void GameFlowController::run() {
                 }
                 hudBattleUi_.handleEvent(*ev, mp);
             }
+            poll_map_browse_toggle(nullptr);
 
-            if (gameOver_ || gameCleared_) continue;
+            if (gameOver_) continue;
             if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
                 if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
                     mapUI_.scroll(wheel->delta * 40.0f);
@@ -400,6 +643,7 @@ void GameFlowController::run() {
         window_.clear(sf::Color(245, 245, 245));
         mapUI_.draw();
         drawHud();
+        draw_cheat_mode_hint();
         window_.display();
 
         if (exitToStartRequested_) {
@@ -413,11 +657,13 @@ bool GameFlowController::tryMoveToNode(const std::string& nodeId) {
     MapEngine::MapNode node = mapEngine_.get_node_by_id(nodeId);
     if (node.id.empty()) return false;
 
-    const bool canEnterStart = (!mapEngine_.hasCurrentNode() && node.layer == 0);
-    const bool canEnterNext = (mapEngine_.hasCurrentNode() && node.is_reachable);
-    if (!canEnterStart && !canEnterNext) {
-        statusText_ = "该节点当前不可达。";
-        return false;
+    if (!map_cheat_free_travel_) {
+        const bool canEnterStart = (!mapEngine_.hasCurrentNode() && node.layer == 0);
+        const bool canEnterNext = (mapEngine_.hasCurrentNode() && node.is_reachable);
+        if (!canEnterStart && !canEnterNext) {
+            statusText_ = "该节点当前不可达。";
+            return false;
+        }
     }
 
     mapEngine_.set_current_node(nodeId);
@@ -491,6 +737,10 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     }
     preload_relic_and_potion_icons(ui);
 
+    ui.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(&ui);
+
     auto exists = [](const std::string& p) {
         return std::filesystem::exists(std::filesystem::u8path(p));
     };
@@ -543,6 +793,16 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
                     runningBattleScene = false;
                 }
+                if (map_cheat_free_travel_ && key->scancode == sf::Keyboard::Scancode::K) {
+                    if (!battleEngine_.is_battle_over()) {
+                        BattleState st = battleEngine_.get_battle_state();
+                        for (int i = 0; i < static_cast<int>(st.monsters.size()); ++i) {
+                            if (st.monsters[static_cast<size_t>(i)].currentHp > 0)
+                                battleEngine_.cheat_kill_monster(i);
+                        }
+                    }
+                    continue;
+                }
             }
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
@@ -551,9 +811,27 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             } else if (const auto* mr = ev->getIf<sf::Event::MouseButtonReleased>()) {
                 mousePos = window_.mapPixelToCoords(mr->position);
             }
+            if (map_browse_overlay_active_) {
+                if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                    if (wheel->wheel == sf::Mouse::Wheel::Vertical)
+                        mapUI_.scroll(wheel->delta * 40.f);
+                    continue;
+                }
+                if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                    if (m->button == sf::Mouse::Button::Left) {
+                        const sf::Vector2f p = window_.mapPixelToCoords(m->position);
+                        if (hit_map_browse_return_button(p))
+                            close_map_browse_overlay(&ui);
+                    }
+                }
+                (void)ui.handleEvent(*ev, mousePos);
+                poll_map_browse_toggle(&ui);
+                continue;
+            }
             if (ui.handleEvent(*ev, mousePos)) {
                 battleEngine_.end_turn();
             }
+            poll_map_browse_toggle(&ui);
         }
         if (!window_.isOpen() || !runningBattleScene) break;
 
@@ -733,8 +1011,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
 
-        if (!ui.is_deck_view_active() && !ui.is_card_select_active() && !ui.is_reward_screen_active()
-            && !battleEngine_.is_battle_over()) {
+        if (!map_browse_overlay_active_ && !ui.is_deck_view_active() && !ui.is_card_select_active()
+            && !ui.is_reward_screen_active() && !battleEngine_.is_battle_over()) {
             battleEngine_.step_turn_phase();
         }
 
@@ -742,7 +1020,15 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem_);
         tce::SnapshotBattleUIDataProvider adapter(&snapshot);
         window_.clear(sf::Color(28, 26, 32));
-        ui.draw(window_, adapter);
+        if (map_browse_overlay_active_) {
+            mapUI_.draw();
+            ui.drawGlobalHud(window_, snapshot);
+            draw_map_browse_return_button();
+            draw_cheat_mode_hint();
+        } else {
+            ui.draw(window_, adapter);
+            draw_cheat_mode_hint();
+        }
         cheatPanel.draw(window_);
         window_.display();
         battleEngine_.tick_damage_displays();
@@ -783,13 +1069,33 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         }
     }
 
+    close_map_browse_overlay(&ui);
+
     if (battleEngine_.is_battle_over() && battleEngine_.is_victory()) {
         BattleState state = battleEngine_.get_battle_state();
         playerState_ = state.player;
 
         if (nodeType == NodeType::Boss) {
-            gameCleared_ = true;
-            statusText_ = "击败 Boss，通关成功！";
+            const int mapIdx     = mapConfigManager_.getCurrentIndex();
+            const int mapCount   = static_cast<int>(mapConfigManager_.getMapCount());
+            const int lastMapIdx = mapCount > 0 ? mapCount - 1 : 0;
+            if (mapIdx >= lastMapIdx) {
+                // 最后一页 Boss：通关界面后返回主菜单
+                captureCheckpointForCurrentNode();
+                statusText_ = "通关！";
+                runPostBattleExitOverlay(window_, ui, state, cardSystem_, true, hudFont_, hudFontLoaded_);
+                exitToStartRequested_ = true;
+                return false;
+            } else {
+                // 非最后一页：进入下一页地图，重新随机生成，继续 Run
+                mapConfigManager_.nextMap();
+                mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                seenEventRootsByLayer_.clear();
+                mapUI_.setMap(&mapEngine_);
+                mapUI_.setCurrentLayer(0);
+                captureCheckpointForCurrentNode();
+                statusText_ = "Boss 已击败，进入「" + mapConfigManager_.getCurrentMapName() + "」。请从本图起点继续。";
+            }
         } else {
             statusText_ = "战斗胜利，已发放金币与卡牌奖励。";
         }
@@ -798,10 +1104,14 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
 
     BattleState state = battleEngine_.get_battle_state();
     playerState_ = state.player;
-    if (playerState_.currentHp <= 0) {
-        gameOver_ = true;
-    }
+    if (playerState_.currentHp <= 0) gameOver_ = true;
     statusText_ = "战斗失败，爬塔结束。";
+
+    close_map_browse_overlay(&ui);
+    runPostBattleExitOverlay(window_, ui, state, cardSystem_, false, hudFont_, hudFontLoaded_);
+
+    // 退出到开始界面（main 会重新调用 runStartScreen）
+    exitToStartRequested_ = true;
     return false;
 }
 
@@ -1038,6 +1348,10 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
     const EventEngine::Event* lastDisplayedEvent = nullptr;
     std::vector<std::string> resultCardPreviewIds;
 
+    hudBattleUi_.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(nullptr);
+
     auto effectToSummary = [](const DataLayer::EventEffect& eff) {
         const int v = eff.value;
         if (eff.type == "gold") {
@@ -1134,7 +1448,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                 }
             }
 
-            // 先交给全局 HUD（右上角按钮）处理
+            // 先交给全局 HUD（右上角按钮）处理；地图浏览浮层时只滚地图/关浮层，不传递给事件 UI
             {
                 sf::Vector2f mp;
                 if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
@@ -1144,8 +1458,26 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                 } else {
                     mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
                 }
+                if (map_browse_overlay_active_) {
+                    if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                        if (wheel->wheel == sf::Mouse::Wheel::Vertical)
+                            mapUI_.scroll(wheel->delta * 40.f);
+                        continue;
+                    }
+                    if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (m->button == sf::Mouse::Button::Left) {
+                            const sf::Vector2f p = window_.mapPixelToCoords(m->position);
+                            if (hit_map_browse_return_button(p))
+                                close_map_browse_overlay(nullptr);
+                        }
+                    }
+                    hudBattleUi_.handleEvent(*ev, mp);
+                    poll_map_browse_toggle(nullptr);
+                    continue;
+                }
                 hudBattleUi_.handleEvent(*ev, mp);
             }
+            poll_map_browse_toggle(nullptr);
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
@@ -1498,11 +1830,18 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         }
 
         window_.clear(sf::Color(40, 38, 45));
-        ui.draw(window_);
-        drawHud();  // 事件界面上方叠加全局顶栏 + 遗物栏
+        if (map_browse_overlay_active_) {
+            mapUI_.draw();
+            drawHud();
+            draw_map_browse_return_button();
+        } else {
+            ui.draw(window_);
+            drawHud();  // 事件界面上方叠加全局顶栏 + 遗物栏
+        }
         window_.display();
     }
 
+    close_map_browse_overlay(nullptr);
     return true;
 }
 
@@ -1563,6 +1902,10 @@ bool GameFlowController::runTreasureScene() {
     ui.setup(dd);
 
     bool inScene = true;
+    hudBattleUi_.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(nullptr);
+
     while (window_.isOpen() && inScene) {
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
@@ -1570,7 +1913,7 @@ bool GameFlowController::runTreasureScene() {
                 return false;
             }
 
-            // HUD 右上角按钮（牌组 / 设置）
+            // HUD 右上角按钮（牌组 / 设置 / 地图浏览）
             {
                 sf::Vector2f mp;
                 if (const auto* m2 = ev->getIf<sf::Event::MouseButtonPressed>()) {
@@ -1580,8 +1923,26 @@ bool GameFlowController::runTreasureScene() {
                 } else {
                     mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
                 }
+                if (map_browse_overlay_active_) {
+                    if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                        if (wheel->wheel == sf::Mouse::Wheel::Vertical)
+                            mapUI_.scroll(wheel->delta * 40.f);
+                        continue;
+                    }
+                    if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (m->button == sf::Mouse::Button::Left) {
+                            const sf::Vector2f p = window_.mapPixelToCoords(m->position);
+                            if (hit_map_browse_return_button(p))
+                                close_map_browse_overlay(nullptr);
+                        }
+                    }
+                    hudBattleUi_.handleEvent(*ev, mp);
+                    poll_map_browse_toggle(nullptr);
+                    continue;
+                }
                 hudBattleUi_.handleEvent(*ev, mp);
             }
+            poll_map_browse_toggle(nullptr);
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             ui.handleEvent(*ev, mousePos);
@@ -1641,11 +2002,18 @@ bool GameFlowController::runTreasureScene() {
         }
 
         window_.clear(sf::Color(12, 10, 18));
-        ui.draw(window_);
-        drawHud();  // 宝箱界面上方叠加全局顶栏 + 遗物栏 + 顶部按钮
+        if (map_browse_overlay_active_) {
+            mapUI_.draw();
+            drawHud();
+            draw_map_browse_return_button();
+        } else {
+            ui.draw(window_);
+            drawHud();  // 宝箱界面上方叠加全局顶栏 + 遗物栏 + 顶部按钮
+        }
         window_.display();
     }
 
+    close_map_browse_overlay(nullptr);
     return window_.isOpen();
 }
 
@@ -1745,6 +2113,10 @@ bool GameFlowController::runShopScene() {
     ui.setScreen(EventShopRestScreen::Shop);
 
     bool inScene = true;
+    hudBattleUi_.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(nullptr);
+
     while (window_.isOpen() && inScene) {
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
@@ -1767,8 +2139,26 @@ bool GameFlowController::runShopScene() {
                 } else {
                     mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
                 }
+                if (map_browse_overlay_active_) {
+                    if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                        if (wheel->wheel == sf::Mouse::Wheel::Vertical)
+                            mapUI_.scroll(wheel->delta * 40.f);
+                        continue;
+                    }
+                    if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (m->button == sf::Mouse::Button::Left) {
+                            const sf::Vector2f p = window_.mapPixelToCoords(m->position);
+                            if (hit_map_browse_return_button(p))
+                                close_map_browse_overlay(nullptr);
+                        }
+                    }
+                    hudBattleUi_.handleEvent(*ev, mp);
+                    poll_map_browse_toggle(nullptr);
+                    continue;
+                }
                 hudBattleUi_.handleEvent(*ev, mp);
             }
+            poll_map_browse_toggle(nullptr);
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             ui.handleEvent(*ev, mousePos);
@@ -1906,11 +2296,18 @@ bool GameFlowController::runShopScene() {
         }
 
         window_.clear(sf::Color(40, 38, 45));
-        ui.draw(window_);
-        drawHud();  // 商店界面上方叠加全局顶栏 + 遗物栏
+        if (map_browse_overlay_active_) {
+            mapUI_.draw();
+            drawHud();
+            draw_map_browse_return_button();
+        } else {
+            ui.draw(window_);
+            drawHud();  // 商店界面上方叠加全局顶栏 + 遗物栏
+        }
         window_.display();
     }
 
+    close_map_browse_overlay(nullptr);
     // 商店内已无选牌删牌界面：若曾付净简费但未完成移除，离开时退还
     if (shop.removeServicePaid && !shop.removeServiceSoldOut) {
         playerState_.gold += shop.removeServicePrice;
@@ -1954,6 +2351,10 @@ bool GameFlowController::runRestScene() {
     ui.setScreen(EventShopRestScreen::Rest);
 
     bool inScene = true;
+    hudBattleUi_.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(nullptr);
+
     while (window_.isOpen() && inScene) {
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
@@ -1976,8 +2377,26 @@ bool GameFlowController::runRestScene() {
                 } else {
                     mp = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
                 }
+                if (map_browse_overlay_active_) {
+                    if (const auto* wheel = ev->getIf<sf::Event::MouseWheelScrolled>()) {
+                        if (wheel->wheel == sf::Mouse::Wheel::Vertical)
+                            mapUI_.scroll(wheel->delta * 40.f);
+                        continue;
+                    }
+                    if (const auto* m = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (m->button == sf::Mouse::Button::Left) {
+                            const sf::Vector2f p = window_.mapPixelToCoords(m->position);
+                            if (hit_map_browse_return_button(p))
+                                close_map_browse_overlay(nullptr);
+                        }
+                    }
+                    hudBattleUi_.handleEvent(*ev, mp);
+                    poll_map_browse_toggle(nullptr);
+                    continue;
+                }
                 hudBattleUi_.handleEvent(*ev, mp);
             }
+            poll_map_browse_toggle(nullptr);
 
             sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
             if (const auto* mp = ev->getIf<sf::Event::MouseButtonPressed>()) {
@@ -2043,11 +2462,18 @@ bool GameFlowController::runRestScene() {
         }
 
         window_.clear(sf::Color(40, 38, 45));
-        ui.draw(window_);
-        drawHud();  // 休息界面上方叠加全局顶栏 + 遗物栏
+        if (map_browse_overlay_active_) {
+            mapUI_.draw();
+            drawHud();
+            draw_map_browse_return_button();
+        } else {
+            ui.draw(window_);
+            drawHud();  // 休息界面上方叠加全局顶栏 + 遗物栏
+        }
         window_.display();
     }
 
+    close_map_browse_overlay(nullptr);
     return true;
 }
 
