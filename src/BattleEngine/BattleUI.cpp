@@ -3537,15 +3537,6 @@ namespace tce {
             }
         }
 
-        // 悬停手牌：默认大小与预览大小之间平滑过渡（与顶栏按钮等同用 ui_hover_lerp）
-        float dtHandPrev = hand_preview_blend_clock_.restart().asSeconds();
-        if (dtHandPrev > 0.08f) dtHandPrev = 0.08f;
-        if (dtHandPrev < 0.f) dtHandPrev = 0.f;
-        const bool wantHandPreviewBlend =
-            (hoverIndex >= 0 && selectedHandIndex_ < 0 && !handSelectReshuffleFan);
-        hand_card_preview_blend_ =
-            ui_hover_lerp(hand_card_preview_blend_, wantHandPreviewBlend ? 1.f : 0.f, dtHandPrev);
-
         auto drawOneCard = [&](size_t idx, bool isHover, bool isSelected, bool useFanOverride, float fanCx, float fanCy, float fanAng) {
             float cx_i, cy_i, angleDeg;
             if (useFanOverride && !isSelected) {
@@ -3553,8 +3544,7 @@ namespace tce {
                 cy_i = fanCy;
                 angleDeg = fanAng;
             } else {
-                // 悬停时用 hand_card_preview_blend_ 做位姿/尺寸插值，不再叠加上浮 28px（避免与预览位姿冲突）
-                getCardPos(idx, false, cx_i, cy_i, angleDeg);
+                getCardPos(idx, isHover && !isSelected, cx_i, cy_i, angleDeg);
             }
             float w, h;
             if (isSelected) {
@@ -3593,19 +3583,15 @@ namespace tce {
                 }
                 angleDeg = 0.f;
             }
-            else if (isHover) {                     // 仅悬停：插值到预览大小与位姿（手牌区选牌扇形上仍保持默认尺寸）
+            else if (isHover) {                     // 仅悬停：预览大小、下边距底（手牌区选牌时保留在扇形上，避免误判）
                 if (useFanOverride && !isSelected) {
                     w = CARD_W;
                     h = CARD_H;
                 } else {
-                    const float pb = hand_card_preview_blend_;
-                    w = CARD_W + (CARD_PREVIEW_W - CARD_W) * pb;
-                    h = CARD_H + (CARD_PREVIEW_H - CARD_H) * pb;
-                    angleDeg = angleDeg * (1.f - pb);
-                    const float cy_preview = static_cast<float>(height_) - CARD_PREVIEW_BOTTOM_ABOVE - h * 0.5f;
-                    cy_i = cy_i + (cy_preview - cy_i) * pb;
-                    const float cx_preview = static_cast<float>(width_) * 0.5f;
-                    cx_i = cx_i + (cx_preview - cx_i) * pb;
+                    w = CARD_PREVIEW_W;
+                    h = CARD_PREVIEW_H;
+                    angleDeg = 0.f;                     // 预览时旋转归零
+                    cy_i = static_cast<float>(height_) - CARD_PREVIEW_BOTTOM_ABOVE - h * 0.5f;
                 }
             }
             else {
@@ -3625,10 +3611,8 @@ namespace tce {
             sf::RenderStates states(tr);
 
             const CardInstance& inst = s.hand[idx];
-            const float hoverOutline =
-                isHover ? (8.f + 4.f * hand_card_preview_blend_) : 8.f;
             drawDetailedCardAt(window, inst.id, 0.f, 0.f, w, h,
-                               sf::Color(180, 50, 45), hoverOutline, states, &s, &inst);
+                               sf::Color(180, 50, 45), isHover ? 12.f : 8.f, states, &s, &inst);
             };
 
         if (handSelectReshuffleFan) {
@@ -3691,15 +3675,7 @@ namespace tce {
         } else {
             for (size_t i = 0; i < handCount; ++i) {
                 float cx_i, cy_i, angleDeg;
-                getCardPos(i, false, cx_i, cy_i, angleDeg);
-                if (hoverIndex >= 0 && static_cast<int>(i) == hoverIndex && selectedHandIndex_ < 0) {
-                    const float pb = hand_card_preview_blend_;
-                    const float h = CARD_H + (CARD_PREVIEW_H - CARD_H) * pb;
-                    const float cy_preview = static_cast<float>(height_) - CARD_PREVIEW_BOTTOM_ABOVE - h * 0.5f;
-                    cy_i = cy_i + (cy_preview - cy_i) * pb;
-                    const float cx_preview = static_cast<float>(width_) * 0.5f;
-                    cx_i = cx_i + (cx_preview - cx_i) * pb;
-                }
+                getCardPos(i, hoverIndex >= 0 && static_cast<int>(i) == hoverIndex, cx_i, cy_i, angleDeg);
                 instance_hand_center_cache_[s.hand[i].instanceId] = sf::Vector2f(cx_i, cy_i);
             }
         }

@@ -171,9 +171,6 @@ private:
     float                               hover_btn_deck_     = 0.f;
     float                               hover_btn_settings_ = 0.f;
     std::array<float, 5>                hover_potion_slot_{};  // 顶栏药水槽悬停 0~1（最多 5 槽）
-    /** 手牌悬停：默认尺寸 → 预览尺寸的平滑系数（0~1，在 drawBottomBar 内按 dt 插值） */
-    float                               hand_card_preview_blend_ = 0.f;
-    sf::Clock                           hand_preview_blend_clock_{};
 
     int top_bar_map_layer_ = -1;   // 地图当前层（无当前节点时为 -1）
     int top_bar_map_total_  = 0;   // 总层数；0 表示顶栏不显示「/ 总层」
