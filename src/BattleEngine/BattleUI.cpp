@@ -36,6 +36,23 @@ inline std::uint8_t ui_hover_lighten_byte(std::uint8_t v, float hover01, int max
 
 namespace tce {
 
+namespace {
+
+bool deck_view_card_has_upgrade_definition(const CardId& id) {
+    if (id.empty() || id.back() == '+') return false;
+    return get_card_by_id(id + "+") != nullptr;
+}
+
+std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool showing_upgraded) {
+    const CardId& base = inst.id;
+    if (base.empty()) return base;
+    if (base.back() == '+') return base;
+    if (showing_upgraded && get_card_by_id(base + "+")) return base + "+";
+    return base;
+}
+
+} // namespace
+
     /** 快照中玩家某状态总层数（用于 UI 与引擎规则对齐，如腐化） */
     inline int snapshot_player_status_stacks(const BattleStateSnapshot& s, const std::string& statusId) {
         int t = 0;
@@ -767,8 +784,52 @@ namespace tce {
             return false;
         }
 
-        // 牌组界面：只处理滚轮滚动与返回按钮点击，其它事件忽略
+        // 牌组界面：滚轮滚动网格；返回/顶栏牌组关闭；点牌进入大图详情（点牌面或空白退出，「查看升级」切换预览）
         if (deck_view_active_) {
+            if (deck_view_detail_active_) {
+                if (ev.is<sf::Event::MouseWheelScrolled>())
+                    return false;
+                if (ev.is<sf::Event::MouseButtonPressed>()) {
+                    auto const& mb = ev.getIf<sf::Event::MouseButtonPressed>();
+                    if (mb && mb->button == sf::Mouse::Button::Left) {
+                        updateDeckViewDetailLayout_();
+                        {
+                            const float right = width_ - 28.f;
+                            const float btnW = 58.f, btnH = 48.f, gap = 18.f;
+                            const int topBtnCount = hide_top_right_map_button_ ? 2 : 3;
+                            float rowLeft = right - (static_cast<float>(topBtnCount) * btnW + static_cast<float>(topBtnCount - 1) * gap);
+                            if (!hide_top_right_map_button_)
+                                rowLeft += btnW + gap;
+                            if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y &&
+                                mousePos.y <= TOP_ROW_Y + btnH) {
+                                deck_view_detail_active_        = false;
+                                deck_view_detail_show_upgraded_ = false;
+                                return false;
+                            }
+                        }
+                        if (deckViewReturnButton_.contains(mousePos)) {
+                            deck_view_detail_active_        = false;
+                            deck_view_detail_show_upgraded_ = false;
+                            return false;
+                        }
+                        if (deck_view_detail_upgrade_btn_rect_.contains(mousePos)) {
+                            if (deck_view_card_has_upgrade_definition(deck_view_detail_inst_.id))
+                                deck_view_detail_show_upgraded_ = !deck_view_detail_show_upgraded_;
+                            return false;
+                        }
+                        if (deck_view_detail_card_rect_.contains(mousePos)) {
+                            deck_view_detail_active_        = false;
+                            deck_view_detail_show_upgraded_ = false;
+                            return false;
+                        }
+                        deck_view_detail_active_        = false;
+                        deck_view_detail_show_upgraded_ = false;
+                    }
+                    return false;
+                }
+                return false;
+            }
+
             if (ev.is<sf::Event::MouseWheelScrolled>()) {
                 auto const& wheel = ev.getIf<sf::Event::MouseWheelScrolled>();
                 if (wheel) {
@@ -779,7 +840,6 @@ namespace tce {
                     const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
                     const float firstRowTop = FIRST_ROW_CENTER_Y - CARD_H * 0.5f;
                     const float padTop = firstRowTop - contentTop;
-                    // 最后一行牌底边在窗口中的 Y；maxScroll 必须按「世界坐标 − 窗口底」算，否则会少滚一截（contentTop 低于顶栏下沿）
                     const float lastCardBottomY = numRows > 0
                         ? contentTop + padTop + (numRows - 1) * ROW_CENTER_TO_CENTER + CARD_H
                         : contentTop + padTop;
@@ -787,7 +847,7 @@ namespace tce {
                         ? std::max(0.f, lastCardBottomY - static_cast<float>(height_) + DECK_VIEW_SCROLL_BOTTOM_INSET)
                         : 0.f;
                     const float step = 80.f;
-                    deck_view_scroll_y_ -= wheel->delta * step;  // 滚轮 delta 控制垂直滚动
+                    deck_view_scroll_y_ -= wheel->delta * step;
                     if (maxScroll <= 0.f) deck_view_scroll_y_ = 0.f;
                     else {
                         if (deck_view_scroll_y_ < 0.f) deck_view_scroll_y_ = 0.f;
@@ -799,7 +859,6 @@ namespace tce {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
                 if (btn && btn->button == sf::Mouse::Button::Left) {
-                    // 再次点击顶栏「牌组」：关闭牌组视图
                     {
                         const float right = width_ - 28.f;
                         const float btnW = 58.f, btnH = 48.f, gap = 18.f;
@@ -808,15 +867,47 @@ namespace tce {
                         if (!hide_top_right_map_button_)
                             rowLeft += btnW + gap;
                         if (mousePos.x >= rowLeft && mousePos.x <= rowLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
-                            deck_view_active_ = false;
-                            deck_view_scroll_y_ = 0.f;
+                            deck_view_active_               = false;
+                            deck_view_scroll_y_             = 0.f;
+                            deck_view_detail_active_        = false;
+                            deck_view_detail_show_upgraded_ = false;
                             return false;
                         }
                     }
-                    if (deckViewReturnButton_.contains(mousePos)) {  // 点击返回
-                        deck_view_active_ = false;
-                        deck_view_scroll_y_ = 0.f;
+                    if (deckViewReturnButton_.contains(mousePos)) {
+                        deck_view_active_               = false;
+                        deck_view_scroll_y_             = 0.f;
+                        deck_view_detail_active_        = false;
+                        deck_view_detail_show_upgraded_ = false;
                         return false;
+                    }
+                    constexpr float DECK_CARD_W = 206.f;
+                    constexpr float DECK_CARD_H = 300.f;
+                    constexpr float COL_CENTER_TO_CENTER = 276.f;
+                    constexpr float ROW_CENTER_TO_CENTER = 360.f;
+                    constexpr int COLS = 5;
+                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+                    const float viewTop = TOP_BAR_BG_H;
+                    const float viewBottom = static_cast<float>(height_);
+                    const size_t cardCount = deck_view_cards_.size();
+                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
+                    const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+                    const float padTop = firstRowTop - contentTop;
+                    const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
+                    const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
+                    for (size_t i = 0; i < cardCount; ++i) {
+                        const int row = static_cast<int>(i) / COLS;
+                        const int col = static_cast<int>(i) % COLS;
+                        const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
+                        const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
+                        if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
+                        if (mousePos.x >= cardX && mousePos.x <= cardX + DECK_CARD_W && mousePos.y >= cardY &&
+                            mousePos.y <= cardY + DECK_CARD_H) {
+                            deck_view_detail_inst_           = deck_view_cards_[i];
+                            deck_view_detail_show_upgraded_  = false;
+                            deck_view_detail_active_         = true;
+                            return false;
+                        }
                     }
                 }
             }
@@ -1055,6 +1146,8 @@ namespace tce {
 
     void BattleUI::set_deck_view_cards(std::vector<CardInstance> cards) {
         deck_view_cards_ = std::move(cards);
+        deck_view_detail_active_        = false;
+        deck_view_detail_show_upgraded_ = false;
     }
 
     void BattleUI::set_deck_view_active(bool active) {
@@ -1064,9 +1157,15 @@ namespace tce {
             pile_card_flights_.clear();
             pile_draw_anim_hiding_.clear();
             pending_select_ui_pile_fly_remaining_ = 0;
+            deck_view_detail_active_         = false;
+            deck_view_detail_show_upgraded_  = false;
+            deck_view_detail_inst_           = CardInstance{};
         }
         if (!active) {
             deck_view_scroll_y_ = 0.f;
+            deck_view_detail_active_         = false;
+            deck_view_detail_show_upgraded_  = false;
+            deck_view_detail_inst_           = CardInstance{};
             pile_anim_snapshot_ready_ = false;
             pending_select_ui_pile_fly_remaining_ = 0;
             return;
@@ -2084,6 +2183,16 @@ namespace tce {
                                       const BattleStateSnapshot* handSnap,
                                       const CardInstance* handInst) {
         const CardData* cd = get_card_by_id(card_id);
+        const bool isUpgradedCardId = !card_id.empty() && card_id.back() == '+';
+        const CardData* baseCdForUpgrade = nullptr;
+        if (isUpgradedCardId && card_id.size() > 1u)
+            baseCdForUpgrade = get_card_by_id(card_id.substr(0, card_id.size() - 1u));
+        // 升级版标题：亮绿；费用数字：仅当数据上相对原版降费时才亮绿（球体始终红/金）
+        constexpr sf::Color kUpgradeNameGreen(140, 255, 165);
+        constexpr sf::Color kUpgradeFeeDownGreen(200, 255, 225);
+        const bool upgradedStaticFeeLower =
+            isUpgradedCardId && cd && baseCdForUpgrade && baseCdForUpgrade->cost >= 0 && cd->cost >= 0 &&
+            cd->cost < baseCdForUpgrade->cost;
         char buf[32];
         std::vector<sf::Vector2f> rr;
 
@@ -2181,6 +2290,8 @@ namespace tce {
         float artH = h * 0.42f;
         if (artKind == CardType::Skill)
             artH = std::max(h * 0.30f, artH - 15.f * s);
+        else if (artKind == CardType::Power)
+            artH += 10.f * s;  // 能力牌立绘区略长于攻击牌，底弧位置适中
         sf::ConvexShape artPanel;
         if (artKind == CardType::Skill) {
             artPanel.setPointCount(4);
@@ -2199,11 +2310,13 @@ namespace tce {
             artPanel.setPoint(3, sf::Vector2f(ax + aw * 0.5f, tipY));
             artPanel.setPoint(4, sf::Vector2f(ax, shoulderY));
         } else {
-            constexpr int kArcSeg = 16;
-            // 两侧越高、弧顶越低，底边弯曲更明显（“角度”更大）
-            const float arcInset = std::max(14.f * s, artH * 0.128f);
-            const float ySide = artTop + artH - arcInset;
+            constexpr int kArcSeg = 22;
+            // 能力牌：底边弧线（arcInset 控制弧垂，越大底越鼓）
+            const float arcInset = std::max(20.f * s, artH * 0.22f);
+            // 弧线与左右竖边相接处略下移；数值越小弧线整体越靠上
+            const float arcStartLower = 6.f * s;
             const float yMid = artTop + artH;
+            const float ySide = std::min(yMid - 2.f * s, artTop + artH - arcInset + arcStartLower);
             artPanel.setPointCount(static_cast<std::size_t>(2 + kArcSeg + 1));
             artPanel.setPoint(0, sf::Vector2f(ax, artTop));
             artPanel.setPoint(1, sf::Vector2f(ax + aw, artTop));
@@ -2228,7 +2341,7 @@ namespace tce {
             cardName = sf::String(card_id);
         const unsigned namePt = static_cast<unsigned>(std::max(15.f, std::round(31.f * s)));
         sf::Text nameText(fontForChinese(), cardName, namePt);
-        nameText.setFillColor(sf::Color::White);
+        nameText.setFillColor(isUpgradedCardId ? kUpgradeNameGreen : sf::Color::White);
         const sf::FloatRect nb = nameText.getLocalBounds();
         nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
         nameText.setPosition(sf::Vector2f(ribbonX + ribbonW * 0.5f, (ribTop + ribBot) * 0.5f + 2.f * s));
@@ -2246,7 +2359,8 @@ namespace tce {
         }
         const unsigned typePt = static_cast<unsigned>(std::max(10.f, std::round(17.f * s)));
         sf::Text typeText(fontForChinese(), typeStr, typePt);
-        typeText.setFillColor(sf::Color(36, 34, 32));
+        // 浅灰字，与深灰药丸底对比，类型（攻击/技能/能力…）更易辨认
+        typeText.setFillColor(sf::Color(198, 194, 188));
         const float tagCx = ax + aw * 0.5f;
         // 类型条中心压在立绘区底边（平底 / 三角尖端 / 弧底最低点均为 artTop + artH）
         const float artBottomY = artTop + artH;
@@ -2290,6 +2404,7 @@ namespace tce {
         int displayCost = 0;
         if (showCostCircle) {
             displayCost = handCostPath ? effective_hand_card_energy_cost(cd, *handInst, handSnap) : cd->cost;
+            // 费用球保持默认红/金；数字仅当「升级版且静态费用低于原版」时为亮绿
             const float costCx = cardX + 22.f * s;
             const float costCy = cardY + 22.f * s;
             const float gemR = 18.5f * s;
@@ -2320,7 +2435,7 @@ namespace tce {
             }
             const unsigned costPt = static_cast<unsigned>(std::max(11.f, std::round(27.f * s)));
             sf::Text costText(font_, buf, costPt);
-            costText.setFillColor(sf::Color::White);
+            costText.setFillColor(upgradedStaticFeeLower ? kUpgradeFeeDownGreen : sf::Color::White);
             const sf::FloatRect cb = costText.getLocalBounds();
             costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
             costText.setPosition(sf::Vector2f(costCx, costCy));
@@ -2489,6 +2604,28 @@ namespace tce {
         // 选牌流程不支持取消按钮
     }
 
+    void BattleUI::updateDeckViewDetailLayout_() {
+        constexpr float kAspect = 304.f / 410.f;
+        float detailH = std::min(static_cast<float>(height_) * 0.62f, 660.f);
+        float detailW = detailH * kAspect;
+        const float maxW = static_cast<float>(width_) * 0.90f;
+        if (detailW > maxW) {
+            detailW = maxW;
+            detailH = detailW / kAspect;
+        }
+        const float cx = static_cast<float>(width_) * 0.5f;
+        const float cardCenterY = static_cast<float>(height_) * 0.37f + 78.f;  // 牌组详情大图再略下移
+        const float left = cx - detailW * 0.5f;
+        const float top = cardCenterY - detailH * 0.5f;
+        deck_view_detail_card_rect_ = sf::FloatRect(sf::Vector2f(left, top), sf::Vector2f(detailW, detailH));
+        constexpr float btnW = 236.f;
+        constexpr float btnH = 52.f;
+        constexpr float cardToBtnGap = 44.f;  // 牌底与「查看升级」按钮之间的空隙
+        const float btnX = cx - btnW * 0.5f;
+        const float btnY = top + detailH + cardToBtnGap;
+        deck_view_detail_upgrade_btn_rect_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(btnW, btnH));
+    }
+
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         // 半透明遮罩：覆盖顶栏下方整个区域，让下层内容变暗
@@ -2546,6 +2683,45 @@ namespace tce {
         returnLabel.setOrigin(sf::Vector2f(rlb.position.x + rlb.size.x * 0.5f, rlb.position.y + rlb.size.y * 0.5f));
         returnLabel.setPosition(sf::Vector2f(returnX + returnW * 0.5f, returnY + returnH * 0.5f));
         window.draw(returnLabel);
+
+        if (deck_view_detail_active_) {
+            updateDeckViewDetailLayout_();
+            const float ovTop = TOP_BAR_BG_H;
+            sf::RectangleShape dimDetail(sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_) - ovTop));
+            dimDetail.setPosition(sf::Vector2f(0.f, ovTop));
+            dimDetail.setFillColor(sf::Color(6, 6, 10, 215));
+            window.draw(dimDetail);
+            const std::string disp =
+                deck_view_detail_resolve_display_id(deck_view_detail_inst_, deck_view_detail_show_upgraded_);
+            const sf::FloatRect& cr = deck_view_detail_card_rect_;
+            drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
+                             sf::Color(205, 75, 58), 11.f);
+            const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
+            const bool alreadyUp =
+                !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';
+            const bool baseUpgradable = deck_view_card_has_upgrade_definition(deck_view_detail_inst_.id);
+            sf::RectangleShape upBtn(sf::Vector2f(br.size.x, br.size.y));
+            upBtn.setPosition(br.position);
+            if (alreadyUp || !baseUpgradable) {
+                upBtn.setFillColor(sf::Color(68, 66, 74));
+                upBtn.setOutlineColor(sf::Color(105, 103, 112));
+            } else {
+                upBtn.setFillColor(sf::Color(88, 128, 78));
+                upBtn.setOutlineColor(sf::Color(138, 188, 125));
+            }
+            upBtn.setOutlineThickness(2.f);
+            window.draw(upBtn);
+            sf::String btnStr = alreadyUp                      ? sf::String(L"已是升级版")
+                                : (!baseUpgradable)          ? sf::String(L"不可升级")
+                                : deck_view_detail_show_upgraded_ ? sf::String(L"查看原版")
+                                                                 : sf::String(L"查看升级");
+            sf::Text upLabel(fontForChinese(), btnStr, 22);
+            upLabel.setFillColor(sf::Color(235, 232, 228));
+            const sf::FloatRect ulb = upLabel.getLocalBounds();
+            upLabel.setOrigin(sf::Vector2f(ulb.position.x + ulb.size.x * 0.5f, ulb.position.y + ulb.size.y * 0.5f));
+            upLabel.setPosition(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
+            window.draw(upLabel);
+        }
     }
 
     // 战场中央：玩家区(背景+模型+血条在下+增益减益)、怪物区(背景+意图在上+模型+血条在下)

@@ -25,6 +25,20 @@ constexpr float kPriceReserveBelowCard = 20.f; // 价签字形占用（略加大
 constexpr float kOfferGapBelowBox = 4.f;
 constexpr float kOfferGapNameToPrice = 3.f;
 
+inline bool card_id_is_upgraded(const CardId& id) { return !id.empty() && id.back() == '+'; }
+
+/** 升级版且 CardData 上费用低于去掉 + 后的原版（均为非负整数费） */
+inline bool upgraded_static_fee_reduced(const CardId& cid, const CardData* cd) {
+    if (!cd || !card_id_is_upgraded(cid) || cid.size() < 2) return false;
+    const CardData* base = get_card_by_id(cid.substr(0, cid.size() - 1));
+    if (!base || base->cost < 0 || cd->cost < 0) return false;
+    return cd->cost < base->cost;
+}
+
+// 与 BattleUI drawDetailedCardAt 升级版配色一致（更亮）
+const sf::Color kUpgradeCardTitleGreen(140, 255, 165);
+const sf::Color kUpgradeFeeDownGreen(200, 255, 225);
+
 sf::Color rarity_outline(Rarity r) {
     switch (r) {
     case Rarity::Uncommon: return sf::Color(80, 180, 120);
@@ -56,6 +70,7 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
     CardId cid, int price, const sf::FloatRect& rect, bool canAfford, unsigned shopPriceFont,
     std::wstring& outTooltip, bool& outHover) {
     const CardData* cd = get_card_by_id(cid);
+    const bool upgradeVisual = card_id_is_upgraded(cid);
     outHover = rect.contains(mousePos);
     outTooltip.clear();
 
@@ -110,7 +125,7 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
 
     const sf::String name = sf::String(cd ? utf8_to_wstring(cd->name) : utf8_to_wstring(cid));
     sf::Text nameText(font, name, static_cast<unsigned>(std::max(10.f, h * 0.055f)));
-    nameText.setFillColor(sf::Color::White);
+    nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
     const sf::FloatRect nb = nameText.getLocalBounds();
     nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
     nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 4.f + titleH * 0.5f));
@@ -123,7 +138,7 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
     typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
     window.draw(typeText);
 
-    if (cd) {
+    if (cd && cd->cost != -2) {
         const float costR = std::max(9.f, h * 0.048f);
         const float costCx = innerL + costR;
         const float costCy = innerT + costR;
@@ -135,7 +150,7 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
         window.draw(costCircle);
         sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
         sf::Text costText(font, costStr, static_cast<unsigned>(std::max(8.f, h * 0.045f)));
-        costText.setFillColor(sf::Color::White);
+        costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
         const sf::FloatRect cb = costText.getLocalBounds();
         costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
         costText.setPosition(sf::Vector2f(costCx, costCy));
@@ -170,6 +185,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
     const sf::FloatRect& rect, bool& outHover, bool forgeOrangeHover = false, bool drawDescription = false,
     bool upgradedGreenStyle = false, bool forceGoldBorder = false) {
     const CardData* cd = get_card_by_id(cid);
+    const bool upgradeVisual = upgradedGreenStyle || card_id_is_upgraded(cid);
     outHover = rect.contains(mousePos);
 
     const sf::Color borderCol = cd ? rarity_outline(cd->rarity) : sf::Color(160, 150, 140);
@@ -257,7 +273,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
             sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
             const unsigned costFont = std::max(8u, static_cast<unsigned>(std::round(26.f * s)));
             sf::Text costText(font, costStr, costFont);
-            costText.setFillColor(sf::Color::White);
+            costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
             const sf::FloatRect cb = costText.getLocalBounds();
             costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
             costText.setPosition(sf::Vector2f(costCx, costCy));
@@ -271,7 +287,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
             cardName = sf::String(fallbackName);
         const unsigned nameFont = std::max(8u, static_cast<unsigned>(std::round(20.f * s)));
         sf::Text nameText(font, cardName, nameFont);
-        nameText.setFillColor(upgradedGreenStyle ? sf::Color(95, 220, 130) : sf::Color::White);
+        nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
         const sf::FloatRect nb = nameText.getLocalBounds();
         nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
         nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, titleY + titleH * 0.5f));
@@ -279,7 +295,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
 
         const unsigned typeFont = std::max(8u, static_cast<unsigned>(std::round(16.f * s)));
         sf::Text typeText(font, type_label_for_card(cd), typeFont);
-        typeText.setFillColor(upgradedGreenStyle ? sf::Color(140, 235, 175) : sf::Color::White);
+        typeText.setFillColor(upgradeVisual ? sf::Color(140, 235, 175) : sf::Color::White);
         const sf::FloatRect tb = typeText.getLocalBounds();
         typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
         typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeY + typeH * 0.5f));
@@ -293,7 +309,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
             const float descMaxH = std::max(4.f, (rect.position.y + h) - descY - 14.f * s);
             const unsigned descFontSz = std::max(8u, static_cast<unsigned>(std::round(15.f * s)));
             const sf::Color descCol =
-                upgradedGreenStyle ? sf::Color(130, 235, 175) : sf::Color(240, 238, 235);
+                upgradeVisual ? sf::Color(130, 235, 175) : sf::Color(240, 238, 235);
             draw_wrapped_text(window, font, descStr, descFontSz, sf::Vector2f(descX, descY), descMaxW, descMaxH,
                 descCol);
         }
@@ -341,7 +357,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
 
     const sf::String name = cd ? sf::String(utf8_to_wstring(cd->name)) : sf::String(fallbackName);
     sf::Text nameText(font, name, static_cast<unsigned>(std::max(10.f, h * 0.055f)));
-    nameText.setFillColor(sf::Color::White);
+    nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
     const sf::FloatRect nb = nameText.getLocalBounds();
     nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
     nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 4.f + titleH * 0.5f));
@@ -354,7 +370,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
     typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
     window.draw(typeText);
 
-    if (cd) {
+    if (cd && cd->cost != -2) {
         const float costR = std::max(9.f, h * 0.048f);
         const float costCx = innerL + costR;
         const float costCy = innerT + costR;
@@ -367,7 +383,7 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
 
         sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
         sf::Text costText(font, costStr, static_cast<unsigned>(std::max(8.f, h * 0.045f)));
-        costText.setFillColor(sf::Color::White);
+        costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
         const sf::FloatRect cb = costText.getLocalBounds();
         costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
         costText.setPosition(sf::Vector2f(costCx, costCy));

@@ -13,6 +13,20 @@
 namespace tce {
 using namespace esr_detail;
 
+namespace {
+
+bool event_upgraded_static_fee_reduced(const std::string& cid, const CardData* cd) {
+    if (!cd || cid.empty() || cid.back() != '+' || cid.size() < 2) return false;
+    const CardData* base = get_card_by_id(cid.substr(0, cid.size() - 1));
+    if (!base || base->cost < 0 || cd->cost < 0) return false;
+    return cd->cost < base->cost;
+}
+
+const sf::Color kEventUpgradeTitleGreen(140, 255, 165);
+const sf::Color kEventUpgradeFeeDownGreen(200, 255, 225);
+
+} // namespace
+
 static std::vector<sf::String> wrap_lines_no_ellipsis(const sf::Font& font,
     const sf::String& text,
     unsigned charSize,
@@ -244,6 +258,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
 
         auto drawCardInRect = [&](const std::string& cid, const sf::FloatRect& rect) {
             const CardData* cd = get_card_by_id(cid);
+            const bool upgradeVisual = !cid.empty() && cid.back() == '+';
             sf::RectangleShape bg(rect.size);
             bg.setPosition(rect.position);
             bg.setFillColor(sf::Color(55, 50, 48));
@@ -294,7 +309,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
 
             const sf::String name = sf::String(cd ? utf8_to_wstring(cd->name) : utf8_to_wstring(cid));
             sf::Text nameText(fontForText(), name, static_cast<unsigned>(std::max(11.f, h * 0.06f)));
-            nameText.setFillColor(sf::Color::White);
+            nameText.setFillColor(upgradeVisual ? kEventUpgradeTitleGreen : sf::Color::White);
             const sf::FloatRect nb = nameText.getLocalBounds();
             nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
             nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 6.f + titleH * 0.5f));
@@ -307,7 +322,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
             window.draw(typeText);
 
-            if (cd) {
+            if (cd && cd->cost != -2) {
                 const float costR = std::max(10.f, h * 0.05f);
                 const float costCx = innerL + costR - 2.f;
                 const float costCy = innerT + costR - 1.f;
@@ -325,7 +340,8 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
                 window.draw(costCircle);
                 sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
                 sf::Text costText(fontForText(), costStr, static_cast<unsigned>(std::max(9.f, h * 0.05f)));
-                costText.setFillColor(sf::Color::White);
+                costText.setFillColor(event_upgraded_static_fee_reduced(cid, cd) ? kEventUpgradeFeeDownGreen
+                                                                               : sf::Color::White);
                 const sf::FloatRect cb = costText.getLocalBounds();
                 costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
                 costText.setPosition(sf::Vector2f(costCx, costCy));
