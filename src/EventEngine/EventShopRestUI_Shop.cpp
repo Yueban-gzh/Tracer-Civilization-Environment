@@ -17,7 +17,7 @@ using namespace esr_detail;
 
 namespace {
 
-constexpr float BATTLE_CARD_ASPECT_H_OVER_W = 300.f / 190.f;
+constexpr float BATTLE_CARD_ASPECT_H_OVER_W = 300.f / 206.f;
 // 全店统一：价格在商品几何体下方的间距规则（与 StS「价签在物下」一致）
 constexpr float kPriceGapBelowCard = 12.f;
 constexpr float kPriceReserveBelowCard = 20.f; // 价签字形占用（略加大以配合价格字号）
@@ -197,9 +197,9 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
     const float w = rect.size.x;
     const float h = rect.size.y;
 
-    // 与 BattleUI 手牌卡一致：基准 190×300，整体按比例缩放（标题/立绘/类型/描述/费用字号同战斗）
+    // 与 BattleUI 手牌卡一致：基准 206×300，整体按比例缩放（标题/立绘/类型/描述/费用字号同战斗）
     if (drawDescription) {
-        constexpr float kBattleCardW = 190.f;
+        constexpr float kBattleCardW = 206.f;
         constexpr float kBattleCardH = 300.f;
         const float s = std::max(0.18f, std::min(w / kBattleCardW, h / kBattleCardH));
         const float pad = 4.f * s;
@@ -439,7 +439,7 @@ void EventShopRestUI::drawMasterDeckCardPickGrid(sf::RenderWindow& window,
     unsigned bodySize, float layoutW, float layoutH, float& scrollOffset, float& scrollMax, float& cardScrollStep,
     std::vector<sf::FloatRect>& outHitRects, sf::FloatRect& outListViewportRect, bool previewUpgrade,
     bool forgeOrangeHover, bool showCardDescription) {
-    constexpr float kCardAspect = 300.f / 190.f;
+    constexpr float kCardAspect = 300.f / 206.f;
     float listTop = regionTop;
     if (drawTipLine && !tipText.isEmpty()) {
         sf::Text tip(fontForText(), tipText, bodySize);
@@ -1039,7 +1039,7 @@ void EventShopRestUI::drawRestForgeUpgradeConfirmOverlay(sf::RenderWindow& windo
     title.setPosition(sf::Vector2f(lw * 0.5f, 42.f));
     window.draw(title);
 
-    constexpr float kBattleCardW = 190.f;
+    constexpr float kBattleCardW = 206.f;
     constexpr float kBattleCardH = 300.f;
     const float cardMul = 1.36f;
     const float cardW = kBattleCardW * scale * cardMul;
@@ -1178,7 +1178,7 @@ void EventShopRestUI::drawShopRemoveConfirmOverlay(sf::RenderWindow& window) {
     title.setPosition(sf::Vector2f(lw * 0.5f, 42.f));
     window.draw(title);
 
-    constexpr float kBattleCardW = 190.f;
+    constexpr float kBattleCardW = 206.f;
     constexpr float kBattleCardH = 300.f;
     const float cardMul = 1.42f;
     const float cardW = kBattleCardW * scale * cardMul;

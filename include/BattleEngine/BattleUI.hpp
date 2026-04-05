@@ -8,6 +8,7 @@
 #include "BattleStateSnapshot.hpp"              // 完整快照（成员内拷贝，避免 lastSnapshot_ 悬垂）
 #include "../CardSystem/CardSystem.hpp"         // 卡牌实例、牌组视图
 #include <SFML/Graphics.hpp>                    // 窗口、字体、图形绘制
+#include <array>
 #include <string>                               // 字符串
 #include <unordered_map>                        // 怪物 id→纹理 缓存
 #include <unordered_set>                        // 抽/弃牌动画：隐藏飞行中的手牌实例
@@ -97,6 +98,9 @@ public:
     /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
     void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
 
+    /** 顶栏显示爬塔层数：current 为地图逻辑层（0 起），total>0 时显示「第 a 层 / b」 */
+    void set_top_bar_map_floor(int current_layer_index, int total_layers = 0);
+
     /** 打开/关闭暂停菜单（设置面板），用于全局 HUD 与战斗界面共用 */
     void set_pause_menu_active(bool active);
     bool is_pause_menu_active() const { return pause_menu_active_; }
@@ -106,13 +110,16 @@ public:
 private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
-    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水
+    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
     void drawCardSelectScreen(sf::RenderWindow& window);  // 选牌弹窗
-    /** 在指定矩形内绘制完整卡牌（与牌组视图一致：费用圈/类型/描述换行），供选牌中间预览等复用 */
+    /** 在指定矩形内绘制完整卡牌（牌组/手牌扇形/选牌/飞牌/奖励等共用）。手牌传 handSnap+handInst 显示实效费用与费用外圈；states 用于扇形旋转/缩放后的局部坐标 (x,y) 为牌左上角 */
     void drawDetailedCardAt(sf::RenderWindow& window, const std::string& card_id, float x, float y, float w, float h,
-                            const sf::Color& outlineColor, float outlineThickness = 8.f);
+                            const sf::Color& outlineColor, float outlineThickness = 8.f,
+                            const sf::RenderStates& states = sf::RenderStates::Default,
+                            const BattleStateSnapshot* handSnap = nullptr,
+                            const CardInstance* handInst = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
@@ -130,6 +137,8 @@ private:
     void tick_pile_card_anims_();
     void detect_pile_card_anims_(const BattleStateSnapshot& s);
     void draw_pile_card_anims_(sf::RenderWindow& window);
+    /** 底栏牌堆 / 结束回合、右上角按钮、顶栏药水槽的悬停插值（每帧调用一次） */
+    void update_interactive_hover_(bool bottom_bar_interactive, bool potion_slots_interactive);
     sf::Vector2f hand_fan_card_center_(size_t hand_index, size_t hand_count) const;
     void pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const;
     sf::Vector2f card_select_preview_center_for_fly_() const;
@@ -152,6 +161,22 @@ private:
     int                                 prev_exhaust_sz_for_anim_ = 0;
     bool                                pile_anim_snapshot_ready_ = false;
     int                                 pending_select_ui_pile_fly_remaining_ = 0;
+
+    sf::Clock                           ui_hover_anim_clock_{};
+    float                               hover_draw_pile_    = 0.f;
+    float                               hover_discard_pile_ = 0.f;
+    float                               hover_exhaust_pile_ = 0.f;
+    float                               hover_end_turn_     = 0.f;
+    float                               hover_btn_map_      = 0.f;
+    float                               hover_btn_deck_     = 0.f;
+    float                               hover_btn_settings_ = 0.f;
+    std::array<float, 5>                hover_potion_slot_{};  // 顶栏药水槽悬停 0~1（最多 5 槽）
+    /** 手牌悬停：默认尺寸 → 预览尺寸的平滑系数（0~1，在 drawBottomBar 内按 dt 插值） */
+    float                               hand_card_preview_blend_ = 0.f;
+    sf::Clock                           hand_preview_blend_clock_{};
+
+    int top_bar_map_layer_ = -1;   // 地图当前层（无当前节点时为 -1）
+    int top_bar_map_total_  = 0;   // 总层数；0 表示顶栏不显示「/ 总层」
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度

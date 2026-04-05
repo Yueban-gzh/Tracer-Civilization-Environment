@@ -62,7 +62,7 @@ static std::vector<sf::String> wrap_lines_no_ellipsis(const sf::Font& font,
 }
 
 void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
-    constexpr float BATTLE_CARD_ASPECT_H_OVER_W = 300.f / 190.f; // 与 BattleUI 保持一致
+    constexpr float BATTLE_CARD_ASPECT_H_OVER_W = 300.f / 206.f; // 与 BattleUI 保持一致
     const float cx = width_ * 0.5f;
     const float cy = height_ * 0.5f;
     const float panelW = std::max(720.f, static_cast<float>(width_) * 0.68f);
