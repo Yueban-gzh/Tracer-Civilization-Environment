@@ -135,11 +135,11 @@
   {"id":"deflect","name":"偏折","cardType":"Skill","cost":0,"color":"green","rarity":"common","description":"获得4点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
   {"id":"deflect+","name":"偏折+","cardType":"Skill","cost":0,"color":"green","rarity":"common","description":"获得7点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
 
-  {"id":"defend_green","name":"防御（绿）","cardType":"Skill","cost":1,"color":"green","rarity":"common","description":"获得5点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
-  {"id":"defend_green+","name":"防御（绿）+","cardType":"Skill","cost":1,"color":"green","rarity":"common","description":"获得8点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+  {"id":"defend_green","name":"防御","cardType":"Skill","cost":1,"color":"green","rarity":"common","description":"获得5点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
+  {"id":"defend_green+","name":"防御+","cardType":"Skill","cost":1,"color":"green","rarity":"common","description":"获得8点格挡。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":false},
 
-  {"id":"strike_green","name":"打击（绿）","cardType":"Attack","cost":1,"color":"green","rarity":"common","description":"造成6点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},
-  {"id":"strike_green+","name":"打击（绿）+","cardType":"Attack","cost":1,"color":"green","rarity":"common","description":"造成9点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},
+  {"id":"strike_green","name":"打击","cardType":"Attack","cost":1,"color":"green","rarity":"common","description":"造成6点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},
+  {"id":"strike_green+","name":"打击+","cardType":"Attack","cost":1,"color":"green","rarity":"common","description":"造成9点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},
 
   {"id":"strike_blue","name":"打击（蓝）","cardType":"Attack","cost":1,"color":"blue","rarity":"common","description":"造成6点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},
   {"id":"strike_blue+","name":"打击（蓝）+","cardType":"Attack","cost":1,"color":"blue","rarity":"common","description":"造成9点伤害。","exhaust":false,"ethereal":false,"innate":false,"retain":false,"unplayable":false,"requiresTarget":true},

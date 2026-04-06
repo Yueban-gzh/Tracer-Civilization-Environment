@@ -97,6 +97,8 @@ public:
 
     /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
     void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    /** 仅绘制牌组/卡牌网格（不含顶栏/遗物栏），用于开始界面等外部复用 */
+    void drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s);
 
     /** 顶栏显示爬塔层数：current 为地图逻辑层（0 起），total>0 时显示「第 a 层 / b」 */
     void set_top_bar_map_floor(int current_layer_index, int total_layers = 0);
@@ -110,6 +112,7 @@ public:
 private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
+    void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
     void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌与「查看升级」按钮命中矩形
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
@@ -162,6 +165,7 @@ private:
     int                                 prev_exhaust_sz_for_anim_ = 0;
     bool                                pile_anim_snapshot_ready_ = false;
     int                                 pending_select_ui_pile_fly_remaining_ = 0;
+    bool                                pending_select_ui_force_center_fly_ = false;
 
     sf::Clock                           ui_hover_anim_clock_{};
     float                               hover_draw_pile_    = 0.f;
@@ -260,6 +264,10 @@ private:
     float                         deck_view_scroll_y_ = 0.f;   // 牌组视图纵向滚动偏移
     int                           pending_deck_view_mode_ = 0;  // 0 无，1 整个牌组，2 抽牌堆，3 弃牌堆
     sf::FloatRect                 deckViewReturnButton_;       // 牌组界面返回按钮矩形
+    // 牌组网格悬停：对“当前悬停卡牌”做平滑插值放大
+    sf::Clock                     deck_view_hover_clock_{};
+    int                           deck_view_hover_index_ = -1;
+    float                         deck_view_hover_blend_ = 0.f; // 0~1
     /** 牌组网格中点击牌后的放大详情（再点牌面或空白关闭；「查看升级」切换原版/升级版预览） */
     bool                          deck_view_detail_active_ = false;
     CardInstance                  deck_view_detail_inst_{};

@@ -59,6 +59,8 @@ namespace MapEngine {
             return -1;
         }
 
+        int get_total_layers() const { return total_layers_; }
+
         MapEngine();
         ~MapEngine();
 

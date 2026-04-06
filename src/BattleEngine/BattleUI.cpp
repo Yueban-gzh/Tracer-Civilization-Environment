@@ -209,6 +209,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         inline std::pair<std::wstring, std::wstring> get_relic_display_info(const std::string& id) {
             static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
                 {"burning_blood", {L"燃烧之血", L"战斗胜利时回复 6 点生命"}},
+                {"ring_of_the_snake", {L"蛇之戒", L"（起始遗物）暂未实现效果"}},
                 {"marble_bag", {L"弹珠袋", L"战斗开始时给所有敌人 1 层易伤"}},
                 {"small_blood_vial", {L"小血瓶", L"战斗开始时回复 2 点生命"}},
                 {"copper_scales", {L"铜制鳞片", L"（无战斗效果）"}},
@@ -1160,12 +1161,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
+            deck_view_hover_index_ = -1;
+            deck_view_hover_blend_ = 0.f;
+            deck_view_hover_clock_.restart();
         }
         if (!active) {
             deck_view_scroll_y_ = 0.f;
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
+            deck_view_hover_index_ = -1;
+            deck_view_hover_blend_ = 0.f;
             pile_anim_snapshot_ready_ = false;
             pending_select_ui_pile_fly_remaining_ = 0;
             return;
@@ -1462,6 +1468,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_pending_select_ui_pile_fly(int discard_or_exhaust_count) {
         pending_select_ui_pile_fly_remaining_ = std::max(0, discard_or_exhaust_count);
+        // 选牌确认后打出：本帧（下一次 detect_pile_card_anims_）里所有 Hand→Discard/Exhaust 飞牌起点强制用中央预览区，
+        // 避免 “选牌丢弃数 > UI 选中数” 时出现部分从抽牌堆/手牌位置起飞。
+        pending_select_ui_force_center_fly_ = (pending_select_ui_pile_fly_remaining_ > 0);
     }
 
     sf::Vector2f BattleUI::card_select_preview_center_for_fly_() const {
@@ -1539,6 +1548,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         int discard_delta = s.discardPileSize - prev_discard_sz_for_anim_;
         int exhaust_delta = s.exhaustPileSize - prev_exhaust_sz_for_anim_;
 
+        bool used_force_center_fly = false;
         for (const auto& c : removed) {
             if (pile_card_flights_.size() >= kMaxNewAnims + 8) break;
             sf::Vector2f start = drawC;
@@ -1563,12 +1573,21 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 continue;
             // 手牌→弃牌/消耗：统一走二次贝塞尔弧线；选牌界面确认时起点改为中央预览区
             a.use_arc_path = true;
-            if (pending_select_ui_pile_fly_remaining_ > 0) {
+            if (pending_select_ui_force_center_fly_) {
+                a.start = card_select_preview_center_for_fly_();
+                a.duration_sec = 0.42f;
+                used_force_center_fly = true;
+            } else if (pending_select_ui_pile_fly_remaining_ > 0) {
+                // 旧行为兼容：若仍用 remaining 驱动（例如未来别处复用），仅覆盖前 N 张
                 a.start = card_select_preview_center_for_fly_();
                 a.duration_sec = 0.42f;
                 --pending_select_ui_pile_fly_remaining_;
             }
             pile_card_flights_.push_back(std::move(a));
+        }
+        if (used_force_center_fly) {
+            pending_select_ui_force_center_fly_ = false;
+            pending_select_ui_pile_fly_remaining_ = 0;
         }
 
         prev_hand_for_pile_anim_ = s.hand;
@@ -1726,6 +1745,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (pause_menu_active_ || settings_panel_active_) {
             drawPauseMenuOverlay(window);
         }
+    }
+
+    void BattleUI::drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        if (!fontLoaded_) return;
+        if (!deck_view_active_) return;
+        drawDeckViewStandalone_(window, s);
     }
 
     void BattleUI::drawPauseMenuOverlay(sf::RenderWindow& window) {
@@ -2187,8 +2212,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const CardData* baseCdForUpgrade = nullptr;
         if (isUpgradedCardId && card_id.size() > 1u)
             baseCdForUpgrade = get_card_by_id(card_id.substr(0, card_id.size() - 1u));
-        // 升级版标题：亮绿；费用数字：仅当数据上相对原版降费时才亮绿（球体始终红/金）
-        constexpr sf::Color kUpgradeNameGreen(140, 255, 165);
+        // 升级版：只在“静态费用低于原版”时把费用数字染绿；牌名不变色
         constexpr sf::Color kUpgradeFeeDownGreen(200, 255, 225);
         const bool upgradedStaticFeeLower =
             isUpgradedCardId && cd && baseCdForUpgrade && baseCdForUpgrade->cost >= 0 && cd->cost >= 0 &&
@@ -2201,11 +2225,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float s = h / kCardLayoutRefH;
 
         const bool greenCharacterCard = cd && cd->color == CardColor::Green;
+        const bool colorlessCard      = cd && cd->color == CardColor::Colorless;
+        const bool curseCard          = cd && cd->color == CardColor::Curse;
         const float thickOutline = std::max(1.f, outlineThickness * s);
         const bool cardOutlineEmphasis = thickOutline > 9.5f;
         sf::Color outerOutlineUse = outlineColor;
         if (greenCharacterCard)
             outerOutlineUse = cardOutlineEmphasis ? sf::Color(140, 250, 175) : sf::Color(72, 175, 108);
+        else if (colorlessCard)
+            outerOutlineUse = cardOutlineEmphasis ? sf::Color(240, 240, 242) : sf::Color(170, 170, 174);
+        else if (curseCard)
+            outerOutlineUse = cardOutlineEmphasis ? sf::Color(185, 165, 205) : sf::Color(110, 100, 125);
 
         const float outerR = 11.f * s;
         const float frameInset = 7.f * s;
@@ -2214,10 +2244,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 投影（略偏移的圆角矩形）
         build_round_rect_poly(rr, cardX + 4.f * s, cardY + 5.f * s, w - 2.f * s, h - 2.f * s, std::max(4.f, outerR - 1.f * s), 3);
         draw_convex_poly(window, rr, sf::Color(0, 0, 0, 72), sf::Color::Transparent, 0.f, states);
-        // 外框：红色牌=陶土色；绿色牌=翠绿厚边（参考猎手/绿牌）
+        // 外框：红/绿/无色/诅咒按卡色分皮肤
         build_round_rect_poly(rr, cardX, cardY, w, h, outerR, 3);
         draw_convex_poly(window, rr,
-                         greenCharacterCard ? sf::Color(42, 138, 78) : sf::Color(128, 72, 54),
+                         curseCard ? sf::Color(46, 44, 52)
+                                  : colorlessCard ? sf::Color(128, 128, 132)
+                                  : greenCharacterCard ? sf::Color(42, 138, 78)
+                                                      : sf::Color(128, 72, 54),
                          outerOutlineUse, thickOutline, states);
 
         const float ix = cardX + frameInset;
@@ -2226,8 +2259,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float ih = h - frameInset * 2.f;
         build_round_rect_poly(rr, ix, iy, iw, ih, innerR, 3);
         draw_convex_poly(window, rr,
-                         greenCharacterCard ? sf::Color(34, 46, 38) : sf::Color(46, 42, 40),
-                         greenCharacterCard ? sf::Color(22, 32, 26) : sf::Color(28, 24, 22),
+                         curseCard ? sf::Color(22, 20, 28)
+                                  : colorlessCard ? sf::Color(56, 56, 58)
+                                  : greenCharacterCard ? sf::Color(34, 46, 38)
+                                                      : sf::Color(46, 42, 40),
+                         curseCard ? sf::Color(10, 10, 14)
+                                  : colorlessCard ? sf::Color(28, 28, 30)
+                                  : greenCharacterCard ? sf::Color(22, 32, 26)
+                                                      : sf::Color(28, 24, 22),
                          std::max(0.5f, 1.f * s), states);
 
         const float padIn = 6.f * s;
@@ -2254,7 +2293,49 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::Color ribOutline;
         float ribOutlineTh = 2.f * s;
         sf::Color ribGloss(255, 255, 255, 42);
-        if (greenCharacterCard) {
+        if (curseCard) {
+            switch (cardRarity) {
+            case Rarity::Common:
+                ribFill = sf::Color(110, 108, 118);
+                ribOutline = sf::Color(52, 50, 60);
+                ribGloss = sf::Color(255, 255, 255, 38);
+                break;
+            case Rarity::Uncommon:
+                ribFill = sf::Color(72, 118, 190);
+                ribOutline = sf::Color(18, 62, 148);
+                ribGloss = sf::Color(205, 235, 255, 52);
+                ribOutlineTh = 2.5f * s;
+                break;
+            case Rarity::Rare:
+            case Rarity::Special:
+                ribFill = sf::Color(224, 182, 72);
+                ribOutline = sf::Color(118, 78, 28);
+                ribGloss = sf::Color(255, 248, 200, 72);
+                ribOutlineTh = 3.f * s;
+                break;
+            }
+        } else if (colorlessCard) {
+            switch (cardRarity) {
+            case Rarity::Common:
+                ribFill = sf::Color(190, 190, 194);
+                ribOutline = sf::Color(92, 92, 98);
+                ribGloss = sf::Color(255, 255, 255, 46);
+                break;
+            case Rarity::Uncommon:
+                ribFill = sf::Color(40, 108, 215);
+                ribOutline = sf::Color(14, 52, 142);
+                ribGloss = sf::Color(185, 225, 255, 62);
+                ribOutlineTh = 2.5f * s;
+                break;
+            case Rarity::Rare:
+            case Rarity::Special:
+                ribFill = sf::Color(224, 182, 72);
+                ribOutline = sf::Color(118, 78, 28);
+                ribGloss = sf::Color(255, 248, 200, 72);
+                ribOutlineTh = 3.f * s;
+                break;
+            }
+        } else if (greenCharacterCard) {
             switch (cardRarity) {
             case Rarity::Common:
                 ribFill = sf::Color(158, 162, 166);
@@ -2362,8 +2443,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                   sf::Vector2f(ax + aw * t, ySide + (yMid - ySide) * sn));
             }
         }
-        artPanel.setFillColor(greenCharacterCard ? sf::Color(52, 78, 62) : sf::Color(88, 32, 34));
-        artPanel.setOutlineColor(greenCharacterCard ? sf::Color(175, 188, 178) : sf::Color(198, 202, 210));
+        artPanel.setFillColor(curseCard ? sf::Color(58, 22, 62)
+                                        : colorlessCard ? sf::Color(92, 92, 96)
+                                        : greenCharacterCard ? sf::Color(52, 78, 62)
+                                                            : sf::Color(88, 32, 34));
+        artPanel.setOutlineColor(curseCard ? sf::Color(200, 180, 220)
+                                           : colorlessCard ? sf::Color(210, 210, 214)
+                                           : greenCharacterCard ? sf::Color(175, 188, 178)
+                                                               : sf::Color(198, 202, 210));
         artPanel.setOutlineThickness(std::max(2.f, 4.5f * s));
         window.draw(artPanel, states);
 
@@ -2380,21 +2467,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
         const sf::Vector2f namePos(ribbonX + ribbonW * 0.5f, (ribTop + ribBot) * 0.5f + 2.f * s);
         nameText.setPosition(namePos);
-        if (isUpgradedCardId) {
-            nameText.setFillColor(kUpgradeNameGreen);
-            window.draw(nameText, states);
-        } else if (greenCharacterCard) {
-            const float sh = std::max(1.f, 1.5f * s);
-            nameText.setFillColor(sf::Color(12, 28, 18));
-            nameText.setPosition(namePos + sf::Vector2f(sh, sh));
-            window.draw(nameText, states);
-            nameText.setFillColor(sf::Color::White);
-            nameText.setPosition(namePos);
-            window.draw(nameText, states);
-        } else {
-            nameText.setFillColor(sf::Color::White);
-            window.draw(nameText, states);
-        }
+        nameText.setFillColor(sf::Color::White);
+        window.draw(nameText, states);
 
         sf::String typeStr = sf::String(L"?");
         if (cd) {
@@ -2408,7 +2482,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
         const unsigned typePt = static_cast<unsigned>(std::max(10.f, std::round(17.f * s)));
         sf::Text typeText(fontForChinese(), typeStr, typePt);
-        typeText.setFillColor(greenCharacterCard ? sf::Color(48, 52, 50) : sf::Color(198, 194, 188));
+        typeText.setFillColor(curseCard ? sf::Color(30, 28, 36)
+                                        : colorlessCard ? sf::Color(48, 48, 52)
+                                        : greenCharacterCard ? sf::Color(48, 52, 50)
+                                                            : sf::Color(198, 194, 188));
         const float tagCx = ax + aw * 0.5f;
         // 类型条中心压在立绘区底边（平底 / 三角尖端 / 弧底最低点均为 artTop + artH）
         const float artBottomY = artTop + artH;
@@ -2419,8 +2496,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::RectangleShape typePill(sf::Vector2f(pillW, pillH));
         typePill.setOrigin(sf::Vector2f(pillW * 0.5f, pillH * 0.5f));
         typePill.setPosition(sf::Vector2f(tagCx, tagCy));
-        typePill.setFillColor(greenCharacterCard ? sf::Color(118, 124, 118) : sf::Color(94, 90, 86));
-        typePill.setOutlineColor(greenCharacterCard ? sf::Color(78, 84, 80) : sf::Color(62, 58, 54));
+        typePill.setFillColor(curseCard ? sf::Color(150, 150, 154)
+                                        : colorlessCard ? sf::Color(175, 175, 178)
+                                        : greenCharacterCard ? sf::Color(118, 124, 118)
+                                                            : sf::Color(94, 90, 86));
+        typePill.setOutlineColor(curseCard ? sf::Color(90, 90, 98)
+                                           : colorlessCard ? sf::Color(110, 110, 118)
+                                           : greenCharacterCard ? sf::Color(78, 84, 80)
+                                                               : sf::Color(62, 58, 54));
         typePill.setOutlineThickness(std::max(0.5f, 1.f * s));
         window.draw(typePill, states);
         const sf::FloatRect tb = typeText.getLocalBounds();
@@ -2434,8 +2517,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float dPad = 5.f * s;
             build_round_rect_poly(rr, ix + dPad, descBoxTop, iw - dPad * 2.f, descBoxH, std::max(3.f, 5.f * s), 2);
             draw_convex_poly(window, rr,
-                             greenCharacterCard ? sf::Color(24, 34, 28) : sf::Color(22, 20, 24),
-                             greenCharacterCard ? sf::Color(48, 62, 52) : sf::Color(40, 36, 38),
+                             curseCard ? sf::Color(16, 14, 18)
+                                      : colorlessCard ? sf::Color(26, 26, 28)
+                                      : greenCharacterCard ? sf::Color(24, 34, 28)
+                                                          : sf::Color(22, 20, 24),
+                             curseCard ? sf::Color(56, 52, 62)
+                                      : colorlessCard ? sf::Color(60, 60, 66)
+                                      : greenCharacterCard ? sf::Color(48, 62, 52)
+                                                          : sf::Color(40, 36, 38),
                              std::max(0.5f, 1.f * s), states);
         }
         sf::String descStr;
@@ -2448,7 +2537,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const unsigned descPt = static_cast<unsigned>(std::max(11.f, std::round(23.f * s)));
         draw_wrapped_text(window, fontForChinese(), descStr, descPt,
                           sf::Vector2f(descX, descY), descMaxW, descMaxH,
-                          greenCharacterCard ? sf::Color(232, 238, 232) : sf::Color(218, 212, 204), states);
+                          curseCard ? sf::Color(240, 240, 245)
+                                   : colorlessCard ? sf::Color(236, 236, 236)
+                                   : greenCharacterCard ? sf::Color(232, 238, 232)
+                                                       : sf::Color(218, 212, 204), states);
 
         const bool handCostPath = (handSnap != nullptr && handInst != nullptr);
         const bool showCostCircle = cd && cd->cost != -2;
@@ -2464,7 +2556,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 sf::CircleShape costRing(gemR + ringPad);
                 costRing.setPosition(sf::Vector2f(costCx - gemR - ringPad, costCy - gemR - ringPad));
                 costRing.setFillColor(sf::Color(0, 0, 0, 0));
-                costRing.setOutlineColor(greenCharacterCard ? sf::Color(160, 235, 195) : sf::Color(255, 200, 100));
+                costRing.setOutlineColor(curseCard ? sf::Color(210, 195, 225)
+                                                  : colorlessCard ? sf::Color(222, 222, 228)
+                                                  : greenCharacterCard ? sf::Color(160, 235, 195)
+                                                                      : sf::Color(255, 200, 100));
                 costRing.setOutlineThickness(std::max(1.f, 3.f * s));
                 window.draw(costRing, states);
             }
@@ -2475,7 +2570,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 gem.setPoint(static_cast<std::size_t>(gi),
                              sf::Vector2f(costCx + gemR * std::cos(a), costCy + gemR * std::sin(a)));
             }
-            if (greenCharacterCard) {
+            if (curseCard) {
+                gem.setFillColor(sf::Color(120, 120, 126));
+                gem.setOutlineColor(sf::Color(235, 235, 242));
+            } else if (colorlessCard) {
+                gem.setFillColor(sf::Color(160, 160, 166));
+                gem.setOutlineColor(sf::Color(245, 245, 250));
+            } else if (greenCharacterCard) {
                 gem.setFillColor(sf::Color(110, 215, 150));
                 gem.setOutlineColor(sf::Color(215, 255, 228));
             } else {
@@ -2712,6 +2813,31 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;  // 总内容宽度
         const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;  // 水平居中
 
+        // 牌组网格悬停插值（仅在非详情层时启用）
+        int hoverIdx = -1;
+        if (!deck_view_detail_active_) {
+            for (size_t i = 0; i < cardCount; ++i) {
+                const int row = static_cast<int>(i) / COLS;
+                const int col = static_cast<int>(i) % COLS;
+                const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
+                const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
+                if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
+                if (mousePos_.x >= cardX && mousePos_.x <= cardX + DECK_CARD_W &&
+                    mousePos_.y >= cardY && mousePos_.y <= cardY + DECK_CARD_H) {
+                    hoverIdx = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        float dtHover = deck_view_hover_clock_.restart().asSeconds();
+        if (dtHover > 0.08f) dtHover = 0.08f;
+        if (dtHover < 0.f) dtHover = 0.f;
+        if (hoverIdx != deck_view_hover_index_) {
+            deck_view_hover_index_ = hoverIdx;
+            deck_view_hover_blend_ = 0.f;
+        }
+        deck_view_hover_blend_ = ui_hover_lerp(deck_view_hover_blend_, (hoverIdx >= 0) ? 1.f : 0.f, dtHover);
+
         for (size_t i = 0; i < cardCount; ++i) {
             const int row = static_cast<int>(i) / COLS;
             const int col = static_cast<int>(i) % COLS;
@@ -2719,12 +2845,26 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;  // 减去滚动偏移
             if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;  // 视口外不绘制（裁剪优化）
             const CardInstance& inst = deck_view_cards_[i];
-            const float w = DECK_CARD_W, h = DECK_CARD_H;
-            drawDetailedCardAt(window, inst.id, cardX, cardY, w, h, sf::Color(180, 50, 45), 8.f);
+            float w = DECK_CARD_W, h = DECK_CARD_H;
+            float x = cardX, y = cardY;
+            float outlineTh = 8.f;
+            sf::Color outline = sf::Color(180, 50, 45);
+            if (!deck_view_detail_active_ && deck_view_hover_index_ == static_cast<int>(i)) {
+                const float pb = deck_view_hover_blend_;
+                const float scale = 1.f + 0.16f * pb;          // 轻微放大
+                w = DECK_CARD_W * scale;
+                h = DECK_CARD_H * scale;
+                x = cardX - (w - DECK_CARD_W) * 0.5f;
+                y = cardY - (h - DECK_CARD_H) * 0.5f - 18.f * pb; // 略上浮
+                outlineTh = 8.f + 3.f * pb;
+                // 悬停时仅做插值放大/加粗，描边颜色保持与原来一致（避免出现金边）
+                outline = sf::Color(180, 50, 45);
+            }
+            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh);
         }
 
         const float returnW = 180.f, returnH = 50.f;
-        const float returnX = 28.f;                  // 左下角，与顶栏边距一致
+        const float returnX = 28.f;                  // 左下角
         const float returnY = height_ - returnBtnBottomMargin - returnH;  // 距屏幕底部 200
         deckViewReturnButton_ = sf::FloatRect(sf::Vector2f(returnX, returnY), sf::Vector2f(returnW, returnH));
         sf::RectangleShape returnBtn(sf::Vector2f(returnW, returnH));
@@ -2746,6 +2886,130 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             sf::RectangleShape dimDetail(sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_) - ovTop));
             dimDetail.setPosition(sf::Vector2f(0.f, ovTop));
             dimDetail.setFillColor(sf::Color(6, 6, 10, 215));
+            window.draw(dimDetail);
+            const std::string disp =
+                deck_view_detail_resolve_display_id(deck_view_detail_inst_, deck_view_detail_show_upgraded_);
+            const sf::FloatRect& cr = deck_view_detail_card_rect_;
+            drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
+                             sf::Color(205, 75, 58), 11.f);
+            const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
+            const bool alreadyUp =
+                !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';
+            const bool baseUpgradable = deck_view_card_has_upgrade_definition(deck_view_detail_inst_.id);
+            sf::RectangleShape upBtn(sf::Vector2f(br.size.x, br.size.y));
+            upBtn.setPosition(br.position);
+            if (alreadyUp || !baseUpgradable) {
+                upBtn.setFillColor(sf::Color(68, 66, 74));
+                upBtn.setOutlineColor(sf::Color(105, 103, 112));
+            } else {
+                upBtn.setFillColor(sf::Color(88, 128, 78));
+                upBtn.setOutlineColor(sf::Color(138, 188, 125));
+            }
+            upBtn.setOutlineThickness(2.f);
+            window.draw(upBtn);
+            sf::String btnStr = alreadyUp                      ? sf::String(L"已是升级版")
+                                : (!baseUpgradable)          ? sf::String(L"不可升级")
+                                : deck_view_detail_show_upgraded_ ? sf::String(L"查看原版")
+                                                                 : sf::String(L"查看升级");
+            sf::Text upLabel(fontForChinese(), btnStr, 22);
+            upLabel.setFillColor(sf::Color(235, 232, 228));
+            const sf::FloatRect ulb = upLabel.getLocalBounds();
+            upLabel.setOrigin(sf::Vector2f(ulb.position.x + ulb.size.x * 0.5f, ulb.position.y + ulb.size.y * 0.5f));
+            upLabel.setPosition(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
+            window.draw(upLabel);
+        }
+    }
+
+    void BattleUI::drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        // 与 drawDeckView 基本一致，但不依赖顶栏/遗物栏（用于开始界面等）。
+        // 注意：外部界面（如卡牌总览）通常已经自行 clear 了暗底色，这里不再叠加遮罩，避免压暗顶部按钮。
+
+        constexpr float DECK_CARD_W = 206.f;
+        constexpr float DECK_CARD_H = 300.f;
+        constexpr float COL_CENTER_TO_CENTER = 276.f;
+        constexpr float ROW_CENTER_TO_CENTER = 360.f;
+        constexpr int COLS = 5;
+        const float contentTop = 72.f; // 给排序按钮留空间
+        constexpr float returnBtnBottomMargin = 120.f;
+        const float viewTop = 0.f;
+        const float viewBottom = static_cast<float>(height_);
+        const size_t cardCount = deck_view_cards_.size();
+        constexpr float FIRST_ROW_CENTER_Y = 260.f;
+        const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+        const float padTop = firstRowTop - contentTop;
+        const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
+        const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
+
+        int hoverIdx = -1;
+        if (!deck_view_detail_active_) {
+            for (size_t i = 0; i < cardCount; ++i) {
+                const int row = static_cast<int>(i) / COLS;
+                const int col = static_cast<int>(i) % COLS;
+                const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
+                const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
+                if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
+                if (mousePos_.x >= cardX && mousePos_.x <= cardX + DECK_CARD_W &&
+                    mousePos_.y >= cardY && mousePos_.y <= cardY + DECK_CARD_H) {
+                    hoverIdx = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        float dtHover = deck_view_hover_clock_.restart().asSeconds();
+        if (dtHover > 0.08f) dtHover = 0.08f;
+        if (dtHover < 0.f) dtHover = 0.f;
+        if (hoverIdx != deck_view_hover_index_) {
+            deck_view_hover_index_ = hoverIdx;
+            deck_view_hover_blend_ = 0.f;
+        }
+        deck_view_hover_blend_ = ui_hover_lerp(deck_view_hover_blend_, (hoverIdx >= 0) ? 1.f : 0.f, dtHover);
+
+        for (size_t i = 0; i < cardCount; ++i) {
+            const int row = static_cast<int>(i) / COLS;
+            const int col = static_cast<int>(i) % COLS;
+            const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
+            const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
+            if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
+            const CardInstance& inst = deck_view_cards_[i];
+            float w = DECK_CARD_W, h = DECK_CARD_H;
+            float x = cardX, y = cardY;
+            float outlineTh = 8.f;
+            sf::Color outline = sf::Color(180, 50, 45);
+            if (!deck_view_detail_active_ && deck_view_hover_index_ == static_cast<int>(i)) {
+                const float pb = deck_view_hover_blend_;
+                const float scale = 1.f + 0.16f * pb;
+                w = DECK_CARD_W * scale;
+                h = DECK_CARD_H * scale;
+                x = cardX - (w - DECK_CARD_W) * 0.5f;
+                y = cardY - (h - DECK_CARD_H) * 0.5f - 18.f * pb;
+                outlineTh = 8.f + 3.f * pb;
+            }
+            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh);
+        }
+
+        const float returnW = 180.f, returnH = 50.f;
+        const float returnX = 28.f;
+        const float returnY = height_ - returnBtnBottomMargin - returnH;
+        deckViewReturnButton_ = sf::FloatRect(sf::Vector2f(returnX, returnY), sf::Vector2f(returnW, returnH));
+        sf::RectangleShape returnBtn(sf::Vector2f(returnW, returnH));
+        returnBtn.setPosition(sf::Vector2f(returnX, returnY));
+        returnBtn.setFillColor(sf::Color(120, 50, 50));
+        returnBtn.setOutlineColor(sf::Color(200, 90, 90));
+        returnBtn.setOutlineThickness(2.f);
+        window.draw(returnBtn);
+        sf::Text returnLabel(fontForChinese(), sf::String(L"返回"), 24);
+        returnLabel.setFillColor(sf::Color::White);
+        const sf::FloatRect rlb = returnLabel.getLocalBounds();
+        returnLabel.setOrigin(sf::Vector2f(rlb.position.x + rlb.size.x * 0.5f, rlb.position.y + rlb.size.y * 0.5f));
+        returnLabel.setPosition(sf::Vector2f(returnX + returnW * 0.5f, returnY + returnH * 0.5f));
+        window.draw(returnLabel);
+
+        if (deck_view_detail_active_) {
+            updateDeckViewDetailLayout_();
+            const float ovTop = 0.f;
+            sf::RectangleShape dimDetail(sf::Vector2f(static_cast<float>(width_), static_cast<float>(height_) - ovTop));
+            dimDetail.setPosition(sf::Vector2f(0.f, ovTop));
+            dimDetail.setFillColor(sf::Color(6, 6, 10, 190));
             window.draw(dimDetail);
             const std::string disp =
                 deck_view_detail_resolve_display_id(deck_view_detail_inst_, deck_view_detail_show_upgraded_);

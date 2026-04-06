@@ -1,6 +1,8 @@
 #include <SFML/Graphics.hpp>
 #include <filesystem>
 
+#include "GameFlow/CardCatalogScreen.hpp"
+#include "GameFlow/CharacterSelectScreen.hpp"
 #include "GameFlow/GameFlowController.hpp"
 
 namespace tce {
@@ -25,7 +27,6 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
     }
 
     bool running = true;
-    bool requestedNewGame = false;
     bool requestedContinue = false;
 
     while (window.isOpen() && running) {
@@ -51,21 +52,36 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     const float btnH = 70.f;
                     const float gapY = 30.f;
 
+                    const float rowGap = btnH + gapY;
                     sf::FloatRect newGameRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy - btnH - gapY * 0.5f),
+                        sf::Vector2f(cx - btnW * 0.5f, cy - rowGap),
                         sf::Vector2f(btnW, btnH));
                     sf::FloatRect contRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy + gapY * 0.5f),
+                        sf::Vector2f(cx - btnW * 0.5f, cy),
+                        sf::Vector2f(btnW, btnH));
+                    sf::FloatRect catalogRect(
+                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap),
                         sf::Vector2f(btnW, btnH));
 
                     if (newGameRect.contains(mp)) {
-                        requestedNewGame = true;
-                        running = false;
+                        // 新游戏：进入职业选择界面；确认后再初始化 Run
+                        if (const auto chosen = runCharacterSelectScreen(window); chosen.has_value()) {
+                            (void)controller.initialize(*chosen);
+                            running = false;
+                            break;
+                        }
+                        // 取消则回到开始界面
                         break;
                     }
                     if (hasSave && contRect.contains(mp)) {
                         requestedContinue = true;
                         running = false;
+                        break;
+                    }
+                    if (catalogRect.contains(mp)) {
+                        runCardCatalogScreen(window);
+                        // 返回后可能已有存档变化，刷新一下
+                        hasSave = saveFileExists(savePath);
                         break;
                     }
                 }
@@ -114,8 +130,10 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
             window.draw(t);
         };
 
-        drawButton(L"开始新游戏", cy - (btnH * 0.5f + gapY * 0.5f), true);
-        drawButton(L"继续游戏",   cy + (btnH * 0.5f + gapY * 0.5f), hasSave);
+        const float rowGap = btnH + gapY;
+        drawButton(L"开始新游戏", cy - rowGap + btnH * 0.5f, true);
+        drawButton(L"继续游戏",   cy + btnH * 0.5f, hasSave);
+        drawButton(L"卡牌总览",   cy + rowGap + btnH * 0.5f, true);
 
         window.display();
     }
@@ -124,14 +142,11 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
 
     if (requestedContinue) {
         if (!controller.loadRun(savePath)) {
-            // 读档失败则退回到新游戏
-            requestedNewGame = true;
+            // 读档失败则退回到新游戏（带职业选择）
+            if (const auto chosen = runCharacterSelectScreen(window); chosen.has_value()) {
+                (void)controller.initialize(*chosen);
+            }
         }
-    }
-
-    // 如果是“开始新游戏”或读档失败，则重置一局新的 Run 状态
-    if (requestedNewGame) {
-        controller.initialize();
     }
 }
 

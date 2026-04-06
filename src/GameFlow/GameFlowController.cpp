@@ -19,6 +19,7 @@
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
 #include "EventEngine/TreasureRoomUI.hpp"
+#include "GameFlow/CharacterSelectScreen.hpp"
 
 namespace tce {
 
@@ -47,6 +48,7 @@ std::string potion_name_cn(const std::string& id) {
 
 std::string relic_name_cn(const std::string& id) {
     if (id == "burning_blood") return "燃烧之血";
+    if (id == "ring_of_the_snake") return "蛇之戒";
     if (id == "marble_bag") return "弹珠袋";
     if (id == "small_blood_vial") return "小血瓶";
     if (id == "copper_scales") return "铜制鳞片";
@@ -133,7 +135,9 @@ void runPostBattleExitOverlay(sf::RenderWindow& window,
                               CardSystem& cardSystem,
                               bool victory,
                               const sf::Font& hudFont,
-                              bool hudFontLoaded) {
+                              bool hudFontLoaded,
+                              int top_bar_map_layer,
+                              int top_bar_map_total) {
     constexpr float kFadeInSec            = 1.0f;
     constexpr float kShowButtonAfterSec   = 1.1f;
     constexpr float kAutoReturnSec        = 3.2f;
@@ -182,6 +186,7 @@ void runPostBattleExitOverlay(sf::RenderWindow& window,
 
         BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem);
         tce::SnapshotBattleUIDataProvider adapter(&snapshot);
+        ui.set_top_bar_map_floor(top_bar_map_layer, top_bar_map_total);
         ui.draw(window, adapter);
 
         float a01 = (kFadeInSec <= 0.f) ? 1.f : std::min(1.f, std::max(0.f, t / kFadeInSec));
@@ -285,7 +290,22 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
     , hudBattleUi_(static_cast<unsigned>(window.getSize().x),
                    static_cast<unsigned>(window.getSize().y)) {}
 
+namespace {
+
+std::vector<CardId> repeat_cards(const CardId& id, int count) {
+    std::vector<CardId> out;
+    out.reserve(static_cast<size_t>(std::max(0, count)));
+    for (int i = 0; i < count; ++i) out.push_back(id);
+    return out;
+}
+
+} // namespace
+
 bool GameFlowController::initialize() {
+    return initialize(CharacterClass::Ironclad);
+}
+
+bool GameFlowController::initialize(CharacterClass cc) {
     // 每次新开一局前重置运行级状态
     hasPendingSceneAfterLoad_ = false;
     sceneAfterLoad_           = LastSceneKind::Map;
@@ -301,38 +321,39 @@ bool GameFlowController::initialize() {
     register_all_card_effects(cardSystem_);
 
     playerState_.playerName = "Telys";
-    playerState_.character = "Ironclad";
-    playerState_.currentHp = 80;
-    playerState_.maxHp = 80;
+    if (cc == CharacterClass::Ironclad) {
+        playerState_.character = "Ironclad";
+        playerState_.currentHp = 80;
+        playerState_.maxHp = 80;
+        playerState_.relics = { "burning_blood" };
+
+        std::vector<CardId> deck;
+        auto s = repeat_cards("strike", 5);
+        auto d = repeat_cards("defend", 4);
+        deck.insert(deck.end(), s.begin(), s.end());
+        deck.insert(deck.end(), d.begin(), d.end());
+        deck.push_back("bash");
+        cardSystem_.init_master_deck(deck);
+    } else {
+        playerState_.character = "Silent";
+        playerState_.currentHp = 70;
+        playerState_.maxHp = 70;
+        playerState_.relics = { "ring_of_the_snake" };
+
+        std::vector<CardId> deck;
+        auto s = repeat_cards("strike_green", 5);
+        auto d = repeat_cards("defend_green", 5);
+        deck.insert(deck.end(), s.begin(), s.end());
+        deck.insert(deck.end(), d.begin(), d.end());
+        deck.push_back("neutralize");
+        deck.push_back("survivor");
+        cardSystem_.init_master_deck(deck);
+    }
+
     playerState_.energy = 3;
     playerState_.maxEnergy = 3;
     playerState_.gold = 99;
     playerState_.cardsToDrawPerTurn = 5;
-    playerState_.relics = { "burning_blood" };
-
-    cardSystem_.init_master_deck({
-        "armaments",
-        "exhume",
-        "burning_pact",
-        "true_grit",
-        "survivor",
-        "acrobatics",
-        "flame_barrier",
-        "second_wind",
-        "spot_weakness",
-        "prepared",
-        "all_out_attack",
-        "calculated_gamble",
-        "concentrate",
-        "piercing_wail",
-        "sneaky_strike",
-        "venomology",
-        "noxious_fumes",
-        "reflex",
-        "tactician",
-        "tools_of_the_trade",
-        "well_laid_plans",
-    });
 
     mapEngine_.set_run_rng(&runRng_);
     // 使用新版 12 层随机地图生成（替代旧 fixed_map 5/6 层配置）
@@ -1019,6 +1040,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         BattleState state = battleEngine_.get_battle_state();
         BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem_);
         tce::SnapshotBattleUIDataProvider adapter(&snapshot);
+        ui.set_top_bar_map_floor(mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
         window_.clear(sf::Color(28, 26, 32));
         if (map_browse_overlay_active_) {
             mapUI_.draw();
@@ -1083,7 +1105,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                 // 最后一页 Boss：通关界面后返回主菜单
                 captureCheckpointForCurrentNode();
                 statusText_ = "通关！";
-                runPostBattleExitOverlay(window_, ui, state, cardSystem_, true, hudFont_, hudFontLoaded_);
+                runPostBattleExitOverlay(window_, ui, state, cardSystem_, true, hudFont_, hudFontLoaded_,
+                    mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
                 exitToStartRequested_ = true;
                 return false;
             } else {
@@ -1108,7 +1131,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     statusText_ = "战斗失败，爬塔结束。";
 
     close_map_browse_overlay(&ui);
-    runPostBattleExitOverlay(window_, ui, state, cardSystem_, false, hudFont_, hudFontLoaded_);
+    runPostBattleExitOverlay(window_, ui, state, cardSystem_, false, hudFont_, hudFontLoaded_,
+        mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
 
     // 退出到开始界面（main 会重新调用 runStartScreen）
     exitToStartRequested_ = true;
@@ -2496,6 +2520,7 @@ void GameFlowController::drawHud() {
     snap.potions    = playerState_.potions;
     snap.relics     = playerState_.relics;
 
+    hudBattleUi_.set_top_bar_map_floor(mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
     hudBattleUi_.drawGlobalHud(window_, snap);
 }
 

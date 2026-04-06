@@ -19,6 +19,8 @@
 
 namespace tce {
 
+enum class CharacterClass;
+
 class GameFlowController {
 public:
     enum class LastSceneKind {
@@ -31,7 +33,8 @@ public:
     };
 
     explicit GameFlowController(sf::RenderWindow& window);
-    bool initialize();
+    bool initialize();  // 默认：铁甲战士
+    bool initialize(CharacterClass cc);
     void run();
 
     /** 将当前 Run 状态写入存档文件（默认：saves/run_auto_save.json）。成功返回 true。 */

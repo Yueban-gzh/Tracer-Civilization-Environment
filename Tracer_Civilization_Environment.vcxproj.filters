@@ -37,6 +37,12 @@
     <ClCompile Include="src\GameFlow\GameFlowController.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\GameFlow\CardCatalogScreen.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp">
@@ -82,6 +88,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\GameFlow\GameFlowController.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GameFlow\CardCatalogScreen.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GameFlow\CharacterSelectScreen.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
