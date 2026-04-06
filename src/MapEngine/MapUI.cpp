@@ -204,6 +204,7 @@ namespace MapEngine {
         return false;
     }
 
+    // MapUI.cpp - setMap函数
     void MapUI::setMap(const MapEngine* engine) {
         m_mapEngine = engine;
 
@@ -237,7 +238,7 @@ namespace MapEngine {
             }
 
             // 初始偏移为0，显示底部（第0层）
-            m_viewOffset = 0.0f;
+            m_viewOffset = -300.0f;
 
             std::cout << "=== 地图滚动范围 ===" << std::endl;
             std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
