@@ -387,6 +387,11 @@ bool GameFlowController::initialize(CharacterClass cc) {
     mapUI_.setCurrentLayer(0);
     mapUI_.set_allow_any_node_click(false);
 
+    // 初始化宝箱UI
+    if (!treasureUI_.initialize(&window_)) {
+        std::cerr << "宝箱 UI 初始化失败" << std::endl;
+    }
+
     if (hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
         hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
         hudFontLoaded_ = true;
@@ -578,6 +583,14 @@ void GameFlowController::run() {
                 window_.close();
                 return;
             }
+            
+            // 处理宝箱UI事件
+            if (treasureUI_.isVisible()) {
+                if (treasureUI_.handleEvent(*ev)) {
+                    continue; // 如果宝箱UI处理了事件，跳过其他处理
+                }
+            }
+            
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
                     window_.close();
@@ -683,6 +696,8 @@ void GameFlowController::run() {
         mapUI_.draw();
         drawHud();
         draw_cheat_mode_hint();
+        if (treasureUI_.isVisible())
+            treasureUI_.draw();
         window_.display();
 
         if (exitToStartRequested_) {
