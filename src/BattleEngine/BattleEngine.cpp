@@ -443,9 +443,53 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
      };
      std::vector<CardId> result;
      if (count <= 0 || reward_pool.empty()) return result;
-     for (int i = 0; i < count; ++i) {
-         result.push_back(reward_pool[run_rng_->uniform_size(0, reward_pool.size() - 1)]);
+     // 按类型分层后轮流取牌（攻击牌每轮多取 1 张以提高出现率），再补满张数。
+     std::vector<CardId> atk, skl, pwr, oth;
+     atk.reserve(reward_pool.size());
+     skl.reserve(reward_pool.size());
+     pwr.reserve(reward_pool.size());
+     oth.reserve(reward_pool.size());
+     for (const auto& id : reward_pool) {
+         const CardData* cd = get_card_by_id_ ? get_card_by_id_(id) : nullptr;
+         if (!cd) cd = get_card_by_id(id);
+         if (!cd) continue;
+         switch (cd->cardType) {
+         case CardType::Attack: atk.push_back(id); break;
+         case CardType::Skill: skl.push_back(id); break;
+         case CardType::Power: pwr.push_back(id); break;
+         default: oth.push_back(id); break;
+         }
      }
+     std::shuffle(atk.begin(), atk.end(), *run_rng_);
+     std::shuffle(skl.begin(), skl.end(), *run_rng_);
+     std::shuffle(pwr.begin(), pwr.end(), *run_rng_);
+     std::shuffle(oth.begin(), oth.end(), *run_rng_);
+     size_t ia = 0, is = 0, ip = 0, io = 0;
+     result.reserve(static_cast<size_t>(count));
+     while (static_cast<int>(result.size()) < count &&
+            (ia < atk.size() || is < skl.size() || ip < pwr.size() || io < oth.size())) {
+         if (ia < atk.size()) result.push_back(atk[ia++]);
+         if (static_cast<int>(result.size()) >= count) break;
+         if (ia < atk.size()) result.push_back(atk[ia++]);
+         if (static_cast<int>(result.size()) >= count) break;
+         if (is < skl.size()) result.push_back(skl[is++]);
+         if (static_cast<int>(result.size()) >= count) break;
+         if (ip < pwr.size()) result.push_back(pwr[ip++]);
+         if (static_cast<int>(result.size()) >= count) break;
+         if (io < oth.size()) result.push_back(oth[io++]);
+     }
+     if (static_cast<int>(result.size()) < count) {
+         std::vector<CardId> rest;
+         for (; ia < atk.size(); ++ia) rest.push_back(atk[ia]);
+         for (; is < skl.size(); ++is) rest.push_back(skl[is]);
+         for (; ip < pwr.size(); ++ip) rest.push_back(pwr[ip]);
+         for (; io < oth.size(); ++io) rest.push_back(oth[io]);
+         std::shuffle(rest.begin(), rest.end(), *run_rng_);
+         for (size_t i = 0; i < rest.size() && static_cast<int>(result.size()) < count; ++i)
+             result.push_back(rest[i]);
+     }
+     while (static_cast<int>(result.size()) < count)
+         result.push_back(reward_pool[run_rng_->uniform_size(0, reward_pool.size() - 1)]);
      return result;
  }
 

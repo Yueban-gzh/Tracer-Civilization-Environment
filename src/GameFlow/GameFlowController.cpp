@@ -5,6 +5,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <unordered_map>
 
 #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -15,6 +16,7 @@
 #include "Cheat/CheatEngine.hpp"
 #include "Cheat/CheatPanel.hpp"
 #include "DataLayer/DataLayer.hpp"
+#include "Common/ImagePath.hpp"
 #include "Effects/CardEffects.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
@@ -24,6 +26,14 @@
 namespace tce {
 
 namespace {
+// 旧存档或旧 id 与资源文件名不一致时，用右侧文件名再试一次加载纹理（仍按逻辑 id 缓存）
+const std::unordered_map<std::string, std::string> kMonsterImageFileAliases = {
+    {"1.2_liejianshush", "1.2_liejianshusheng"},
+    {"1.2_liejianshushung", "1.2_liejianshusheng"},
+    {"1.9_nongjihuijing", "1.9_nongjihuijin"},
+    {"2.7_tongjingsuizhuang", "2.7_tongjingsuizhaung"},
+};
+
 int randomIndex(RunRng& rng, int boundExclusive) {
     if (boundExclusive <= 0) return 0;
     return rng.uniform_int(0, boundExclusive - 1);
@@ -91,7 +101,11 @@ std::string read_debug_event_override_id() {
     return (start < line.size()) ? line.substr(start) : std::string();
 }
 
-void preload_relic_and_potion_icons(BattleUI& ui) {
+/** 预加载战斗 UI：玩家立绘、遗物/药水图标（支持 .png / .jpg / .jpeg）。 */
+void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
+    if (const std::string playerPath = resolve_image_path("assets/player/" + character_id); !playerPath.empty()) {
+        ui.loadPlayerTexture(character_id, playerPath);
+    }
     static const std::vector<std::string> kRelics = {
         "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
         "clockwork_boots", "copper_scales", "data_disk", "hand_drum", "happy_flower", "lantern",
@@ -105,10 +119,14 @@ void preload_relic_and_potion_icons(BattleUI& ui) {
         "speed_potion", "steroid_potion", "strength_potion", "swift_potion", "weak_potion"
     };
     for (const auto& rid : kRelics) {
-        ui.loadRelicTexture(rid, "assets/relics/" + rid + ".png");
+        if (const std::string path = resolve_image_path("assets/relics/" + rid); !path.empty()) {
+            ui.loadRelicTexture(rid, path);
+        }
     }
     for (const auto& pid : kPotions) {
-        ui.loadPotionTexture(pid, "assets/potions/" + pid + ".png");
+        if (const std::string path = resolve_image_path("assets/potions/" + pid); !path.empty()) {
+            ui.loadPotionTexture(pid, path);
+        }
     }
 }
 
@@ -377,7 +395,7 @@ bool GameFlowController::initialize(CharacterClass cc) {
     // 顶栏/遗物栏 UI 使用与战斗一致的字体配置
     hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
     hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
-    preload_relic_and_potion_icons(hudBattleUi_);
+    preload_battle_ui_assets(hudBattleUi_, playerState_.character);
 
     statusText_ = "选择第一个节点开始爬塔。";
     // 初始检查点：即使还未进入节点，也允许写入稳定基线存档。
@@ -756,29 +774,55 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
     }
-    preload_relic_and_potion_icons(ui);
+    preload_battle_ui_assets(ui, playerState_.character);
 
     ui.set_hide_top_right_map_button(false);
     if (map_browse_overlay_active_)
         close_map_browse_overlay(&ui);
 
-    auto exists = [](const std::string& p) {
-        return std::filesystem::exists(std::filesystem::u8path(p));
-    };
-    if ((exists("assets/backgrounds/bg.png") && ui.loadBackground("assets/backgrounds/bg.png")) ||
-        (exists("assets/backgrounds/bg.jpg") && ui.loadBackground("assets/backgrounds/bg.jpg"))) {
-        // loaded
+    // 战斗专用三张背景（商店/休息/事件等仍用各自界面资源，不受影响）。
+    // resolve_image_path 会依次尝试 .png / .jpg / .jpeg / .jfif（含大写），JPEG 与 PNG 均可。
+    {
+        static const char* const kBattleBgBases[] = {
+            "assets/backgrounds/bg_xianqin",
+            "assets/backgrounds/bg_hantang",
+            "assets/backgrounds/bg_songming",
+        };
+        const std::string fallback = resolve_image_path("assets/backgrounds/bg");
+        std::string slotPath[3];
+        for (int i = 0; i < 3; ++i) {
+            slotPath[i] = resolve_image_path(kBattleBgBases[i]);
+            if (slotPath[i].empty()) slotPath[i] = fallback;
+        }
+        std::string firstGood;
+        for (int i = 0; i < 3; ++i) {
+            if (!slotPath[i].empty()) {
+                firstGood = slotPath[i];
+                break;
+            }
+        }
+        if (!firstGood.empty()) {
+            for (int i = 0; i < 3; ++i) {
+                const std::string& p = !slotPath[i].empty() ? slotPath[i] : firstGood;
+                ui.loadBackgroundForBattle(i, p);
+            }
+            // 三张地图配置各对应一张战斗背景（整场不变），与 mapConfigManager 下标一致：0 先秦 / 1 汉唐 / 2 宋明
+            int bgIdx = mapPage;
+            if (bgIdx < 0) bgIdx = 0;
+            if (bgIdx > 2) bgIdx = 2;
+            ui.setBattleBackground(bgIdx);
+        }
     }
 
-    // 尝试为本场战斗的所有怪物加载贴图：约定文件名为 assets/monsters/<monster_id>.png 或 .jpg
     for (const auto& mid : monsters) {
-        const std::string basePng = "assets/monsters/" + mid + ".png";
-        const std::string baseJpg = "assets/monsters/" + mid + ".jpg";
-        if (exists(basePng)) {
-            ui.loadMonsterTexture(mid, basePng);
-        } else if (exists(baseJpg)) {
-            ui.loadMonsterTexture(mid, baseJpg);
+        std::string path = resolve_image_path("assets/monsters/" + mid);
+        if (path.empty()) {
+            const auto it = kMonsterImageFileAliases.find(mid);
+            if (it != kMonsterImageFileAliases.end())
+                path = resolve_image_path("assets/monsters/" + it->second);
         }
+        if (!path.empty())
+            ui.loadMonsterTexture(mid, path);
     }
 
     CheatEngine cheat(&battleEngine_, &cardSystem_);
@@ -1903,16 +1947,9 @@ void GameFlowController::resolveMerchant() {
 bool GameFlowController::runTreasureScene() {
     const TreasureRoomOutcome tr = roll_and_resolve_treasure_room(runRng_, playerState_.relics);
 
-    auto assetExists = [](const std::string& p) {
-        return std::filesystem::exists(std::filesystem::u8path(p));
-    };
     std::string relicIconPath;
     if (!tr.relic_id.empty()) {
-        const std::string rel = "assets/relics/" + tr.relic_id + ".png";
-        if (assetExists(rel))
-            relicIconPath = rel;
-        else if (assetExists(std::string("./") + rel))
-            relicIconPath = std::string("./") + rel;
+        relicIconPath = resolve_image_path("assets/relics/" + tr.relic_id);
     }
 
     TreasureRoomDisplayData dd{};

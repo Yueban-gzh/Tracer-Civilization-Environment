@@ -2,78 +2,78 @@
   "maps": [
     {
       "enemy_groups": [
-        ["buguguiqi"],
-        ["dading"],
-        ["fashengjiangli"],
-        ["liejianshusheng"],
-        ["buguguiqi", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["buguguiqi", "dading"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "fashengjiangli"]
+        ["1.1_xiuqicanzun"],
+        ["1.2_liejianshusheng"],
+        ["1.3_yazhongzhihun"],
+        ["1.4_buguguiqi"],
+        ["1.5_fashengjiangli"],
+        ["1.6_jianaidulian"],
+        ["1.7_wentiantuhai"],
+        ["1.8_bingyongcanju"],
+        ["1.9_nongjihuijin"]
       ],
       "elite_groups": [
-        ["buguguiqi", "dading"],
-        ["buguguiqi", "fashengjiangli"],
-        ["buguguiqi", "liejianshusheng"],
-        ["dading", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "fashengjiangli"],
-        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
-        ["dading", "fashengjiangli", "liejianshusheng"]
+        ["1.1_xiuqicanzun"],
+        ["1.2_liejianshusheng"],
+        ["1.3_yazhongzhihun"],
+        ["1.4_buguguiqi"],
+        ["1.5_fashengjiangli"],
+        ["1.6_jianaidulian"],
+        ["1.7_wentiantuhai"],
+        ["1.8_bingyongcanju"],
+        ["1.9_nongjihuijin"]
       ],
-      "boss": ["yazhongzhihun"]
+      "boss": ["1.3_yazhongzhihun"]
     },
     {
       "enemy_groups": [
-        ["buguguiqi"],
-        ["dading"],
-        ["fashengjiangli"],
-        ["liejianshusheng"],
-        ["buguguiqi", "dading"],
-        ["buguguiqi", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "liejianshusheng"]
+        ["2.1_huxuankongke"],
+        ["2.2_canbiyansheng"],
+        ["2.3_gongdiduanchang"],
+        ["2.4_fengsuiyapao"],
+        ["2.5_zuimocanbi"],
+        ["2.6_nichangyuyi"],
+        ["2.7_tongjingsuizhaung"],
+        ["2.8_fujielu"],
+        ["2.1_huxuankongke"]
       ],
       "elite_groups": [
-        ["buguguiqi", "dading"],
-        ["buguguiqi", "fashengjiangli"],
-        ["buguguiqi", "liejianshusheng"],
-        ["dading", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "fashengjiangli"],
-        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
-        ["dading", "fashengjiangli", "liejianshusheng"]
+        ["2.1_huxuankongke"],
+        ["2.2_canbiyansheng"],
+        ["2.3_gongdiduanchang"],
+        ["2.4_fengsuiyapao"],
+        ["2.5_zuimocanbi"],
+        ["2.6_nichangyuyi"],
+        ["2.7_tongjingsuizhaung"],
+        ["2.8_fujielu"],
+        ["2.2_canbiyansheng"]
       ],
-      "boss": ["yazhongzhihun"]
+      "boss": ["2.5_zuimocanbi"]
     },
     {
       "enemy_groups": [
-        ["buguguiqi"],
-        ["dading"],
-        ["fashengjiangli"],
-        ["liejianshusheng"],
-        ["buguguiqi", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["buguguiqi", "dading"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "fashengjiangli"]
+        ["3.1_youshimohun"],
+        ["3.2_bizhongguyin"],
+        ["3.3_xiusitiou"],
+        ["3.4_sancerusheng"],
+        ["3.5_chenzhanhugong"],
+        ["3.6_jiaotongxianmo"],
+        ["3.7_suizhicanmu"],
+        ["3.1_youshimohun"],
+        ["3.2_bizhongguyin"]
       ],
       "elite_groups": [
-        ["buguguiqi", "dading"],
-        ["buguguiqi", "fashengjiangli"],
-        ["buguguiqi", "liejianshusheng"],
-        ["dading", "fashengjiangli"],
-        ["dading", "liejianshusheng"],
-        ["fashengjiangli", "liejianshusheng"],
-        ["buguguiqi", "dading", "fashengjiangli"],
-        ["buguguiqi", "fashengjiangli", "liejianshusheng"],
-        ["dading", "fashengjiangli", "liejianshusheng"]
+        ["3.1_youshimohun"],
+        ["3.2_bizhongguyin"],
+        ["3.3_xiusitiou"],
+        ["3.4_sancerusheng"],
+        ["3.5_chenzhanhugong"],
+        ["3.6_jiaotongxianmo"],
+        ["3.7_suizhicanmu"],
+        ["3.3_xiusitiou"],
+        ["3.4_sancerusheng"]
       ],
-      "boss": ["yazhongzhihun"]
+      "boss": ["3.7_suizhicanmu"]
     }
   ]
 }

@@ -3,6 +3,7 @@
  */
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
+#include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.h"
 #include <SFML/Graphics.hpp>
 #include <cmath>
@@ -350,9 +351,10 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         }
         loaded[key] = false;
         std::string path;
-        if (kind == "relic") path = "assets/relics/" + id + ".png";
-        else if (kind == "potion") path = "assets/potions/" + id + ".png";
+        if (kind == "relic") path = resolve_image_path("assets/relics/" + id);
+        else if (kind == "potion") path = resolve_image_path("assets/potions/" + id);
         else return nullptr;
+        if (path.empty()) return nullptr;
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return nullptr;
         tex.setSmooth(true);
