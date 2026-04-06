@@ -231,7 +231,7 @@ static void runMapUITest(sf::RenderWindow& window) {
     MapEngine::MapUI ui;
     if (!ui.initialize(&window)) { std::cerr << "地图 UI 初始化失败" << std::endl; return; }
     ui.loadLegendTexture("assets/images/menu.png");
-    ui.setLegendPosition(1550.f, 550.f);
+    ui.setLegendPosition(1550.f, 350.f);
     ui.setLegendScale(1.0f);
     ui.loadBackgroundTexture("assets/images/background.png");
     ui.setMap(&engines[current_map]);

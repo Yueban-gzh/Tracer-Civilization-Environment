@@ -204,6 +204,7 @@ namespace MapEngine {
         return false;
     }
 
+    // MapUI.cpp - setMap函数
     void MapUI::setMap(const MapEngine* engine) {
         m_mapEngine = engine;
 
@@ -218,26 +219,21 @@ namespace MapEngine {
             float mapHeight = maxY - minY;
             float windowHeight = 1080.0f;
 
-            // 由于层间距增大到 120，12层总高度 = 11 * 120 = 1320 像素
-            // 加上起始偏移，总高度约 1400 像素
+            // 【最简单修复】直接加大向上滚动的范围
             if (mapHeight > windowHeight) {
-                // 允许向上滚动看到 Boss 层
-                m_minOffset = -100.0f;
-                // 允许向下滚动看到底部
-                m_maxOffset = mapHeight - windowHeight + 150.0f;
+                m_minOffset = -500.0f;   // 改这里：从 -100 改为 -500
+                m_maxOffset = mapHeight - windowHeight + 550.0f;
             }
             else {
-                m_minOffset = -50.0f;
-                m_maxOffset = windowHeight - mapHeight + 50.0f;
+                m_minOffset = -500.0f;   // 改这里：从 -50 改为 -500
+                m_maxOffset = windowHeight - mapHeight + 550.0f;
             }
 
             // 初始偏移为0，显示底部（第0层）
-            m_viewOffset = 0.0f;
+            m_viewOffset = -300.0f;
 
             std::cout << "=== 地图滚动范围 ===" << std::endl;
             std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
-            std::cout << "地图高度: " << mapHeight << std::endl;
-            std::cout << "窗口高度: " << windowHeight << std::endl;
             std::cout << "滚动范围: [" << m_minOffset << ", " << m_maxOffset << "]" << std::endl;
             std::cout << "===================" << std::endl;
         }

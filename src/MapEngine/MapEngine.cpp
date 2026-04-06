@@ -706,312 +706,268 @@ namespace MapEngine {
             pair.second.prev_nodes.clear();
         }
 
-        // 1. 确定主干：每层选一个节点作为主干节点
-        std::vector<NodeId> backbone(total_layers_);
+        // 对每一层的节点按X坐标排序，确定"相邻"关系
         for (int layer = 0; layer < total_layers_; ++layer) {
-            const auto& ids = layers_[layer];
-            if (ids.empty()) continue;
-
-            if (layer == 0 && ids.size() > 1) {
-                int idx = rand_int_fallback(run_rng_, 0, static_cast<int>(ids.size()) - 1);
-                backbone[layer] = ids[idx];
-            }
-            else {
-                backbone[layer] = ids[0];
-            }
+            auto& ids = layers_[layer];
+            std::sort(ids.begin(), ids.end(), [this](const NodeId& a, const NodeId& b) {
+                return nodes_[a].position.x < nodes_[b].position.x;
+                });
         }
 
-        // 2. 连接主干节点（纵向路径）
+        // 1. 构建主干路径（从最左侧开始，每层连接到下一层最近的节点）
+        NodeId current = layers_[0][0]; // 第0层最左节点
         for (int layer = 0; layer < total_layers_ - 1; ++layer) {
-            NodeId from = backbone[layer];
-            NodeId to = backbone[layer + 1];
+            const auto& next_ids = layers_[layer + 1];
 
-            bool already = false;
-            for (const auto& nid : nodes_[from].next_nodes) {
-                if (nid == to) { already = true; break; }
+            // 找到下一层中X坐标最接近当前节点的节点
+            NodeId closest = next_ids[0];
+            float min_dist = std::abs(nodes_[next_ids[0]].position.x - nodes_[current].position.x);
+
+            for (const auto& nid : next_ids) {
+                float dist = std::abs(nodes_[nid].position.x - nodes_[current].position.x);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                    closest = nid;
+                }
             }
-            if (!already) {
-                nodes_[from].next_nodes.push_back(to);
-                nodes_[to].prev_nodes.push_back(from);
-            }
+
+            // 添加连接
+            nodes_[current].next_nodes.push_back(closest);
+            nodes_[closest].prev_nodes.push_back(current);
+            current = closest;
         }
 
-        // 3. 【关键修复】第0层特殊处理：限制连接数量和距离
-        if (total_layers_ > 1) {
-            const auto& start_ids = layers_[0];
-            const auto& next_ids = layers_[1];
+        // 2. 为每个节点添加额外连接（只连接相邻的1-2个节点）
+        for (int layer = 0; layer < total_layers_ - 1; ++layer) {
+            const auto& curr_ids = layers_[layer];
+            const auto& next_ids = layers_[layer + 1];
 
-            for (const auto& start_id : start_ids) {
-                if (start_id == backbone[0]) continue;
-
-                std::vector<NodeId> candidates;
-                float start_x = nodes_[start_id].position.x;
-
-                // 【修复1】缩小距离阈值：150.0f 替代 500.0f
-                for (const auto& next_id : next_ids) {
-                    float next_x = nodes_[next_id].position.x;
-                    if (std::abs(next_x - start_x) < 100.0f) {
-                        candidates.push_back(next_id);
+            for (const auto& from_id : curr_ids) {
+                // 计算当前节点在下一层中的最佳连接目标（按X距离排序）
+                std::vector<std::pair<float, NodeId>> candidates;
+                for (const auto& to_id : next_ids) {
+                    // 避免重复连接
+                    bool already = false;
+                    for (const auto& existing : nodes_[from_id].next_nodes) {
+                        if (existing == to_id) { already = true; break; }
                     }
+                    if (already) continue;
+
+                    float dist = std::abs(nodes_[to_id].position.x - nodes_[from_id].position.x);
+                    candidates.push_back({ dist, to_id });
                 }
 
-                // 【修复2】如果近的没有，只选最近的1个，而不是全部
-                if (candidates.empty()) {
-                    // 找最近的那个
-                    float min_dist = std::numeric_limits<float>::max();
+                // 按距离排序
+                std::sort(candidates.begin(), candidates.end());
+
+                // 只连接最近的1-2个，且距离不能超过阈值（如150像素）
+                const float MAX_DIST = 150.0f;
+                int max_connections = rand_int_fallback(run_rng_, 1, 2); // 随机1-2个
+
+                for (int i = 0; i < std::min(max_connections, (int)candidates.size()); ++i) {
+                    if (candidates[i].first > MAX_DIST) break; // 太远了，不连
+
+                    NodeId to_id = candidates[i].second;
+                    nodes_[from_id].next_nodes.push_back(to_id);
+                    nodes_[to_id].prev_nodes.push_back(from_id);
+                }
+            }
+        }
+
+        // 3. 确保连通性（没有前驱的节点必须连接到至少一个前一层节点）
+        for (int layer = 1; layer < total_layers_; ++layer) {
+            for (const auto& curr_id : layers_[layer]) {
+                if (nodes_[curr_id].prev_nodes.empty()) {
+                    // 找到前一层最近的节点
+                    const auto& prev_ids = layers_[layer - 1];
+                    NodeId nearest = prev_ids[0];
+                    float min_dist = std::abs(nodes_[prev_ids[0]].position.x - nodes_[curr_id].position.x);
+
+                    for (const auto& prev_id : prev_ids) {
+                        float dist = std::abs(nodes_[prev_id].position.x - nodes_[curr_id].position.x);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            nearest = prev_id;
+                        }
+                    }
+
+                    nodes_[nearest].next_nodes.push_back(curr_id);
+                    nodes_[curr_id].prev_nodes.push_back(nearest);
+                }
+            }
+        }
+
+        // 4. 确保能到达终点（没有后继的节点必须连接到下一层）
+        for (int layer = 0; layer < total_layers_ - 1; ++layer) {
+            for (const auto& curr_id : layers_[layer]) {
+                if (nodes_[curr_id].next_nodes.empty()) {
+                    const auto& next_ids = layers_[layer + 1];
                     NodeId nearest = next_ids[0];
+                    float min_dist = std::abs(nodes_[next_ids[0]].position.x - nodes_[curr_id].position.x);
+
                     for (const auto& next_id : next_ids) {
-                        float dist = std::abs(nodes_[next_id].position.x - start_x);
+                        float dist = std::abs(nodes_[next_id].position.x - nodes_[curr_id].position.x);
                         if (dist < min_dist) {
                             min_dist = dist;
                             nearest = next_id;
                         }
                     }
-                    candidates.push_back(nearest);
-                }
 
-                // 【修复3】严格限制：起点只能连1-2个，且优先1个
-                int max_candidates = std::min(2, static_cast<int>(candidates.size()));
-                // 70%概率连1个，30%概率连2个
-                int num_conn = (rand_int_fallback(run_rng_, 0, 9) < 7) ? 1 : max_candidates;
-                num_conn = std::max(1, num_conn); // 至少1个
-
-                // 打乱
-                for (int i = static_cast<int>(candidates.size()) - 1; i > 0; --i) {
-                    int j = rand_int_fallback(run_rng_, 0, i);
-                    std::swap(candidates[i], candidates[j]);
-                }
-
-                for (int i = 0; i < num_conn; ++i) {
-                    NodeId to_id = candidates[i];
-
-                    bool exists = false;
-                    for (const auto& nid : nodes_[start_id].next_nodes) {
-                        if (nid == to_id) { exists = true; break; }
-                    }
-                    if (!exists) {
-                        nodes_[start_id].next_nodes.push_back(to_id);
-                        nodes_[to_id].prev_nodes.push_back(start_id);
-                    }
+                    nodes_[curr_id].next_nodes.push_back(nearest);
+                    nodes_[nearest].prev_nodes.push_back(curr_id);
                 }
             }
         }
-
-        // 4. 【正向】自顶向下：确保每个节点都能从起点到达
-        for (int layer = 1; layer < total_layers_; ++layer) {
-            const auto& curr_ids = layers_[layer];
-            const auto& prev_ids = layers_[layer - 1];
-
-            for (const auto& curr_id : curr_ids) {
-                if (!nodes_[curr_id].prev_nodes.empty()) continue;
-
-                std::vector<NodeId> candidates;
-                float curr_x = nodes_[curr_id].position.x;
-
-                for (const auto& prev_id : prev_ids) {
-                    float prev_x = nodes_[prev_id].position.x;
-                    if (std::abs(prev_x - curr_x) < 500.0f) {
-                        candidates.push_back(prev_id);
-                    }
-                }
-
-                if (candidates.empty()) {
-                    candidates = prev_ids;
-                }
-
-                int idx = rand_int_fallback(run_rng_, 0, static_cast<int>(candidates.size()) - 1);
-                NodeId from_id = candidates[idx];
-
-                bool exists = false;
-                for (const auto& nid : nodes_[from_id].next_nodes) {
-                    if (nid == curr_id) { exists = true; break; }
-                }
-                if (!exists) {
-                    nodes_[from_id].next_nodes.push_back(curr_id);
-                    nodes_[curr_id].prev_nodes.push_back(from_id);
-                }
-            }
-        }
-
-        // 5. 【反向】自底向上：确保每个节点都能到达Boss
-        for (int layer = total_layers_ - 2; layer >= 0; --layer) {
-            const auto& curr_ids = layers_[layer];
-            const auto& next_ids = layers_[layer + 1];
-
-            for (const auto& curr_id : curr_ids) {
-                if (!nodes_[curr_id].next_nodes.empty()) continue;
-
-                std::vector<NodeId> candidates;
-                float curr_x = nodes_[curr_id].position.x;
-
-                for (const auto& next_id : next_ids) {
-                    float next_x = nodes_[next_id].position.x;
-                    if (std::abs(next_x - curr_x) < 500.0f) {
-                        candidates.push_back(next_id);
-                    }
-                }
-
-                if (candidates.empty()) {
-                    candidates = next_ids;
-                }
-
-                int idx = rand_int_fallback(run_rng_, 0, static_cast<int>(candidates.size()) - 1);
-                NodeId to_id = candidates[idx];
-
-                bool exists = false;
-                for (const auto& nid : nodes_[curr_id].next_nodes) {
-                    if (nid == to_id) { exists = true; break; }
-                }
-                if (!exists) {
-                    nodes_[curr_id].next_nodes.push_back(to_id);
-                    nodes_[to_id].prev_nodes.push_back(curr_id);
-                }
-            }
-        }
-
-        // 6. 添加额外随机连接（不包括第0层，起点已经处理过）
-        for (int layer = 1; layer < total_layers_ - 1; ++layer) {
-            const auto& curr_ids = layers_[layer];
-            const auto& next_ids = layers_[layer + 1];
-
-            for (const auto& from_id : curr_ids) {
-                int existing = static_cast<int>(nodes_[from_id].next_nodes.size());
-                if (existing >= 3) continue;
-
-                std::vector<NodeId> candidates;
-                float from_x = nodes_[from_id].position.x;
-
-                for (const auto& to_id : next_ids) {
-                    bool already = false;
-                    for (const auto& nid : nodes_[from_id].next_nodes) {
-                        if (nid == to_id) { already = true; break; }
-                    }
-                    if (already) continue;
-
-                    float to_x = nodes_[to_id].position.x;
-                    if (std::abs(to_x - from_x) < 300.0f) {
-                        candidates.push_back(to_id);
-                    }
-                }
-
-                int max_extra = std::min(2, static_cast<int>(candidates.size()));
-                if (max_extra <= 0) continue;
-
-                int extra = rand_int_fallback(run_rng_, 0, max_extra);
-
-                for (int i = static_cast<int>(candidates.size()) - 1; i > 0; --i) {
-                    int j = rand_int_fallback(run_rng_, 0, i);
-                    std::swap(candidates[i], candidates[j]);
-                }
-
-                for (int i = 0; i < extra && existing + i < 3; ++i) {
-                    NodeId to_id = candidates[i];
-
-                    bool exists = false;
-                    for (const auto& nid : nodes_[from_id].next_nodes) {
-                        if (nid == to_id) { exists = true; break; }
-                    }
-                    if (!exists) {
-                        nodes_[from_id].next_nodes.push_back(to_id);
-                        nodes_[to_id].prev_nodes.push_back(from_id);
-                    }
-                }
-            }
-        }
-
-        std::cout << "连接构建完成" << std::endl;
     }
 
 
-    void MapEngine::auto_layout_nodes() {
-        const float start_x = 300.0f;
-        const float end_x = 1620.0f;
+    // src/MapEngine/MapEngine.cpp
+    // 替换 auto_layout_nodes 函数，增大节点间距
 
-        // 固定每层之间的垂直间距（像素）- 增大到 120 像素
+    void MapEngine::auto_layout_nodes() {
+        const float start_x = 200.0f;   // 左边界缩小，给更多空间
+        const float end_x = 1720.0f;    // 右边界扩大
+
+        // 固定每层之间的垂直间距（像素）
         const float LAYER_SPACING = 120.0f;
+        // 【新增】Boss层额外间距（让Boss更高）
+        const float BOSS_EXTRA_SPACING = 100.0f;  // 额外增加100像素，总共220
 
         // 第0层的起始Y坐标（底部附近）
-        const float start_y = 980.0f;  // 更靠近窗口底部
+        const float start_y = 980.0f;
+
+        // 节点之间的最小水平间距（增大到250像素，更宽松）
+        const float MIN_HORIZONTAL_SPACING = 250.0f;
+
+        // 可用水平范围（扩大可用区域）
+        const float AVAILABLE_WIDTH = end_x - start_x;  // 1520 像素
 
         for (int layer = 0; layer < total_layers_; ++layer) {
-            // 使用固定间距，layer 0 在最底部，layer 11 在最顶部
-            float y = start_y - layer * LAYER_SPACING;
+            // 【修改】计算Y坐标，Boss层使用更大的间距
+            float y;
+            if (layer == total_layers_ - 1) {
+                // Boss层：使用更大的间距（120 + 100 = 220）
+                y = start_y - (layer - 1) * LAYER_SPACING - (LAYER_SPACING + BOSS_EXTRA_SPACING);
+            }
+            else {
+                // 普通层：正常间距
+                y = start_y - layer * LAYER_SPACING;
+            }
 
             const auto& node_ids = layers_[layer];
             int count = static_cast<int>(node_ids.size());
 
+            if (count == 0) continue;
+
+            std::vector<float> x_positions;
+
             if (count == 1) {
-                // 只有一个节点，居中显示
+                // 单个节点居中
                 float x = (start_x + end_x) / 2.0f;
-                for (const auto& id : node_ids) {
-                    nodes_[id].position.x = x;
-                    nodes_[id].position.y = y;
-                }
+                x_positions.push_back(x);
             }
             else if (count == 2) {
-                // 两个节点，左右对称分布，间距加大
-                float spacing = 2000.0f;  // 水平间距增大到 300
+                // 两个节点：对称分布，间距600像素（更宽松）
+                float spacing = 600.0f;
                 float center_x = (start_x + end_x) / 2.0f;
                 float x1 = center_x - spacing / 2.0f;
                 float x2 = center_x + spacing / 2.0f;
-                std::vector<float> xs = { x1, x2 };
-                int idx = 0;
-                for (const auto& id : node_ids) {
-                    nodes_[id].position.x = xs[idx];
-                    nodes_[id].position.y = y;
-                    idx++;
-                }
+
+                // 边界保护
+                x1 = std::max(start_x, std::min(end_x, x1));
+                x2 = std::max(start_x, std::min(end_x, x2));
+
+                x_positions.push_back(x1);
+                x_positions.push_back(x2);
             }
             else if (count == 3) {
-                // 三个节点，均匀分布，间距加大
-                float spacing = 1050.0f;  // 水平间距增大到 350
-                float center_x = (start_x + end_x) / 2.0f;
-                std::vector<float> xs = {
-                    center_x - spacing,
-                    center_x,
-                    center_x + spacing
-                };
-                int idx = 0;
-                for (const auto& id : node_ids) {
-                    nodes_[id].position.x = xs[idx];
-                    nodes_[id].position.y = y;
-                    idx++;
+                // 三个节点：均匀分布，总宽度1000像素（更宽松）
+                float total_width = 1000.0f;
+                float start_pos = (start_x + end_x - total_width) / 2.0f;
+                float spacing = total_width / (count - 1);  // 500像素间距
+
+                for (int i = 0; i < count; ++i) {
+                    float x = start_pos + i * spacing;
+                    x = std::max(start_x, std::min(end_x, x));
+                    x_positions.push_back(x);
                 }
+            }
+            else if (count == 4) {
+                // 四个节点：均匀分布，总宽度1200像素
+                float total_width = 1200.0f;
+                float start_pos = (start_x + end_x - total_width) / 2.0f;
+                float spacing = total_width / (count - 1);  // 400像素间距
+
+                for (int i = 0; i < count; ++i) {
+                    float x = start_pos + i * spacing;
+                    x = std::max(start_x, std::min(end_x, x));
+                    x_positions.push_back(x);
+                }
+            }
+            else {
+                // 5个或更多节点：动态计算，确保最小间距250像素
+                float max_total_width = std::min(AVAILABLE_WIDTH, static_cast<float>(count) * MIN_HORIZONTAL_SPACING);
+                float start_pos = (start_x + end_x - max_total_width) / 2.0f;
+                float spacing = max_total_width / (count - 1);
+
+                for (int i = 0; i < count; ++i) {
+                    float x = start_pos + i * spacing;
+                    x = std::max(start_x, std::min(end_x, x));
+                    x_positions.push_back(x);
+                }
+            }
+
+            // 应用X坐标
+            for (int i = 0; i < count; ++i) {
+                nodes_[node_ids[i]].position.x = x_positions[i];
+                nodes_[node_ids[i]].position.y = y;
             }
         }
 
-        // 微调：根据连接关系调整水平位置（让连线更自然）
+        // 微调：根据连接关系调整水平位置（降低权重，避免破坏间距）
         adjust_positions_by_connections();
 
-        // 额外：确保同一层的节点之间不会重叠
+        // 额外：强制确保同一层的节点之间满足最小间距（增大到220像素）
+        const float MIN_SPACING = 220.0f;
         for (int layer = 0; layer < total_layers_; ++layer) {
             const auto& node_ids = layers_[layer];
             int count = static_cast<int>(node_ids.size());
 
-            if (count >= 2) {
-                // 检查并调整同一层节点的水平间距
-                for (size_t i = 0; i < node_ids.size(); ++i) {
-                    for (size_t j = i + 1; j < node_ids.size(); ++j) {
-                        const auto& node_a = nodes_[node_ids[i]];
-                        const auto& node_b = nodes_[node_ids[j]];
-                        float dx = std::abs(node_a.position.x - node_b.position.x);
+            if (count < 2) continue;
 
-                        // 最小水平间距为 200 像素
-                        if (dx < 250.0f) {
-                            // 如果太近，向两边推开
-                            float adjust = (200.0f - dx) / 2.0f;
-                            nodes_[node_ids[i]].position.x -= adjust;
-                            nodes_[node_ids[j]].position.x += adjust;
+            // 多次迭代直到满足最小间距
+            for (int iteration = 0; iteration < 15; ++iteration) {
+                bool adjusted = false;
 
-                            // 边界限制
-                            nodes_[node_ids[i]].position.x = std::max(200.0f, std::min(1720.0f, nodes_[node_ids[i]].position.x));
-                            nodes_[node_ids[j]].position.x = std::max(200.0f, std::min(1720.0f, nodes_[node_ids[j]].position.x));
-                        }
+                // 按X坐标排序，便于处理
+                std::vector<std::pair<float, NodeId>> sorted_nodes;
+                for (const auto& id : node_ids) {
+                    sorted_nodes.push_back({ nodes_[id].position.x, id });
+                }
+                std::sort(sorted_nodes.begin(), sorted_nodes.end());
+
+                for (int i = 0; i < count - 1; ++i) {
+                    float& x_left = nodes_[sorted_nodes[i].second].position.x;
+                    float& x_right = nodes_[sorted_nodes[i + 1].second].position.x;
+                    float dx = x_right - x_left;
+
+                    if (dx < MIN_SPACING) {
+                        adjusted = true;
+                        float adjust = (MIN_SPACING - dx) / 2.0f;
+                        x_left -= adjust;
+                        x_right += adjust;
+
+                        // 边界限制
+                        x_left = std::max(start_x, std::min(end_x, x_left));
+                        x_right = std::max(start_x, std::min(end_x, x_right));
                     }
                 }
+
+                if (!adjusted) break;
             }
         }
     }
+
 
     void MapEngine::adjust_positions_by_connections() {
         for (int iter = 0; iter < 3; ++iter) {
