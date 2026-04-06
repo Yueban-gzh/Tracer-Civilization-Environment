@@ -1738,6 +1738,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (pause_menu_active_ || settings_panel_active_) {
             drawPauseMenuOverlay(window);
         }
+
+        // 与战斗界面一致：中央提示（如地图/商店内 showTip）
+        draw_center_tip(window);
     }
 
     void BattleUI::drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s) {

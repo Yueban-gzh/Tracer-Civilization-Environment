@@ -339,6 +339,8 @@ bool GameFlowController::initialize(CharacterClass cc) {
     register_all_card_effects(cardSystem_);
 
     playerState_.playerName = "Telys";
+    playerState_.potions.clear();
+    playerState_.potionSlotCount = 3;
     if (cc == CharacterClass::Ironclad) {
         playerState_.character = "Ironclad";
         playerState_.currentHp = 80;
@@ -386,11 +388,6 @@ bool GameFlowController::initialize(CharacterClass cc) {
     mapUI_.setMap(&mapEngine_);
     mapUI_.setCurrentLayer(0);
     mapUI_.set_allow_any_node_click(false);
-
-    // 初始化宝箱UI
-    if (!treasureUI_.initialize(&window_)) {
-        std::cerr << "宝箱 UI 初始化失败" << std::endl;
-    }
 
     if (hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
         hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
@@ -583,14 +580,7 @@ void GameFlowController::run() {
                 window_.close();
                 return;
             }
-            
-            // 处理宝箱UI事件
-            if (treasureUI_.isVisible()) {
-                if (treasureUI_.handleEvent(*ev)) {
-                    continue; // 如果宝箱UI处理了事件，跳过其他处理
-                }
-            }
-            
+
             if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
                     window_.close();
@@ -696,8 +686,6 @@ void GameFlowController::run() {
         mapUI_.draw();
         drawHud();
         draw_cheat_mode_hint();
-        if (treasureUI_.isVisible())
-            treasureUI_.draw();
         window_.display();
 
         if (exitToStartRequested_) {
@@ -2296,6 +2284,10 @@ bool GameFlowController::runShopScene() {
                 shop.playerGold = playerState_.gold;
                 statusText_ = "请选择一张牌进行净简移除。";
                 ui.setShopData(shop);
+            } else if (!shop.removeServiceSoldOut && !shop.removeServicePaid && shop.removeServicePrice > 0 &&
+                       playerState_.gold < shop.removeServicePrice) {
+                statusText_ = "金币不足，无法购买净简服务。";
+                hudBattleUi_.showTip(L"金币不足", 1.8f);
             }
         }
 
@@ -2317,7 +2309,10 @@ bool GameFlowController::runShopScene() {
                 }
             }
             const CardData* cardData = get_card_by_id(buyId);
-            if (cardData && price > 0 && playerState_.gold >= price) {
+            if (cardData && price > 0 && playerState_.gold < price) {
+                statusText_ = "金币不足，无法购买该牌。";
+                hudBattleUi_.showTip(L"金币不足", 1.8f);
+            } else if (cardData && price > 0 && playerState_.gold >= price) {
                 playerState_.gold -= price;
                 cardSystem_.add_to_master_deck(buyId);
                 shop.playerGold = playerState_.gold;
@@ -2338,9 +2333,16 @@ bool GameFlowController::runShopScene() {
         if (ui.pollShopBuyRelic(relicIdx)) {
             if (relicIdx >= 0 && relicIdx < static_cast<int>(shop.relicsForSale.size())) {
                 const ShopRelicOffer& o = shop.relicsForSale[static_cast<size_t>(relicIdx)];
-                if (playerState_.gold >= o.price &&
-                    std::find(playerState_.relics.begin(), playerState_.relics.end(), o.id) ==
-                        playerState_.relics.end()) {
+                const bool alreadyOwned =
+                    std::find(playerState_.relics.begin(), playerState_.relics.end(), o.id) !=
+                    playerState_.relics.end();
+                if (playerState_.gold < o.price) {
+                    statusText_ = "金币不足，无法购买遗物。";
+                    hudBattleUi_.showTip(L"金币不足", 1.8f);
+                } else if (alreadyOwned) {
+                    statusText_ = "已拥有该遗物。";
+                    hudBattleUi_.showTip(L"已拥有该遗物", 1.8f);
+                } else {
                     playerState_.gold -= o.price;
                     playerState_.relics.push_back(o.id);
                     if (o.id == "potion_belt")
@@ -2357,8 +2359,13 @@ bool GameFlowController::runShopScene() {
         if (ui.pollShopBuyPotion(potIdx)) {
             if (potIdx >= 0 && potIdx < static_cast<int>(shop.potionsForSale.size())) {
                 const ShopPotionOffer& o = shop.potionsForSale[static_cast<size_t>(potIdx)];
-                if (playerState_.gold >= o.price &&
-                    static_cast<int>(playerState_.potions.size()) < playerState_.potionSlotCount) {
+                if (playerState_.gold < o.price) {
+                    statusText_ = "金币不足，无法购买灵液。";
+                    hudBattleUi_.showTip(L"金币不足", 1.8f);
+                } else if (static_cast<int>(playerState_.potions.size()) >= playerState_.potionSlotCount) {
+                    statusText_ = "灵液槽已满，请先使用或丢弃灵液后再购买。";
+                    hudBattleUi_.showTip(L"灵液槽已满", 2.0f);
+                } else {
                     playerState_.gold -= o.price;
                     playerState_.potions.push_back(o.id);
                     shop.potionsForSale.erase(shop.potionsForSale.begin() + potIdx);
