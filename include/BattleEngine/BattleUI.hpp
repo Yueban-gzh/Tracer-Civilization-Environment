@@ -30,13 +30,13 @@ public:
     bool loadPotionTexture(const std::string& potion_id, const std::string& path);
     /** 加载玩家角色图片：path 如 assets/player/Ironclad.png，按 character id 缓存供绘制使用 */
     bool loadPlayerTexture(const std::string& character_id, const std::string& path);
-    /** 加载背景图：path 如 assets/backgrounds/bg.png，绘制时置于最底层（单张时用） */
+    /** 加载背景图：path 须含扩展名；支持 png/jpg/jpeg/jfif（与 SFML 一致） */
     bool loadBackground(const std::string& path);
-    /** 加载指定战斗的背景图：index 对应战斗序号，path 如 assets/backgrounds/bg_0.png */
+    /** 加载指定战斗的背景图：index 为槽位；path 须含扩展名 */
     bool loadBackgroundForBattle(int index, const std::string& path);
     /** 加载意图图标：key 为 Attack/Block/Strategy/Unknown，path 如 assets/intention/Attack.png */
     bool loadIntentionTexture(const std::string& key, const std::string& path);
-    /** 切换当前战斗背景：index 对应战斗序号（0=邪教徒, 1=胖地精, 2=绿虱虫, 3=红虱虫） */
+    /** 切换当前战斗背景：0/1/2 对应三张地图配置的先秦/汉唐/宋明（由 GameFlow 按当前地图索引设定） */
     void setBattleBackground(int index);
 
     bool handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos);  // 处理事件，返回 true 表示点击了结束回合

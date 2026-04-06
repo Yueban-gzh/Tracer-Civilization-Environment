@@ -1,6 +1,6 @@
 // src/MapEngine/MapUI.cpp
 #include "../../include/MapEngine/MapUI.hpp"
-#include "../Common/NodeTypes.hpp"
+#include "../../include/Common/NodeTypes.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>

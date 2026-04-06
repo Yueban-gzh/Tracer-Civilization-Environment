@@ -6,6 +6,7 @@
  */
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
+#include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.h"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
@@ -43,9 +44,8 @@ const sf::Texture* resolve_offer_icon_texture(const std::string& id, bool relicS
 
     sf::Texture tex;
     const std::string baseDir = relicStyle ? "assets/relics/" : "assets/potions/";
-    const std::string p1 = baseDir + id + ".png";
-    const std::string p2 = "./" + p1;
-    if (tex.loadFromFile(p1) || tex.loadFromFile(p2)) {
+    const std::string resolved = resolve_image_path(baseDir + id);
+    if (!resolved.empty() && tex.loadFromFile(resolved)) {
         auto [insIt, _] = cache.emplace(id, std::move(tex));
         return &insIt->second;
     }

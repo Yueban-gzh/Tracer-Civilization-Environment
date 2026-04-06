@@ -9,6 +9,7 @@ CXXFLAGS  = -std=c++17 -Wall -I include -I $(SFML_DIR)/include -D_DEBUG -DCONSOL
 LDFLAGS   = -L $(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio
 
 SRCS = src/main.cpp \
+       src/Common/ImagePath.cpp \
        src/DataLayer/JsonParser.cpp \
        src/DataLayer/DataLayer.cpp \
        src/CardSystem/CardSystem.cpp \
@@ -24,7 +25,18 @@ SRCS = src/main.cpp \
        src/Cheat/CheatEngine.cpp \
        src/Cheat/CheatPanel.cpp \
        src/Effects/CardEffects.cpp \
-       src/EventEngine/EventEngine.cpp
+       src/EventEngine/EventEngine.cpp \
+       src/EventEngine/EventShopRestUI.cpp \
+       src/EventEngine/EventShopRestUI_Event.cpp \
+       src/EventEngine/EventShopRestUI_Shop.cpp \
+       src/EventEngine/EventShopRestUI_Rest.cpp \
+       src/EventEngine/TreasureRoomLogic.cpp \
+       src/EventEngine/TreasureRoomUI.cpp \
+       src/MapEngine/MapEngine.cpp \
+       src/MapEngine/MapUI.cpp \
+       src/GameFlow/GameFlowController.cpp \
+       src/GameFlow/SaveSystem.cpp \
+       src/GameFlow/StartScreen.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 TARGET = build/Tracer_Civilization_Environment.exe

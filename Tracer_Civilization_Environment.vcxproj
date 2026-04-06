@@ -155,6 +155,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\Common\ImagePath.cpp" />
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />

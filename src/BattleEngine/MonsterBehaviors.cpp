@@ -396,13 +396,14 @@ void ensure_default_behaviors_registered() {
     static bool initialized = false;
     if (initialized) return;
     initialized = true;
-    auto& reg = behavior_registry();
-    // 默认使用 JSON 行为脚本：只要在 monster_behaviors.json 里配置了 id，就能通过 plan_from_json_behavior / execute_from_json_behavior 驱动。
-    reg["buguguiqi"]       = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
-    reg["dading"]          = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
-    reg["fashengjiangli"]  = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
-    reg["liejianshusheng"] = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
-    reg["yazhongzhihun"]   = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
+    load_json_demo_behaviors();
+    // 将 data/monster_behaviors.json 中每个有 cycle 的怪物 id 注册为 JSON 行为（无需在 C++ 里逐个列举）
+    const auto& jreg = json_behavior_registry();
+    auto&       reg  = behavior_registry();
+    for (const auto& kv : jreg) {
+        if (!kv.second.cycle.empty())
+            reg[kv.first] = MonsterBehaviorHooks{plan_from_json_behavior, execute_from_json_behavior};
+    }
 }
 
 const MonsterBehaviorHooks* find_behavior(const MonsterId& id) {
