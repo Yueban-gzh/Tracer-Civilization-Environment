@@ -1,11 +1,51 @@
 #include "GameFlow/GameFlowController.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
 #include "DataLayer/JsonParser.h"
 
 namespace tce {
+
+namespace {
+
+std::string json_escape(const std::string& s) {
+    std::string o;
+    o.reserve(s.size() + 8);
+    for (char c : s) {
+        if (c == '\\' || c == '"')
+            o += '\\';
+        o += c;
+    }
+    return o;
+}
+
+const char* node_type_to_json(NodeType t) {
+    switch (t) {
+    case NodeType::Elite: return "Elite";
+    case NodeType::Event: return "Event";
+    case NodeType::Rest: return "Rest";
+    case NodeType::Merchant: return "Merchant";
+    case NodeType::Treasure: return "Treasure";
+    case NodeType::Boss: return "Boss";
+    case NodeType::Enemy:
+    default: return "Enemy";
+    }
+}
+
+NodeType node_type_from_json(const std::string& s) {
+    if (s == "Elite") return NodeType::Elite;
+    if (s == "Event") return NodeType::Event;
+    if (s == "Rest") return NodeType::Rest;
+    if (s == "Merchant") return NodeType::Merchant;
+    if (s == "Treasure") return NodeType::Treasure;
+    if (s == "Boss") return NodeType::Boss;
+    return NodeType::Enemy;
+}
+
+} // namespace
 
 bool GameFlowController::saveRun(const std::string& path) const {
     namespace fs = std::filesystem;
@@ -29,14 +69,47 @@ bool GameFlowController::saveRun(const std::string& path) const {
         const std::string current_node_id = checkpointValid_ ? checkpointCurrentNodeId_ : "";
         const PlayerBattleState& p = checkpointValid_ ? checkpointPlayerState_ : playerState_;
 
+        const MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
+
         out << "{\n";
-        out << "  \"schema_version\": 1,\n";
+        out << "  \"schema_version\": 2,\n";
         out << "  \"run_rng_state\": \"" << rng_state << "\",\n";
 
-        // map
+        // map：完整节点快照 + 地图配置页索引，读档后可 1:1 复现整张随机地图
         out << "  \"map\": {\n";
+        out << "    \"page_index\": " << mapConfigManager_.getCurrentIndex() << ",\n";
+        out << "    \"total_layers\": " << snap.total_layers << ",\n";
         out << "    \"current_layer\": " << current_layer << ",\n";
-        out << "    \"current_node_id\": \"" << current_node_id << "\"\n";
+        out << "    \"current_node_id\": \"" << json_escape(current_node_id) << "\",\n";
+        out << "    \"nodes\": [\n";
+        for (size_t i = 0; i < snap.all_nodes.size(); ++i) {
+            const MapEngine::MapNode& n = snap.all_nodes[i];
+            if (i > 0) out << ",\n";
+            out << "      {";
+            out << "\"id\":\"" << json_escape(n.id) << "\",";
+            out << "\"type\":\"" << node_type_to_json(n.type) << "\",";
+            out << "\"content_id\":\"" << json_escape(n.content_id) << "\",";
+            out << "\"layer\":" << n.layer << ",";
+            const int px = static_cast<int>(std::lround(n.position.x * 100.0f));
+            const int py = static_cast<int>(std::lround(n.position.y * 100.0f));
+            out << "\"px\":" << px << ",\"py\":" << py << ",";
+            out << "\"prev\":[";
+            for (size_t j = 0; j < n.prev_nodes.size(); ++j) {
+                if (j > 0) out << ",";
+                out << "\"" << json_escape(n.prev_nodes[j]) << "\"";
+            }
+            out << "],\"next\":[";
+            for (size_t j = 0; j < n.next_nodes.size(); ++j) {
+                if (j > 0) out << ",";
+                out << "\"" << json_escape(n.next_nodes[j]) << "\"";
+            }
+            out << "],\"is_visited\":" << (n.is_visited ? "true" : "false") << ",";
+            out << "\"is_current\":" << (n.is_current ? "true" : "false") << ",";
+            out << "\"is_reachable\":" << (n.is_reachable ? "true" : "false") << ",";
+            out << "\"is_completed\":" << (n.is_completed ? "true" : "false");
+            out << "}";
+        }
+        out << "\n    ]\n";
         out << "  },\n";
 
         // player
@@ -130,16 +203,71 @@ bool GameFlowController::loadRun(const std::string& path) {
             }
         }
 
-        // --- 地图当前层与当前节点 ---
+        // --- 地图：完整快照（schema>=2）或仅当前节点（旧档）---
         std::string current_node_id;
         int         current_layer = 0;
+        bool        restored_full_map = false;
+
         if (const auto* mapVal = root.get_key("map")) {
             if (mapVal->is_object()) {
+                if (const auto* pi = mapVal->get_key("page_index")) {
+                    if (pi->is_int())
+                        mapConfigManager_.setCurrentIndex(pi->i);
+                }
+
                 if (const auto* layerVal = mapVal->get_key("current_layer")) {
                     if (layerVal->is_int()) current_layer = layerVal->i;
                 }
                 if (const auto* nodeVal = mapVal->get_key("current_node_id")) {
                     if (nodeVal->is_string()) current_node_id = nodeVal->s;
+                }
+
+                MapEngine::MapSnapshot snap;
+                if (const auto* tl = mapVal->get_key("total_layers")) {
+                    if (tl->is_int()) snap.total_layers = tl->i;
+                }
+
+                if (const auto* nodesArr = mapVal->get_key("nodes")) {
+                    if (nodesArr->is_array() && !nodesArr->arr.empty()) {
+                        snap.all_nodes.clear();
+                        snap.all_nodes.reserve(nodesArr->arr.size());
+                        for (const auto& nv : nodesArr->arr) {
+                            if (!nv.is_object()) continue;
+                            MapEngine::MapNode mn;
+                            if (const auto* v = nv.get_key("id")) mn.id = v->as_string();
+                            if (const auto* v = nv.get_key("type")) mn.type = node_type_from_json(v->as_string());
+                            if (const auto* v = nv.get_key("content_id")) mn.content_id = v->as_string();
+                            if (const auto* v = nv.get_key("layer")) mn.layer = v->as_int();
+                            if (const auto* v = nv.get_key("px")) mn.position.x = static_cast<float>(v->as_int()) * 0.01f;
+                            if (const auto* v = nv.get_key("py")) mn.position.y = static_cast<float>(v->as_int()) * 0.01f;
+                            if (const auto* parr = nv.get_key("prev"); parr && parr->is_array()) {
+                                for (const auto& pe : parr->arr) {
+                                    if (pe.is_string()) mn.prev_nodes.push_back(pe.s);
+                                }
+                            }
+                            if (const auto* narr = nv.get_key("next"); narr && narr->is_array()) {
+                                for (const auto& ne : narr->arr) {
+                                    if (ne.is_string()) mn.next_nodes.push_back(ne.s);
+                                }
+                            }
+                            if (const auto* v = nv.get_key("is_visited")) mn.is_visited = v->as_bool();
+                            if (const auto* v = nv.get_key("is_current")) mn.is_current = v->as_bool();
+                            if (const auto* v = nv.get_key("is_reachable")) mn.is_reachable = v->as_bool();
+                            if (const auto* v = nv.get_key("is_completed")) mn.is_completed = v->as_bool();
+                            if (!mn.id.empty()) snap.all_nodes.push_back(std::move(mn));
+                        }
+                        if (!snap.all_nodes.empty()) {
+                            if (snap.total_layers <= 0) {
+                                int maxL = 0;
+                                for (const auto& n : snap.all_nodes)
+                                    maxL = std::max(maxL, n.layer);
+                                snap.total_layers = maxL + 1;
+                            }
+                            mapEngine_.restore_from_snapshot(snap);
+                            mapUI_.setMap(&mapEngine_);
+                            restored_full_map = true;
+                        }
+                    }
                 }
             }
         }
@@ -187,14 +315,14 @@ bool GameFlowController::loadRun(const std::string& path) {
             }
         }
 
-        // --- 恢复地图当前位置 ---
-        if (!current_node_id.empty()) {
+        // --- 旧档或无快照：仅用节点 id 套在当前地图上 ---
+        if (!restored_full_map && !current_node_id.empty()) {
             mapEngine_.set_current_node(current_node_id);
             mapEngine_.set_node_visited(current_node_id);
             mapEngine_.update_reachable_nodes();
-            if (current_layer >= 0) {
-                mapUI_.setCurrentLayer(current_layer);
-            }
+        }
+        if (current_layer >= 0) {
+            mapUI_.setCurrentLayer(current_layer);
         }
 
         // --- 读出最后所在界面，决定 run() 启动时是否需要先跳转到具体界面 ---
@@ -218,7 +346,6 @@ bool GameFlowController::loadRun(const std::string& path) {
         captureCheckpointForCurrentNode();
 
         gameOver_ = false;
-        gameCleared_ = false;
         statusText_ = "继续旅程。";
         return true;
     } catch (...) {
@@ -227,4 +354,3 @@ bool GameFlowController::loadRun(const std::string& path) {
 }
 
 } // namespace tce
-

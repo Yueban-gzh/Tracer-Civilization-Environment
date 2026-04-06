@@ -467,6 +467,33 @@ namespace MapEngine {
         return snapshot;
     }
 
+    void MapEngine::restore_from_snapshot(const MapSnapshot& snapshot) {
+        nodes_.clear();
+        layers_.clear();
+        total_layers_ = snapshot.total_layers > 0 ? snapshot.total_layers : 12;
+
+        for (const MapNode& n : snapshot.all_nodes) {
+            nodes_[n.id] = n;
+        }
+
+        for (const auto& pair : nodes_) {
+            const MapNode& n = pair.second;
+            if (n.layer >= 0)
+                layers_[n.layer].push_back(n.id);
+        }
+        for (auto& kv : layers_) {
+            auto& ids = kv.second;
+            std::sort(ids.begin(), ids.end());
+        }
+
+        if (total_layers_ <= 0 && !layers_.empty()) {
+            int maxL = 0;
+            for (const auto& kv : layers_)
+                maxL = std::max(maxL, kv.first);
+            total_layers_ = maxL + 1;
+        }
+    }
+
     void MapEngine::set_node_visited(const NodeId& node_id) {
         auto it = nodes_.find(node_id);
         if (it != nodes_.end()) {

@@ -8,6 +8,7 @@
 #include "BattleStateSnapshot.hpp"              // 完整快照（成员内拷贝，避免 lastSnapshot_ 悬垂）
 #include "../CardSystem/CardSystem.hpp"         // 卡牌实例、牌组视图
 #include <SFML/Graphics.hpp>                    // 窗口、字体、图形绘制
+#include <array>
 #include <string>                               // 字符串
 #include <unordered_map>                        // 怪物 id→纹理 缓存
 #include <unordered_set>                        // 抽/弃牌动画：隐藏飞行中的手牌实例
@@ -57,6 +58,13 @@ public:
     /** 轮询一次是否请求打开牌组界面；outMode: 1=牌组(右上角)，2=抽牌堆(左下角)，3=弃牌堆(右下角)，4=消耗堆(弃牌堆上方) */
     bool pollOpenDeckViewRequest(int& outMode);
 
+    /** 主地图界面应隐藏右上角「地图」按钮；其它界面显示并可切换「仅浏览地图」浮层 */
+    void set_hide_top_right_map_button(bool hide) { hide_top_right_map_button_ = hide; }
+    /** 打开全屏地图浏览层时，屏蔽打牌/奖励等，仅保留顶栏与牌组/设置 */
+    void set_map_overlay_blocks_world_input(bool block) { map_overlay_blocks_world_input_ = block; }
+    /** 轮询：用户点击「地图」按钮，请求切换浏览地图浮层开/关 */
+    bool pollMapBrowseToggleRequest();
+
     /** 屏幕中央短时提示（如“抽牌堆为空”），seconds 为显示秒数 */
     void showTip(std::wstring text, float seconds = 1.2f);
 
@@ -89,6 +97,11 @@ public:
 
     /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
     void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    /** 仅绘制牌组/卡牌网格（不含顶栏/遗物栏），用于开始界面等外部复用 */
+    void drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s);
+
+    /** 顶栏显示爬塔层数：current 为地图逻辑层（0 起），total>0 时显示「第 a 层 / b」 */
+    void set_top_bar_map_floor(int current_layer_index, int total_layers = 0);
 
     /** 打开/关闭暂停菜单（设置面板），用于全局 HUD 与战斗界面共用 */
     void set_pause_menu_active(bool active);
@@ -99,13 +112,18 @@ public:
 private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
-    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水
+    void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
+    void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌与「查看升级」按钮命中矩形
+    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
     void drawCardSelectScreen(sf::RenderWindow& window);  // 选牌弹窗
-    /** 在指定矩形内绘制完整卡牌（与牌组视图一致：费用圈/类型/描述换行），供选牌中间预览等复用 */
+    /** 在指定矩形内绘制完整卡牌（牌组/手牌扇形/选牌/飞牌/奖励等共用）。手牌传 handSnap+handInst 显示实效费用与费用外圈；states 用于扇形旋转/缩放后的局部坐标 (x,y) 为牌左上角 */
     void drawDetailedCardAt(sf::RenderWindow& window, const std::string& card_id, float x, float y, float w, float h,
-                            const sf::Color& outlineColor, float outlineThickness = 8.f);
+                            const sf::Color& outlineColor, float outlineThickness = 8.f,
+                            const sf::RenderStates& states = sf::RenderStates::Default,
+                            const BattleStateSnapshot* handSnap = nullptr,
+                            const CardInstance* handInst = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
@@ -123,6 +141,8 @@ private:
     void tick_pile_card_anims_();
     void detect_pile_card_anims_(const BattleStateSnapshot& s);
     void draw_pile_card_anims_(sf::RenderWindow& window);
+    /** 底栏牌堆 / 结束回合、右上角按钮、顶栏药水槽的悬停插值（每帧调用一次） */
+    void update_interactive_hover_(bool bottom_bar_interactive, bool potion_slots_interactive);
     sf::Vector2f hand_fan_card_center_(size_t hand_index, size_t hand_count) const;
     void pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const;
     sf::Vector2f card_select_preview_center_for_fly_() const;
@@ -145,6 +165,20 @@ private:
     int                                 prev_exhaust_sz_for_anim_ = 0;
     bool                                pile_anim_snapshot_ready_ = false;
     int                                 pending_select_ui_pile_fly_remaining_ = 0;
+    bool                                pending_select_ui_force_center_fly_ = false;
+
+    sf::Clock                           ui_hover_anim_clock_{};
+    float                               hover_draw_pile_    = 0.f;
+    float                               hover_discard_pile_ = 0.f;
+    float                               hover_exhaust_pile_ = 0.f;
+    float                               hover_end_turn_     = 0.f;
+    float                               hover_btn_map_      = 0.f;
+    float                               hover_btn_deck_     = 0.f;
+    float                               hover_btn_settings_ = 0.f;
+    std::array<float, 5>                hover_potion_slot_{};  // 顶栏药水槽悬停 0~1（最多 5 槽）
+
+    int top_bar_map_layer_ = -1;   // 地图当前层（无当前节点时为 -1）
+    int top_bar_map_total_  = 0;   // 总层数；0 表示顶栏不显示「/ 总层」
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度
@@ -209,6 +243,8 @@ private:
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
+    // 卡牌立绘缓存（key -> texture），用于 artPanel 内的插画
+    std::unordered_map<std::string, sf::Texture> cardArtTextures_;
 
     // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
     bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
@@ -230,6 +266,19 @@ private:
     float                         deck_view_scroll_y_ = 0.f;   // 牌组视图纵向滚动偏移
     int                           pending_deck_view_mode_ = 0;  // 0 无，1 整个牌组，2 抽牌堆，3 弃牌堆
     sf::FloatRect                 deckViewReturnButton_;       // 牌组界面返回按钮矩形
+    // 牌组网格悬停：对“当前悬停卡牌”做平滑插值放大
+    sf::Clock                     deck_view_hover_clock_{};
+    int                           deck_view_hover_index_ = -1;
+    float                         deck_view_hover_blend_ = 0.f; // 0~1
+    /** 牌组网格中点击牌后的放大详情（再点牌面或空白关闭；「查看升级」切换原版/升级版预览） */
+    bool                          deck_view_detail_active_ = false;
+    CardInstance                  deck_view_detail_inst_{};
+    bool                          deck_view_detail_show_upgraded_ = false;
+    sf::FloatRect                 deck_view_detail_card_rect_{};
+    sf::FloatRect                 deck_view_detail_upgrade_btn_rect_{};
+    bool                          hide_top_right_map_button_ = false;
+    bool                          map_overlay_blocks_world_input_ = false;
+    int                           pending_map_browse_toggle_ = 0;
 
     // 奖励界面（战斗胜利后）
     bool                          reward_screen_active_ = false;

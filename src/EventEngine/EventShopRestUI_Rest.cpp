@@ -6,6 +6,7 @@
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace tce {
 using namespace esr_detail;
@@ -149,7 +150,7 @@ void EventShopRestUI::drawRestScreen(sf::RenderWindow& window) {
     const float scrollCy = blockCy - 75.f;  // 卷轴中心（整体稍下移、离两按钮更近）
     const float scrollTop = scrollCy - scrollH * 0.5f;
     if (restScrollLoaded_ && restScrollTexture_.getSize().x > 0) {
-        constexpr float scrollAlpha = 195u;
+        constexpr std::uint8_t scrollAlpha = 195;
         constexpr float scrollRotationDeg = 0.f;
         sf::Sprite scrollSpr(restScrollTexture_);
         const sf::Vector2u tsz = restScrollTexture_.getSize();

@@ -1,6 +1,6 @@
 // src/MapEngine/MapUI.cpp
 #include "../../include/MapEngine/MapUI.hpp"
-#include "../Common/NodeTypes.hpp"
+#include "../../include/Common/NodeTypes.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -466,6 +466,7 @@ namespace MapEngine {
     // MapUI.cpp - handleClick()
 
     std::string MapUI::handleClick(int mouseX, int mouseY) {
+        if (!m_nodesClickable) return "";
         if (!m_mapEngine || !m_window) return "";
 
         // 【关键】保存当前视图，设置滚动视图，转换坐标，然后恢复
@@ -503,7 +504,7 @@ namespace MapEngine {
 
             if (distance <= clickRadius) {
                 // 状态检查
-                if (node.is_completed) {
+                if (node.is_completed && !m_allowAnyNodeClick) {
                     std::cout << "节点 " << node.id << " 已完成" << std::endl;
                     return "";
                 }
@@ -511,7 +512,7 @@ namespace MapEngine {
                     std::cout << "已经在节点 " << node.id << std::endl;
                     return "";
                 }
-                if (!node.is_reachable && !(node.layer == 0 && !hasCurrent)) {
+                if (!m_allowAnyNodeClick && !node.is_reachable && !(node.layer == 0 && !hasCurrent)) {
                     std::cout << "节点 " << node.id << " 不可达" << std::endl;
                     return "";
                 }
