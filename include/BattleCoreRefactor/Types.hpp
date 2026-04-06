@@ -41,11 +41,30 @@ struct PlayerBattleState {
 
 // 怪物意图（与 MonsterBehaviors 共用）
 enum class MonsterIntentKind {
-    Attack, Block, Unknown, Buff, Debuff, Sleep, Stun,
+    Attack,
+    Mul_Attack,
+    Block,
+    Attack_And_Block,
+    Attack_And_Weak,
+    Attack_And_Vulnerable,
+    Ritual,
+    Strength_And_Player_Weak,
+    Strength_And_Block,
+    Strength_And_Player_Frail,
+    Player_Dexterity_Down,
+    Unknown,
+    Buff,
+    Debuff,
+    Sleep,
+    Stun,
 };
 struct MonsterIntent {
     MonsterIntentKind kind = MonsterIntentKind::Unknown;
     int value = 0;
+    /** 非空时悬停优先显示该别名（UTF-8）；JSON 可填 ui_label 或 display_name */
+    std::string ui_label;
+    /** 非空时覆盖意图图标的纹理查找 key；否则由 kind 决定默认 key */
+    std::string ui_icon_key;
 };
 
 // 场上怪物（战斗实例）

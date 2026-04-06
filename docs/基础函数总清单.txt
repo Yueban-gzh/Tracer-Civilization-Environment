@@ -1,0 +1,230 @@
+基础函数总清单（当前项目，函数名 - 作用）
+
+==================================================
+一、卡牌系统（CardSystem）
+==================================================
+init_master_deck - 初始化永久牌组
+get_master_deck - 获取永久牌组实例列表
+get_master_deck_card_ids - 获取永久牌组的 CardId 列表
+add_to_master_deck - 往永久牌组加一张牌
+remove_from_master_deck - 从永久牌组移除指定实例
+upgrade_card_in_master_deck - 升级永久牌组中的指定卡牌
+
+init_deck - 开战时初始化抽牌/手牌/弃牌/消耗四堆
+draw_cards - 抽指定张数手牌
+get_hand - 获取当前手牌
+add_combat_cost_discount_to_hand_index - 给手牌某张叠加本场减费
+remove_from_hand - 从手牌移除并返回一张牌
+add_to_hand - 把牌加入手牌
+add_to_discard - 把牌加入弃牌堆
+add_to_exhaust - 把牌加入消耗堆
+shuffle_discard_into_draw - 把弃牌堆洗回抽牌堆
+add_to_deck - 把牌实例加入抽牌堆
+remove_from_deck - 从战斗牌堆中移除实例
+get_deck_size - 获取抽牌堆数量
+get_discard_size - 获取弃牌堆数量
+get_exhaust_size - 获取消耗堆数量
+get_draw_pile - 获取抽牌堆列表
+get_discard_pile - 获取弃牌堆列表
+get_exhaust_pile - 获取消耗堆列表
+upgrade_card_in_deck - 升级战斗中的指定实例
+upgrade_all_cards_in_combat - 升级战斗内全部卡牌
+exhaust_all_hand_cards - 消耗全部手牌
+discard_random_hand_cards - 随机弃掉若干手牌
+discard_hand_card_by_instance_id - 按实例 id 弃掉手牌
+discard_all_hand_cards - 弃掉全部手牌
+exhaust_random_hand_cards - 随机消耗若干手牌
+exhaust_hand_card_by_instance_id - 按实例 id 消耗手牌
+exhaust_non_attack_hand_cards - 消耗手牌中所有非攻击牌
+draw_random_attack_cards_from_draw_pile - 从抽牌堆随机抓攻击牌
+draw_random_skill_cards_from_draw_pile - 从抽牌堆随机抓技能牌
+move_exhaust_card_to_hand - 把消耗堆里的牌移回手牌
+upgrade_random_cards_in_hand - 随机升级手牌若干张
+upgrade_all_cards_in_hand - 升级手牌全部可升级卡
+
+generate_to_hand - 生成临时牌到手牌
+generate_to_draw_pile - 生成临时牌到抽牌堆
+generate_to_discard_pile - 生成临时牌到弃牌堆
+generate_to_exhaust_pile - 生成临时牌到消耗堆
+
+register_card_effect - 注册卡牌效果函数
+execute_effect - 执行指定卡牌效果
+has_effect_registered - 判断卡牌是否已注册效果
+
+==================================================
+二、战斗上下文（EffectContext）
+==================================================
+deal_damage_to_player - 对玩家造成伤害（走战斗结算）
+deal_damage_to_monster - 对怪物造成伤害（走战斗结算）
+deal_damage_to_player_ignoring_block - 对玩家造成无视格挡伤害
+deal_damage_to_monster_ignoring_block - 对怪物造成无视格挡伤害
+
+apply_status_to_player - 给玩家施加状态
+apply_status_to_monster - 给怪物施加状态
+set_monster_status_stacks - 直接设置怪物某状态层数
+apply_status_to_all_monsters - 给全部怪物施加状态
+
+add_block_to_player - 给玩家加格挡
+add_block_to_monster - 给怪物加格挡
+get_effective_damage_dealt_by_player - 计算玩家修正后伤害
+get_effective_block_for_player - 计算玩家修正后格挡
+
+generate_to_discard_pile - 生成牌到弃牌堆
+generate_to_draw_pile - 生成牌到抽牌堆
+generate_to_draw_pile_combat_zero_skill - 生成牌到抽牌堆并标记技能0费
+generate_to_hand - 生成牌到手牌
+draw_cards - 执行抽牌
+add_energy_to_player - 给玩家加能量
+
+get_status_stacks_on_monster - 读取怪物状态层数
+get_status_stacks_on_player - 读取玩家状态层数
+get_monster_current_hp - 读取怪物当前生命
+get_monster_count - 读取怪物数量
+get_player_block - 读取玩家格挡
+get_player_energy - 读取玩家能量
+get_discard_pile_size - 读取弃牌堆数量
+get_draw_pile_size - 读取抽牌堆数量
+get_hand_card_count - 读取手牌数量
+shuffle_discard_into_draw - 触发弃牌洗回抽牌
+was_last_hand_card_skill - 判断最后入手牌是否技能
+
+exhaust_all_hand_cards - 效果层消耗全部手牌
+discard_random_hand_cards - 效果层随机弃牌
+discard_all_hand_cards - 效果层全弃手牌
+discard_selected_hand_cards - 效果层按选择弃牌
+exhaust_random_hand_cards - 效果层随机消耗手牌
+exhaust_selected_hand_cards - 效果层按选择消耗手牌
+exhaust_non_attack_hand_cards - 效果层消耗非攻击手牌
+upgrade_random_cards_in_hand - 效果层随机升级手牌
+upgrade_selected_cards_in_hand - 效果层按选择升级手牌
+upgrade_all_cards_in_hand - 效果层全升级手牌
+upgrade_all_cards_in_combat - 效果层全升级战斗牌
+add_exhaust_selected_to_hand - 效果层把选中消耗牌回手
+any_monster_intends_attack - 判断是否有怪物意图攻击
+target_monster_intends_attack - 判断目标怪物是否意图攻击
+grant_random_potion - 给予随机药水
+add_gold_to_player - 增加玩家金币
+uniform_int - 取闭区间随机整数
+uniform_size - 取闭区间随机 size_t
+
+==================================================
+三、战斗引擎（BattleEngine）
+==================================================
+start_battle - 开始一场战斗并初始化状态
+get_battle_state - 获取当前战斗状态快照
+clear_pending_damage_displays - 清除待显示伤害数字
+tick_damage_displays - 逐帧推进伤害数字动画
+play_card - 执行玩家打牌
+end_turn - 结束玩家回合
+is_battle_over - 判断战斗是否结束
+is_victory - 判断是否胜利
+get_reward_cards - 获取奖励卡牌候选
+grant_victory_gold - 发放胜利金币
+get_victory_gold - 计算胜利金币
+grant_reward_relic - 发放随机遗物
+remove_relic - 移除遗物并回滚效果
+add_card_to_master_deck - 战斗后加卡到永久牌组
+grant_reward_potion - 发放随机药水
+use_potion - 使用药水
+step_turn_phase - 推进回合阶段机
+set_effect_selected_instance_ids - 注入效果选择结果
+
+cheat_set_player_hp - 作弊设置玩家生命
+cheat_set_player_max_hp - 作弊设置玩家最大生命
+cheat_set_player_block - 作弊设置玩家格挡
+cheat_set_player_energy - 作弊设置玩家能量
+cheat_set_player_gold - 作弊设置玩家金币
+cheat_set_player_status - 作弊设置玩家状态
+cheat_remove_player_status - 作弊移除玩家状态
+cheat_set_monster_hp - 作弊设置怪物生命
+cheat_set_monster_max_hp - 作弊设置怪物最大生命
+cheat_set_monster_status - 作弊设置怪物状态
+cheat_remove_monster_status - 作弊移除怪物状态
+cheat_kill_monster - 作弊秒杀怪物
+cheat_add_relic - 作弊添加遗物
+cheat_remove_relic - 作弊移除遗物
+cheat_add_potion - 作弊添加药水
+cheat_remove_potion - 作弊移除药水
+cheat_add_hand - 作弊加手牌
+cheat_remove_hand - 作弊移除手牌
+
+get_status_stacks - 读取状态层数工具函数
+reduce_status_stacks - 减少状态层数工具函数
+merge_status_into_list - 合并状态到状态列表工具函数
+
+==================================================
+四、怪物行为（MonsterBehaviors）
+==================================================
+register_monster_behavior - 注册某个怪物行为钩子
+unregister_monster_behavior - 注销某个怪物行为钩子
+get_monster_intent - 获取怪物本回合显示意图
+execute_monster_behavior - 执行怪物本回合行为
+
+==================================================
+五、数据层（DataLayer）
+==================================================
+get_card_by_id - 按 id 查询卡牌静态数据
+get_monster_by_id - 按 id 查询怪物静态数据
+get_all_card_ids - 获取全部卡牌 id
+
+DataLayerImpl.load_cards - 加载 cards.json
+DataLayerImpl.load_monsters - 加载 monsters.json
+DataLayerImpl.load_events - 加载 events.json
+DataLayerImpl.get_event_by_id - 查询事件数据
+DataLayerImpl.get_root_event_ids - 获取根事件 id 列表
+DataLayerImpl.get_root_event_candidates_for_layer - 按层获取可用根事件
+DataLayerImpl.sort_cards_by_rarity - 按稀有度排序卡牌列表
+DataLayerImpl.sort_leaderboard - 按分数排序排行榜
+
+parse_json - 解析 JSON 字符串
+parse_json_file - 解析 JSON 文件
+
+==================================================
+六、效果注册（Effects）
+==================================================
+register_all_card_effects - 注册全部卡牌效果到 CardSystem
+register_all_status_effects - 注册全部状态效果到 BattleEngine
+
+==================================================
+七、UI / 适配 / 流程（常用）
+==================================================
+loadFont - 加载主字体
+loadChineseFont - 加载中文字体
+loadMonsterTexture - 加载怪物贴图
+loadRelicTexture - 加载遗物贴图
+loadPotionTexture - 加载药水贴图
+loadPlayerTexture - 加载玩家贴图
+loadBackground - 加载默认背景图
+loadBackgroundForBattle - 加载指定战斗背景图
+loadIntentionTexture - 加载意图图标
+setBattleBackground - 切换当前背景图
+handleEvent - 处理战斗 UI 事件
+setMousePosition - 更新鼠标位置
+draw - 绘制战斗 UI
+pollPlayCardRequest - 轮询打牌请求
+pollPotionRequest - 轮询药水请求
+set_deck_view_cards - 设置牌组弹窗数据
+set_deck_view_active - 打开/关闭牌组弹窗
+is_deck_view_active - 判断牌组弹窗是否打开
+pollOpenDeckViewRequest - 轮询打开牌组请求
+showTip - 显示中央提示
+set_reward_screen_active - 打开/关闭奖励界面
+set_reward_data - 设置奖励界面数据
+is_reward_screen_active - 判断奖励界面是否打开
+pollContinueToNextBattleRequest - 轮询继续下一战请求
+pollRewardCardPick - 轮询奖励选牌请求
+get_reward_card_id_at - 读取奖励位卡牌 id
+set_card_select_active - 打开/关闭选牌弹窗
+set_card_select_data - 设置选牌弹窗数据
+is_card_select_active - 判断选牌弹窗是否打开
+pollCardSelectPick - 轮询单选结果
+pollCardSelectResult - 轮询多选结果
+get_card_select_id_at - 读取候选位卡牌 id
+set_pending_select_ui_pile_fly - 设置选牌后飞牌动画
+
+make_snapshot_from_core_refactor - 把核心战斗状态转成 UI 快照
+SnapshotBattleUIDataProvider.get_snapshot - 向 UI 提供快照数据
+
+GameFlowController.initialize - 初始化主流程模块
+GameFlowController.run - 运行主流程循环
+

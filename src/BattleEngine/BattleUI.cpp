@@ -78,7 +78,7 @@ namespace tce {
         return s.energy >= effective_hand_card_energy_cost(cd, inst, &s);
     }
 
-    namespace {                                    // 文件内匿名命名空间：常量与辅助函数，仅本文件可见
+    namespace { // 文件内匿名命名空间；像素常量按 1920×1080 设计（与 BattleUI::kDesignWidth/Height 一致）
         constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72 像素
         constexpr float TOP_ROW_Y = 20.f;            // 顶栏内容起始 Y 坐标
         constexpr float TOP_ROW_H = 32.f;            // 顶栏内容行高
@@ -87,7 +87,7 @@ namespace tce {
         constexpr float RELICS_ICON_SZ = 55.f;       // 遗物图标 55×55 像素
         constexpr float RELICS_ICON_Y_OFFSET = 16.f;  // 遗物图标下移偏移量
         constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（屏幕高度 78% 处），留出空间给手牌
-        constexpr float HAND_AREA_BG_H = 220.f;     // 手牌区背景高度
+        // 手牌区条带高度 = height - handBgY（与战场下沿对齐），不再用固定 220，避免压住血条
         constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌图标贴底
         constexpr float SIDE_MARGIN = 24.f;          // 左右边距
 
@@ -116,8 +116,8 @@ namespace tce {
         constexpr float HP_BAR_W = 230.f;            // 血条最大长度（固定，与生命上限无关）
         constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
         constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
-        constexpr float MODEL_PLACEHOLDER_W = 150.f; // 玩家/怪物模型占位矩形宽度
-        constexpr float MODEL_PLACEHOLDER_H = 240.f;  // 玩家/怪物模型占位矩形高度
+        constexpr float MODEL_PLACEHOLDER_W = 180.f;      // 玩家/怪物模型占位矩形宽度（1:1 比例）
+        constexpr float MODEL_PLACEHOLDER_H = 180.f;      // 玩家/怪物模型占位矩形高度（1:1 比例）
         constexpr float MODEL_TOP_OFFSET = 90.f;      // 模型上边距中心，固定则上边框位置不变
         constexpr float MODEL_CENTER_Y_RATIO = 0.58f; // 模型中心 Y 占战场高度的比例
         constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 60.f;  // 模型+血条+效果栏整体下移量
@@ -270,11 +270,16 @@ namespace tce {
     }
 
     BattleUI::BattleUI(unsigned width, unsigned height) : width_(width), height_(height) {
-        const float btnCenterX = static_cast<float>(width_) - END_TURN_CENTER_X_BR;  // 以右下为原点算中心 x
-        const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR;  // 以右下为原点算中心 y
-        const float btnX = btnCenterX - END_TURN_W * 0.5f;  // 按钮左上角 x
-        const float btnY = btnCenterY - END_TURN_H * 0.5f;  // 按钮左上角 y
-        endTurnButton_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(END_TURN_W, END_TURN_H));  // 记录矩形供 handleEvent 点击检测
+        uiScaleX_ = static_cast<float>(width_) / kDesignWidth;
+        uiScaleY_ = static_cast<float>(height_) / kDesignHeight;
+        // 结束回合按钮：常量按 1920×1080，随 uiScale 缩放，避免非设计分辨率下命中框与绘制错位
+        const float btnCenterX = static_cast<float>(width_) - END_TURN_CENTER_X_BR * uiScaleX_;
+        const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR * uiScaleY_;
+        const float btnX = btnCenterX - (END_TURN_W * uiScaleX_) * 0.5f;
+        const float btnY = btnCenterY - (END_TURN_H * uiScaleY_) * 0.5f;
+        endTurnButton_ = sf::FloatRect(
+            sf::Vector2f(btnX, btnY),
+            sf::Vector2f(END_TURN_W * uiScaleX_, END_TURN_H * uiScaleY_));
     }
 
     bool BattleUI::loadFont(const std::string& path) {
@@ -580,6 +585,38 @@ namespace tce {
             return false;
         }
 
+        // 若暂停菜单 / 设置界面打开：仅处理暂停相关点击，屏蔽其它交互
+        if (pause_menu_active_ || settings_panel_active_) {
+            if (ev.is<sf::Event::MouseButtonPressed>()) {
+                auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
+                if (btn && btn->button == sf::Mouse::Button::Left) {
+                    if (!settings_panel_active_) {
+                        if (pauseResumeRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 1;   // 返回游戏
+                            pause_menu_active_ = false;
+                            return false;
+                        }
+                        if (pauseSaveQuitRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 2;   // 保存并退出
+                            // 保持菜单打开直到上层处理完关闭窗口
+                            return false;
+                        }
+                        if (pauseSettingsRect_.contains(mousePos)) {
+                            pending_pause_menu_choice_ = 3;   // 进入设置页面
+                            settings_panel_active_ = true;
+                            return false;
+                        }
+                    } else {
+                        if (settingsBackRect_.contains(mousePos)) {
+                            settings_panel_active_ = false;    // 返回到一级暂停菜单
+                            return false;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
         // 奖励界面：处理卡牌选择、跳过、继续；返回 false 表示事件已消费
         if (reward_screen_active_) {
             if (ev.is<sf::Event::MouseButtonPressed>()) {
@@ -645,15 +682,23 @@ namespace tce {
             return false;
         }
 
-        // 非牌组界面：点击顶栏「牌组」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应牌组视图
+        // 非牌组界面：点击顶栏「牌组」「设置」、左下抽牌堆、右下弃牌堆、弃牌堆上方消耗堆 → 打开对应视图
         if (ev.is<sf::Event::MouseButtonPressed>()) {
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (btn && btn->button == sf::Mouse::Button::Left) {
                 const float right = width_ - 28.f;
                 const float btnW = 58.f, btnH = 48.f, gap = 18.f;
-                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;  // 牌组按钮左边界
+                const float deckBtnLeft = right - (3.f * btnW + 2.f * gap) + btnW + gap;  // 牌组按钮左边界（中间按钮）
                 if (mousePos.x >= deckBtnLeft && mousePos.x <= deckBtnLeft + btnW && mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
                     pending_deck_view_mode_ = 1;  // 牌组（主牌组）
+                    return false;
+                }
+                // 顶栏右上角第三个按钮为“设置”：打开暂停菜单
+                const float settingsBtnLeft = right - btnW;  // 最右侧按钮
+                if (mousePos.x >= settingsBtnLeft && mousePos.x <= settingsBtnLeft + btnW &&
+                    mousePos.y >= TOP_ROW_Y && mousePos.y <= TOP_ROW_Y + btnH) {
+                    pause_menu_active_ = true;
+                    settings_panel_active_ = false;
                     return false;
                 }
                 const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
@@ -829,6 +874,21 @@ namespace tce {
         if (pending_deck_view_mode_ == 0) return false;
         outMode = pending_deck_view_mode_;
         pending_deck_view_mode_ = 0;
+        return true;
+    }
+
+    void BattleUI::set_pause_menu_active(bool active) {
+        pause_menu_active_ = active;
+        if (!active) {
+            settings_panel_active_ = false;
+            pending_pause_menu_choice_ = 0;
+        }
+    }
+
+    bool BattleUI::pollPauseMenuSelection(int& outChoice) {
+        if (pending_pause_menu_choice_ == 0) return false;
+        outChoice = pending_pause_menu_choice_;
+        pending_pause_menu_choice_ = 0;
         return true;
     }
 
@@ -1280,17 +1340,131 @@ namespace tce {
 
         drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏药水槽、遗物行图标）
 
-        // 手牌区背景色块（底栏上方）
-        float handBgY = height_ - HAND_AREA_BG_H;
-        sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), HAND_AREA_BG_H));
+        // 手牌区背景：顶边必须与 drawBattleCenter 战场下边界一致。若用 height 减固定像素，
+        // 会比 BOTTOM_BAR_Y_RATIO 算出的战场更早盖住屏幕，把玩家血条/状态栏压在下面。
+        const float battleTopBg = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+        const float battleHBg = (static_cast<float>(height_) * BOTTOM_BAR_Y_RATIO) - battleTopBg - 16.f;
+        const float handBgY = battleTopBg + battleHBg;
+        const float handStripH = static_cast<float>(height_) - handBgY;
+        sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), handStripH));
         handBg.setPosition(sf::Vector2f(0.f, handBgY));
         handBg.setFillColor(HAND_AREA_BG_COLOR);
         window.draw(handBg);
 
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
         draw_pile_card_anims_(window);
-        drawTopRight(window, s);                    // 右上角：地图/牌组/设置按钮、回合数
+        drawTopRight(window, s, true);              // 右上角：地图/牌组/设置按钮、回合数（战斗界面显示回合数）
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
+
+        // 战斗界面中的暂停菜单 / 设置界面（与全局 HUD 版本保持一致）
+        if (pause_menu_active_ || settings_panel_active_) {
+            drawPauseMenuOverlay(window);
+        }
+    }
+
+    void BattleUI::drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        if (!fontLoaded_) return;
+        // 顶栏背景色块与战斗界面保持一致
+        sf::RectangleShape topBg(sf::Vector2f(static_cast<float>(width_), TOP_BAR_BG_H));
+        topBg.setPosition(sf::Vector2f(0.f, 0.f));
+        topBg.setFillColor(TOP_BAR_BG_COLOR);
+        window.draw(topBg);
+
+        // 顶栏 + 遗物行 + 右上角三个按钮（非战斗界面不显示回合数）
+        drawTopBar(window, s);
+        drawRelicsRow(window, s);
+        drawTopRight(window, s, false);
+
+        // 在地图/事件/商店/休息/宝箱等界面上，同样支持顶栏遗物/药水的悬停提示
+        drawRelicPotionTooltip(window, s);
+
+        // 在地图/事件/商店/休息等界面上叠加牌组视图（含遮罩）
+        if (deck_view_active_) {
+            drawDeckView(window, s);
+        }
+
+        // 在地图/事件/商店/休息等界面上叠加暂停菜单 / 设置界面（布局与战斗界面保持一致）
+        if (pause_menu_active_ || settings_panel_active_) {
+            drawPauseMenuOverlay(window);
+        }
+    }
+
+    void BattleUI::drawPauseMenuOverlay(sf::RenderWindow& window) {
+        const float viewTop    = TOP_BAR_BG_H;
+        const float viewHeight = static_cast<float>(height_) - viewTop;
+        sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+        dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+        dimBg.setFillColor(sf::Color(10, 10, 16, 220));
+        window.draw(dimBg);
+
+        const float panelW = 720.f;
+        const float panelH = settings_panel_active_ ? 460.f : 400.f;
+        const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
+        const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+
+        sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
+        panel.setPosition(sf::Vector2f(panelX, panelY));
+        panel.setFillColor(sf::Color(32, 30, 40, 255));
+        panel.setOutlineColor(sf::Color(200, 190, 150));
+        panel.setOutlineThickness(2.f);
+        window.draw(panel);
+
+        const float titleY = panelY + 36.f;
+        sf::Text title(fontForChinese(), settings_panel_active_ ? sf::String(L"设置") : sf::String(L"暂停"), 42);
+        title.setFillColor(sf::Color(245, 240, 225));
+        const sf::FloatRect tb = title.getLocalBounds();
+        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+        title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, titleY));
+        window.draw(title);
+
+        if (!settings_panel_active_) {
+            const float btnW = 320.f;
+            const float btnH = 60.f;
+            const float firstY = panelY + 120.f;
+            const float gap = 24.f;
+            const float centerX = panelX + panelW * 0.5f;
+
+            auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
+                const float x = centerX - btnW * 0.5f;
+                outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+                btn.setPosition(sf::Vector2f(x, y));
+                btn.setFillColor(sf::Color(70, 65, 75));
+                btn.setOutlineColor(sf::Color(170, 160, 130));
+                btn.setOutlineThickness(2.f);
+                window.draw(btn);
+
+                sf::Text t(fontForChinese(), sf::String(label), 26);
+                t.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect lb = t.getLocalBounds();
+                t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+                window.draw(t);
+            };
+
+            drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
+            drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
+            drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+        } else {
+            const float btnW = 240.f;
+            const float btnH = 56.f;
+            const float x = panelX + (panelW - btnW) * 0.5f;
+            const float y = panelY + panelH - btnH - 40.f;
+            settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+            sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
+            btn.setPosition(sf::Vector2f(x, y));
+            btn.setFillColor(sf::Color(70, 65, 75));
+            btn.setOutlineColor(sf::Color(170, 160, 130));
+            btn.setOutlineThickness(2.f);
+            window.draw(btn);
+
+            sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
+            t.setFillColor(sf::Color(235, 230, 220));
+            const sf::FloatRect lb = t.getLocalBounds();
+            t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+            window.draw(t);
+        }
     }
 
     // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽（1~5 槽）、层数占位、难度占位
@@ -1920,6 +2094,16 @@ namespace tce {
 
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        // 半透明遮罩：覆盖顶栏下方整个区域，让下层内容变暗
+        {
+            const float viewTop    = TOP_BAR_BG_H;
+            const float viewHeight = static_cast<float>(height_) - viewTop;
+            sf::RectangleShape dimBg(sf::Vector2f(static_cast<float>(width_), viewHeight));
+            dimBg.setPosition(sf::Vector2f(0.f, viewTop));
+            dimBg.setFillColor(sf::Color(10, 10, 16, 210)); // 深灰略透明
+            window.draw(dimBg);
+        }
+
         constexpr float DECK_CARD_W = 190.f;           // 牌组界面卡牌宽
         constexpr float DECK_CARD_H = 300.f;          // 牌组界面卡牌高
         constexpr float COL_CENTER_TO_CENTER = 260.f; // 单行内相邻牌中心间距
@@ -2160,7 +2344,7 @@ namespace tce {
 
         // ---------- 怪物区：1~3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
         // monsterModelRects_、monsterIntentRects_ 供出牌瞄准与点击检测
-        constexpr float MONSTER_GAP = 30.f;
+        constexpr float MONSTER_GAP = 80.f;
         float mModelTop = modelCenterY - MODEL_TOP_OFFSET;
         const size_t nMonsters = s.monsters.size();
         monsterModelRects_.clear();
@@ -2182,11 +2366,22 @@ namespace tce {
             sf::FloatRect intentRect(sf::Vector2f(intentLeft, intentTop), sf::Vector2f(intentSz, intentSz));
             monsterIntentRects_.push_back(intentRect);
             // 意图图标：优先用图片，无图则灰色圆球占位
-            const char* intentKey = "Unknown";
-            if (m.currentIntent.kind == MonsterIntentKind::Attack) intentKey = "Attack";
-            else if (m.currentIntent.kind == MonsterIntentKind::Block) intentKey = "Block";
-            else if (m.currentIntent.kind == MonsterIntentKind::Buff) intentKey = "Strategy";
-            auto itTex = intentionTextures_.find(intentKey);
+            std::string iconLookup;
+            if (!m.currentIntent.ui_icon_key.empty())
+                iconLookup = m.currentIntent.ui_icon_key;
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack) iconLookup = "Attack";
+            else if (m.currentIntent.kind == MonsterIntentKind::Mul_Attack) iconLookup = "Attack";
+            else if (m.currentIntent.kind == MonsterIntentKind::Block) iconLookup = "Block";
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Block) iconLookup = "AttackBlock";
+            else if (m.currentIntent.kind == MonsterIntentKind::Ritual) iconLookup = "Ritual";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Weak) iconLookup = "Strategy";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Block) iconLookup = "AttackBlock";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Frail) iconLookup = "Strategy";
+            else if (m.currentIntent.kind == MonsterIntentKind::Player_Dexterity_Down) iconLookup = "Debuff";
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak) iconLookup = "SmallKnife"; // 兼容旧资源名，可用 ui_icon 覆盖
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable) iconLookup = "Unknown";
+            else if (m.currentIntent.kind == MonsterIntentKind::Buff) iconLookup = "Strategy";
+            auto itTex = intentionTextures_.find(iconLookup);
             if (itTex != intentionTextures_.end()) {
                 sf::Sprite intentSprite(itTex->second);
                 const sf::FloatRect tr = intentSprite.getLocalBounds();
@@ -2205,31 +2400,74 @@ namespace tce {
             }
             if (intentRect.contains(mousePos_)) {
                 sf::String intentStr;
-                switch (m.currentIntent.kind) {
-                case MonsterIntentKind::Attack:
-                    intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
-                    break;
-                case MonsterIntentKind::Block:
-                    intentStr = sf::String(L"防御");
-                    break;
-                case MonsterIntentKind::Buff:
-                    intentStr = sf::String(L"强化");
-                    break;
-                case MonsterIntentKind::Debuff:
-                    intentStr = (m.currentIntent.value > 0)
-                        ? (sf::String(L"易伤 ") + sf::String(std::to_wstring(m.currentIntent.value)))
-                        : sf::String(L"施加负面效果");
-                    break;
-                case MonsterIntentKind::Sleep:
-                    intentStr = sf::String(L"睡眠");
-                    break;
-                case MonsterIntentKind::Stun:
-                    intentStr = sf::String(L"晕眩");
-                    break;
-                case MonsterIntentKind::Unknown:
-                default:
-                    intentStr = sf::String(L"？？？");
-                    break;
+                if (!m.currentIntent.ui_label.empty()) {
+                    intentStr = sf::String::fromUtf8(m.currentIntent.ui_label.begin(), m.currentIntent.ui_label.end());
+                    const bool appendVal =
+                        (m.currentIntent.kind == MonsterIntentKind::Attack
+                            || m.currentIntent.kind == MonsterIntentKind::Mul_Attack
+                            || m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak
+                            || m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable
+                            || (m.currentIntent.kind == MonsterIntentKind::Ritual && m.currentIntent.value > 0)
+                            || (m.currentIntent.kind == MonsterIntentKind::Debuff && m.currentIntent.value > 0))
+                        && m.currentIntent.value != 0;
+                    if (appendVal)
+                        intentStr += sf::String(L" ") + sf::String(std::to_wstring(m.currentIntent.value));
+                } else {
+                    switch (m.currentIntent.kind) {
+                    case MonsterIntentKind::Attack:
+                        intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Mul_Attack:
+                        intentStr = sf::String(L"连击总伤害 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Block:
+                        intentStr = sf::String(L"防御");
+                        break;
+                    case MonsterIntentKind::Attack_And_Block:
+                        intentStr = sf::String(L"攻击并防御");
+                        break;
+                    case MonsterIntentKind::Attack_And_Weak:
+                        intentStr = sf::String(L"小刀 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Attack_And_Vulnerable:
+                        intentStr = sf::String(L"攻击+易伤 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        break;
+                    case MonsterIntentKind::Ritual:
+                        intentStr = (m.currentIntent.value > 0)
+                            ? (sf::String(L"仪式 +") + sf::String(std::to_wstring(m.currentIntent.value)))
+                            : sf::String(L"仪式");
+                        break;
+                    case MonsterIntentKind::Strength_And_Player_Weak:
+                        intentStr = sf::String(L"力量+虚弱");
+                        break;
+                    case MonsterIntentKind::Strength_And_Block:
+                        intentStr = sf::String(L"力量+格挡");
+                        break;
+                    case MonsterIntentKind::Strength_And_Player_Frail:
+                        intentStr = sf::String(L"力量+脆弱");
+                        break;
+                    case MonsterIntentKind::Player_Dexterity_Down:
+                        intentStr = sf::String(L"敏捷下降");
+                        break;
+                    case MonsterIntentKind::Buff:
+                        intentStr = sf::String(L"强化");
+                        break;
+                    case MonsterIntentKind::Debuff:
+                        intentStr = (m.currentIntent.value > 0)
+                            ? (sf::String(L"易伤 ") + sf::String(std::to_wstring(m.currentIntent.value)))
+                            : sf::String(L"施加负面效果");
+                        break;
+                    case MonsterIntentKind::Sleep:
+                        intentStr = sf::String(L"睡眠");
+                        break;
+                    case MonsterIntentKind::Stun:
+                        intentStr = sf::String(L"晕眩");
+                        break;
+                    case MonsterIntentKind::Unknown:
+                    default:
+                        intentStr = sf::String(L"？？？");
+                        break;
+                    }
                 }
                 const float tipPad = 8.f;
                 sf::Text tipText(fontForChinese(), intentStr, 18);
@@ -2350,7 +2588,7 @@ namespace tce {
                 int displayIdx = 0;
                 for (size_t si = 0; si < mStatuses.size(); ++si) {
                     const auto& st = mStatuses[si];
-                    if (st.id == "red_louse_history" || st.id == "green_louse_history") continue;  // 内部追踪，不显示
+                    if (st.id.size() >= 8 && st.id.compare(st.id.size() - 8, 8, "_history") == 0) continue;  // 内部追踪，不显示
                     const size_t col = static_cast<size_t>(displayIdx) % 8u;
                     const size_t row = static_cast<size_t>(displayIdx) / 8u;
                     const float mstX = mstBaseX + static_cast<float>(col) * statusGapX;
@@ -2850,9 +3088,7 @@ namespace tce {
                     const float cardLeft = cx_i - CARD_W * 0.5f;
                     const float cardTop = cy_i - CARD_H * 0.5f;
                     if (mousePos_.x >= cardLeft && mousePos_.x <= cardLeft + CARD_W && mousePos_.y >= cardTop && mousePos_.y <= cardTop + CARD_H) {
-                        // 普通出牌：不可打出/能量不够的牌不参与悬停，无法选中
-                        if (!card_select_active_ && !hand_index_playable_now(s, i))
-                            continue;
+                        // 普通出牌：所有手牌都可以悬停预览；是否可打出在点击时判断
                         hoverIndex = i;
                         // 左键点击时开始选中该牌（由 handleEvent 设置 selectedHandIndex_）
                         break;
@@ -3082,12 +3318,6 @@ namespace tce {
             draw_wrapped_text(window, fontForChinese(), descStr, 15,
                               sf::Vector2f(descX, descY), descMaxW, descMaxH,
                               sf::Color(240, 238, 235), states);
-            // 普通战斗：不可打出或能量不足时压暗（选牌弃牌/消耗界面不过滤，不压暗）
-            if (!card_select_active_ && !hand_index_playable_now(s, static_cast<int>(idx))) {
-                sf::RectangleShape dimMask(sf::Vector2f(w, h));
-                dimMask.setFillColor(sf::Color(12, 12, 18, 150));
-                window.draw(dimMask, states);
-            }
             };
 
         if (handSelectReshuffleFan) {
@@ -3315,8 +3545,8 @@ namespace tce {
         window.draw(btnText);
     }
 
-    // 右上角：地图、牌组、设置三个按钮 + 回合数（顶栏下方居中）
-    void BattleUI::drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+    // 右上角：地图、牌组、设置三个按钮；可选在下方显示“回合 N”
+    void BattleUI::drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter) {
         const float btnW = 58.f;
         const float btnH = 48.f;
         const float gap = 18.f;
@@ -3343,18 +3573,20 @@ namespace tce {
         drawBtn(L"牌组");
         drawBtn(L"设置");
 
-        // 顶栏下方显示当前回合数，居中对齐在这三个按钮下方
-        const float groupWidth = btnW * 3.f + gap * 2.f;  // 按钮组总宽
-        const float turnCenterX = right - groupWidth * 0.5f;
-        const float turnRowY = rowY + btnH + 18.f;  // 回合文本再往下
-        int turn = std::max(1, s.turnNumber);
-        std::wstring turnStr = L"回合 " + std::to_wstring(turn);
-        sf::Text turnText(fontForChinese(), sf::String(turnStr), 38);  // 字体变大
-        turnText.setFillColor(sf::Color(220, 210, 200));
-        const sf::FloatRect tb = turnText.getLocalBounds();
-        turnText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
-        turnText.setPosition(sf::Vector2f(turnCenterX, turnRowY));
-        window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
+        if (showTurnCounter) {
+            // 顶栏下方显示当前回合数，居中对齐在这三个按钮下方
+            const float groupWidth = btnW * 3.f + gap * 2.f;  // 按钮组总宽
+            const float turnCenterX = right - groupWidth * 0.5f;
+            const float turnRowY = rowY + btnH + 18.f;  // 回合文本再往下
+            int turn = std::max(1, s.turnNumber);
+            std::wstring turnStr = L"回合 " + std::to_wstring(turn);
+            sf::Text turnText(fontForChinese(), sf::String(turnStr), 38);  // 字体变大
+            turnText.setFillColor(sf::Color(220, 210, 200));
+            const sf::FloatRect tb = turnText.getLocalBounds();
+            turnText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
+            turnText.setPosition(sf::Vector2f(turnCenterX, turnRowY));
+            window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
+        }
     }
 
 } // namespace tce

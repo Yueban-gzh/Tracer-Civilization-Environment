@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_rng_state": "16483435313299636534",
+  "map": {
+    "current_layer": 0,
+    "current_node_id": "0-1"
+  },
+  "player": {
+    "name": "Telys",
+    "character_id": "Ironclad",
+    "current_hp": 80,
+    "max_hp": 80,
+    "block": 0,
+    "gold": 99,
+    "max_energy": 3,
+    "potion_slots": 3,
+    "potions": ["poison_potion", "block_potion", "strength_potion"],
+    "relics": ["burning_blood"],
+    "master_deck": ["armaments", "exhume", "burning_pact", "true_grit", "survivor", "acrobatics", "flame_barrier", "second_wind", "spot_weakness", "prepared", "all_out_attack", "calculated_gamble", "concentrate", "piercing_wail", "sneaky_strike", "venomology", "noxious_fumes", "reflex", "tactician", "tools_of_the_trade", "well_laid_plans"]
+  },
+  "last_scene": "battle"
+}

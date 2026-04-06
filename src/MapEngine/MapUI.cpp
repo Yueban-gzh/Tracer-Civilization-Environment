@@ -1,6 +1,6 @@
 // src/MapEngine/MapUI.cpp
 #include "../../include/MapEngine/MapUI.hpp"
-#include "Common/NodeTypes.hpp"
+#include "../Common/NodeTypes.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -33,7 +33,7 @@ namespace MapEngine {
         }
     }
 
- 
+
 
     void MapUI::setNodeColors() {
         colorCurrent = sf::Color(0, 0, 0);           // 黑色 - 当前节点
@@ -164,12 +164,28 @@ namespace MapEngine {
 
         m_window = window;
 
+        // 初始化滚动变量
+        m_viewOffset = 0.0f;
+        m_minOffset = 0.0f;
+        m_maxOffset = 0.0f;
+
         if (!loadFonts()) {
             std::cerr << "警告：无法加载字体，将不显示文字" << std::endl;
             m_showNodeIds = false;
         }
 
         loadAllNodeTextures();
+
+        // 【新增】加载已访问节点覆盖层图片
+        if (!m_visitedOverlayTexture.loadFromFile("assets/images/visited_overlay.png")) {
+            std::cerr << "警告：无法加载已访问节点覆盖层图片 assets/images/visited_overlay.png" << std::endl;
+            m_visitedOverlayLoaded = false;
+        }
+        else {
+            m_visitedOverlayLoaded = true;
+            std::cout << "成功加载已访问节点覆盖层图片" << std::endl;
+        }
+
         return true;
     }
 
@@ -190,6 +206,46 @@ namespace MapEngine {
 
     void MapUI::setMap(const MapEngine* engine) {
         m_mapEngine = engine;
+
+        if (engine) {
+            auto snapshot = engine->get_map_snapshot();
+            float minY = 10000.0f, maxY = -10000.0f;
+            for (const auto& node : snapshot.all_nodes) {
+                minY = std::min(minY, node.position.y);
+                maxY = std::max(maxY, node.position.y);
+            }
+
+            const float mapHeight = maxY - minY;
+            const float windowHeight =
+                m_window ? static_cast<float>(m_window->getSize().y) : 1080.0f;
+            // 顶部状态栏会遮挡地图可见区域，需要预留滚动余量。
+            constexpr float kTopHudReserve = 110.0f;
+            constexpr float kBottomReserve = 24.0f;
+            const float visibleHeight = std::max(200.0f, windowHeight - kTopHudReserve - kBottomReserve);
+
+            // 由于层间距增大到 120，12层总高度 = 11 * 120 = 1320 像素
+            // 加上起始偏移，总高度约 1400 像素
+            if (mapHeight > visibleHeight) {
+                // 允许向上滚动看到 Boss 层
+                m_minOffset = -100.0f;
+                // 允许向下滚动看到底部
+                m_maxOffset = mapHeight - visibleHeight + 150.0f;
+            }
+            else {
+                m_minOffset = -50.0f;
+                m_maxOffset = visibleHeight - mapHeight + 50.0f;
+            }
+
+            // 初始偏移为0，显示底部（第0层）
+            m_viewOffset = 0.0f;
+
+            std::cout << "=== 地图滚动范围 ===" << std::endl;
+            std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
+            std::cout << "地图高度: " << mapHeight << std::endl;
+            std::cout << "窗口高度: " << windowHeight << " 可见高度: " << visibleHeight << std::endl;
+            std::cout << "滚动范围: [" << m_minOffset << ", " << m_maxOffset << "]" << std::endl;
+            std::cout << "===================" << std::endl;
+        }
     }
 
     void MapUI::setCurrentLayer(int layer) {
@@ -221,10 +277,11 @@ namespace MapEngine {
             auto fromNode = m_mapEngine->get_node_by_id(edge.from);
             auto toNode = m_mapEngine->get_node_by_id(edge.to);
 
-            // 显式初始化避免不同 SFML 版本对 sf::Vertex 构造函数签名差异
             sf::Vertex line[2];
+            // 第一个顶点：位置 + 颜色
             line[0].position = sf::Vector2f(fromNode.position.x, fromNode.position.y);
             line[0].color = colorEdge;
+            // 第二个顶点：位置 + 颜色
             line[1].position = sf::Vector2f(toNode.position.x, toNode.position.y);
             line[1].color = colorEdge;
 
@@ -273,6 +330,27 @@ namespace MapEngine {
                 sprite.setPosition(sf::Vector2f(node.position.x, node.position.y));
 
                 m_window->draw(sprite);
+
+                // 【新增】已访问节点覆盖图片
+                if (m_visitedOverlayLoaded && node.is_visited && !node.is_current) {
+                    sf::Sprite overlaySprite(m_visitedOverlayTexture);
+                    sf::FloatRect bounds = overlaySprite.getLocalBounds();
+
+                    // 缩放覆盖层匹配节点视觉大小（可调整系数）
+                    float scale = (displayRadius * 3.5f) / bounds.size.x;
+                    overlaySprite.setScale(sf::Vector2f(scale, scale));
+
+                    // 居中定位
+                    sf::FloatRect scaledBounds = overlaySprite.getLocalBounds();
+                    overlaySprite.setOrigin(sf::Vector2f(scaledBounds.size.x / 2.0f,
+                        scaledBounds.size.y / 2.0f));
+                    overlaySprite.setPosition(sf::Vector2f(node.position.x, node.position.y));
+
+                    // 可选：半透明效果（0-255，255为不透明）
+                    overlaySprite.setColor(sf::Color(255, 255, 255, 220));
+
+                    m_window->draw(overlaySprite);
+                }
 
                 if (node.is_current) {
                     sf::CircleShape blackOutline(displayRadius + 3);
@@ -362,38 +440,91 @@ namespace MapEngine {
     void MapUI::draw() {
         if (!m_window) return;
 
-        // 先绘制背景（如果存在）
+        // 先绘制背景（在原视图，不滚动）
+        sf::View originalView = m_window->getView();
+
         if (m_backgroundLoaded && m_backgroundSprite) {
             m_window->draw(*m_backgroundSprite);
         }
-     
-        // 再绘制地图内容
+
+        // 创建滚动视图
+        sf::View scrollView = originalView;
+        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+        m_window->setView(scrollView);
+
+        // 绘制地图内容
         if (m_mapEngine) {
             drawEdges();
             drawNodes();
         }
 
-        // 最后绘制图例
+        // 恢复原视图绘制图例
+        m_window->setView(originalView);
         drawLegend();
-
     }
 
+    // MapUI.cpp - handleClick()
+
     std::string MapUI::handleClick(int mouseX, int mouseY) {
-        if (!m_mapEngine) return "";
+        if (!m_mapEngine || !m_window) return "";
+
+        // 【关键】保存当前视图，设置滚动视图，转换坐标，然后恢复
+        sf::View originalView = m_window->getView();
+
+        // 创建与 draw() 中相同的滚动视图
+        sf::View scrollView = originalView;
+        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+
+        // 使用滚动视图转换鼠标坐标
+        m_window->setView(scrollView);
+        sf::Vector2f worldPos = m_window->mapPixelToCoords(sf::Vector2i(mouseX, mouseY));
+
+        // 立即恢复原始视图（不影响后续绘制）
+        m_window->setView(originalView);
+
+        // 获取当前是否有已选节点
+        bool hasCurrent = m_mapEngine->hasCurrentNode();
 
         auto snapshot = m_mapEngine->get_map_snapshot();
 
         for (const auto& node : snapshot.all_nodes) {
-            float dx = mouseX - node.position.x;
-            float dy = mouseY - node.position.y;
+            // 计算视觉半径
+            float visualRadius = NODE_RADIUS;
+            if (node.type == NodeType::Boss) visualRadius = NODE_RADIUS * 3.5f;
+            else if (node.type == NodeType::Elite) visualRadius = NODE_RADIUS * 1.8f;
+            else if (node.type == NodeType::Enemy) visualRadius = NODE_RADIUS * 0.8f;
+            else if (node.type == NodeType::Event) visualRadius = NODE_RADIUS * 0.6f;
+
+            float clickRadius = visualRadius + 30.0f;  // 增大点击范围
+
+            float dx = worldPos.x - node.position.x;
+            float dy = worldPos.y - node.position.y;
             float distance = std::sqrt(dx * dx + dy * dy);
 
-            if (distance <= NODE_RADIUS + 10) {
-                std::cout << "点击到节点: " << node.id << std::endl;
+            if (distance <= clickRadius) {
+                // 状态检查
+                if (node.is_completed) {
+                    std::cout << "节点 " << node.id << " 已完成" << std::endl;
+                    return "";
+                }
+                if (node.is_current) {
+                    std::cout << "已经在节点 " << node.id << std::endl;
+                    return "";
+                }
+                if (!node.is_reachable && !(node.layer == 0 && !hasCurrent)) {
+                    std::cout << "节点 " << node.id << " 不可达" << std::endl;
+                    return "";
+                }
+
+                std::cout << "点击到节点: " << node.id << " 类型:" << static_cast<int>(node.type) << std::endl;
                 return node.id;
             }
         }
         return "";
+    }
+
+    void MapUI::scroll(float delta) {
+        m_viewOffset = std::max(m_minOffset, std::min(m_maxOffset, m_viewOffset + delta));
     }
 
 }

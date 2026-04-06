@@ -1,166 +1,374 @@
 [
   {
     "id": "event_001",
-    "title": "拾遗卷",
-    "description": "你在幻境中遇到一卷残破的古籍，隐约可见「诗经」二字。",
+    "title": "僧庐涤咒",
+    "description": "寂雾深处有一间残灯小庐，僧影模糊。他不开口，只以目光问你：愿以何物换一身清净？",
     "image": "assets/images/events/event_001.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 4,
     "options": [
-      { "text": "小心拂去尘埃，尝试解读", "next": "event_001a" },
-      { "text": "将残卷收好，留待日后", "result": { "type": "gold", "value": 15 } },
-      { "text": "置之不理，继续前行", "result": { "type": "none", "value": 0 } }  
-    ]
-  },
-  {
-    "id": "event_001a",
-    "title": "拾遗卷·解读",
-    "description": "你静心研读，文韵与残卷共鸣，获得了一丝文化遗卷之力。",
-    "options": [
-      { "text": "获得感悟", "result": { "type": "heal", "value": 10 } },
-      { "text": "领悟攻击要义", "result": { "type": "card_reward", "value": 1 } }
+      { "text": "献金请法：舍财换片刻安宁与气血回转", "result": { "effects": [ { "type": "gold", "value": -35 }, { "type": "heal", "value": 22 } ] } },
+      { "text": "以命火焚咒：削去上限，换寄生褪去", "result": { "effects": [ { "type": "max_hp", "value": -5 }, { "type": "remove_curse", "value": 1 } ] } },
+      { "text": "合十不取，转身没入雾中", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_002",
-    "title": "义仓赈济",
-    "description": "路遇义仓，乡民正在分发粮草。管事者望向你。",
+    "title": "鎏金神像",
+    "description": "供案上立着一尊鎏金小像，笑纹里凝着尘与贪。你听见极轻一声：捧起我，或放下我。",
+    "image": "assets/images/events/event_002.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "捐出部分银两相助", "next": "event_002a" },
-      { "text": "婉拒离开", "result": { "type": "none", "value": 0 } }
+      { "text": "捧起神像：先纳福缘，再承其反噬", "next": "event_002a" },
+      { "text": "不触因果，悄然退去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_002a",
-    "title": "义仓赈济·善果",
-    "description": "乡民感念你的义举，赠你些许盘缠与干粮。",
+    "title": "鎏金神像·反噬",
+    "description": "神像入怀，地面忽裂细纹。寂雾翻涌如索，逼你在「损躯」「破财」「留痕」之间择一。",
+    "image": "assets/images/events/event_002.png",
     "options": [
-      { "text": "收下银两", "result": { "type": "gold", "value": 25 } },
-      { "text": "只取干粮，恢复精神", "result": { "type": "heal", "value": 15 } }
+      { "text": "以身承压：上限被啃噬，却得遗物相随", "result": { "effects": [ { "type": "max_hp", "value": -6 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "以血换气：气血受创，暂保形神不散", "result": { "effects": [ { "type": "heal", "value": -12 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "弃像于地：诅咒缠指，神像仍归你", "result": { "effects": [ { "type": "add_curse", "value": 1 }, { "type": "relic", "value": 1 } ] } }
     ]
   },
   {
     "id": "event_003",
-    "title": "墨迹未干",
-    "description": "一方石台上有一幅未干的字迹，似在等人续写。",
+    "title": "蛇语古墟",
+    "description": "断垣下蛇蜕如帛，有人声自鳞隙渗出，许你「异物」，索你「根基」。",
+    "image": "assets/images/events/event_003.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "提笔续写一句", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "静观其变", "result": { "type": "gold", "value": 10 } }
+      { "text": "歃契：削去命数之厚，换一件古遗物", "result": { "effects": [ { "type": "max_hp", "value": -6 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "拒契：不留余地，亦不受赠", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_004",
-    "title": "古碑问心",
-    "description": "一座古碑立于道旁，碑文斑驳，唯「慎独」二字可辨。",
+    "title": "活字壁",
+    "description": "整面石壁如活字盘般游移，字块咬合处渗出墨与血的气味。它问你：要「空」、要「满」、还是要「锋」？",
+    "image": "assets/images/events/event_004.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "默念碑文，静心体悟", "result": { "type": "heal", "value": 8 } },
-      { "text": "拓下二字带走", "next": "event_004a" },
-      { "text": "匆匆而过", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_004a",
-    "title": "古碑问心·拓本",
-    "description": "拓本入手，文韵微动，你获得了一点墨力与银两。",
-    "options": [
-      { "text": "收好拓本", "result": { "type": "gold", "value": 20 } }
+      { "text": "剜去一字：舍一张牌，换命格更厚", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": 4 } ] } },
+      { "text": "吞墨入腹：接纳污痕，换气血回暖", "result": { "effects": [ { "type": "add_curse", "value": 1 }, { "type": "heal", "value": 14 } ] } },
+      { "text": "磨锋：壁纹刻入牌意，然躯壳略损", "result": { "effects": [ { "type": "upgrade_random", "value": 1 }, { "type": "max_hp", "value": -2 } ] } }
     ]
   },
   {
     "id": "event_005",
-    "title": "异化书灵",
-    "description": "一只被异化的书灵拦路，驱散后可获得其残留文韵。",
+    "title": "浊墨软泥",
+    "description": "一滩浊墨在脚边蠕动，内藏锈金与碎骨。伸手即是赌命，缩手即是白走。",
+    "image": "assets/images/events/event_005.png",
+    "layer_min": 0,
+    "layer_max": 1,
+    "weight": 3,
     "options": [
-      { "text": "以文韵驱散", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "绕道而行", "result": { "type": "none", "value": 0 } }
+      { "text": "探入深处：先失金与气，或得异物", "next": "event_005a" },
+      { "text": "只取表层浮金", "result": { "effects": [ { "type": "gold", "value": 12 } ] } },
+      { "text": "不沾浊气", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_005a",
+    "title": "浊墨软泥·深捞",
+    "description": "墨浪裹手，刺痛如针。你在混沌里摸到硬物——要么舍痛带走，要么抽手认栽。",
+    "image": "assets/images/events/event_005.png",
+    "options": [
+      { "text": "强拽而出：重创气血，换遗物一线", "result": { "effects": [ { "type": "heal", "value": -14 }, { "type": "gold", "value": -10 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "及时抽手：只损些气血与盘缠", "result": { "effects": [ { "type": "heal", "value": -6 }, { "type": "gold", "value": -8 } ] } }
     ]
   },
   {
     "id": "event_006",
-    "title": "藏书阁",
-    "description": "一座古老的藏书阁矗立在幻境深处，门扉半掩，隐约可见内里书卷堆积如山。",
+    "title": "恩渊之客",
+    "description": "雾中立影，无面目，只伸一手。他要你交出「最舍不得的一张」，才肯给你「看得见的回报」。",
+    "image": "assets/images/events/event_006.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 2,
     "options": [
-      { "text": "推门而入，探索藏书", "next": "event_006a" },
-      { "text": "在门外驻足片刻", "result": { "type": "gold", "value": 10 } },
-      { "text": "转身离开", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_006a",
-    "title": "藏书阁·古籍",
-    "description": "阁内尘封的古籍散发着淡淡墨香，你注意到一本封皮残破的典籍格外引人注目。",
-    "options": [
-      { "text": "小心翼翼翻阅古籍", "next": "event_006b" },
-      { "text": "寻找其他有价值的书籍", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "离开藏书阁", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_006b",
-    "title": "藏书阁·传承",
-    "description": "古籍记载着前人的修行心得，字里行间蕴含着深厚的文化底蕴。你感受到一股力量在体内涌动。",
-    "options": [
-      { "text": "接受文化传承", "result": { "type": "relic", "value": 1 } },
-      { "text": "汲取知识精华", "result": { "type": "max_hp", "value": 5 } },
-      { "text": "将古籍放回原处", "result": { "type": "heal", "value": 15 } }
+      { "text": "割舍一张心尖牌：换遗物与一次淬炼", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "relic", "value": 1 }, { "type": "upgrade_random", "value": 1 } ] } },
+      { "text": "握紧牌背，转身离去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_007",
-    "title": "武道传承",
-    "description": "幻境中出现一座古老的武道场，场中隐约可见武者练功的身影，剑气纵横。",
+    "title": "道旁乞者",
+    "description": "破衣人跪于辙痕边，掌心如井。他说：施金者，或得天眷，或只换一声谢。",
+    "image": "assets/images/events/event_007.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 4,
     "options": [
-      { "text": "上前挑战", "next": "event_007a" },
-      { "text": "在一旁观摩学习", "result": { "type": "gold", "value": 15 } },
-      { "text": "悄然离去", "result": { "type": "none", "value": 0 } }
-    ]
-  },
-  {
-    "id": "event_007a",
-    "title": "武道传承·试炼",
-    "description": "武道场的守门人是一位白发老者，他目光如炬，似乎看穿了你的实力。",
-    "options": [
-      { "text": "接受更高层次的试炼", "next": "event_007b" },
-      { "text": "请求指点一二", "result": { "type": "heal", "value": 12 } },
-      { "text": "知难而退", "result": { "type": "gold", "value": 8 } }
-    ]
-  },
-  {
-    "id": "event_007b",
-    "title": "武道传承·突破",
-    "description": "经过层层试炼，你感受到武道真意，身心都得到了淬炼与升华。",
-    "options": [
-      { "text": "突破极限，提升实力", "result": { "type": "max_hp", "value": 8 } },
-      { "text": "领悟武学奥义", "result": { "type": "card_reward", "value": 2 } },
-      { "text": "获得武道传承", "result": { "type": "relic", "value": 1 } }
+      { "text": "厚施四十金：求一线天眷", "result": { "effects": [ { "type": "gold", "value": -40 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "薄施十五金：换几句吉言与暖意", "result": { "effects": [ { "type": "gold", "value": -15 }, { "type": "heal", "value": 10 } ] } },
+      { "text": "袖手而过", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_008",
-    "title": "洗心池",
-    "description": "一方清澈的池水映照着你的倒影，池水泛着淡淡的灵光，似乎能洗涤心灵。",
+    "title": "甲骨深契",
+    "description": "裂纹如网的甲骨浮在半空，契文自行游走。一读，便要在「筋骨」与「锋刃」间择主。",
+    "image": "assets/images/events/event_008.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 4,
     "options": [
-      { "text": "静坐池边，冥想感悟", "next": "event_008a" },
-      { "text": "掬水洗脸", "result": { "type": "heal", "value": 10 } },
-      { "text": "绕池而行", "result": { "type": "none", "value": 0 } }
+      { "text": "以契淬牌：两次随机升华", "result": { "effects": [ { "type": "upgrade_random", "value": 2 } ] } },
+      { "text": "以契固命：放弃升华，换上限增厚", "result": { "effects": [ { "type": "max_hp", "value": 5 } ] } },
+      { "text": "闭目不读", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
     "id": "event_008a",
-    "title": "洗心池·净化",
-    "description": "在冥想中，你感受到内心的杂念逐渐消散，身心变得澄澈通透。",
+    "title": "长安夜宴·后庭试价",
+    "description": "杯盏被换成了算盘。真正的价格现在才写在你眼前。",
+    "image": "assets/images/events/event_008.png",
     "options": [
-      { "text": "净化心灵，移除负面", "next": "event_008b" },
-      { "text": "汲取池水灵力", "result": { "type": "max_hp", "value": 6 } },
-      { "text": "结束冥想", "result": { "type": "heal", "value": 8 } }
+      {
+        "text": "押注重金：换一件遗物与一张可选新牌",
+        "result": { "effects": [ { "type": "gold", "value": -40 }, { "type": "relic", "value": 1 }, { "type": "card_reward_choose", "value": 1 } ] }
+      },
+      {
+        "text": "酒醒留命：小幅恢复后离席",
+        "result": { "effects": [ { "type": "heal", "value": 10 } ] }
+      },
+      { "text": "看穿价码，不再加注", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   },
   {
-    "id": "event_008b",
-    "title": "洗心池·新生",
-    "description": "池水净化了你的身心，你感到前所未有的轻松与力量。",
+    "id": "event_009",
+    "title": "荒寺老丐",
+    "description": "老丐敲钵，声如更漏。他说：囊空者，可得「多般锤炼」；心疑者，一文不值。",
+    "image": "assets/images/events/event_009.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 2,
     "options": [
-      { "text": "移除一张诅咒牌", "result": { "type": "remove_card", "value": 1 } },
-      { "text": "获得净化之力", "result": { "type": "card_reward", "value": 1 } },
-      { "text": "铭记此番感悟", "result": { "type": "relic", "value": 1 } }
+      { "text": "倾囊相付：散尽盘缠，换多次淬炼之机", "result": { "effects": [ { "type": "gold", "value": -50 }, { "type": "upgrade_random", "value": 4 } ] } },
+      { "text": "只舍少许，换一口热粥般的回血", "result": { "effects": [ { "type": "gold", "value": -15 }, { "type": "heal", "value": 16 } ] } },
+      { "text": "不入荒寺", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_010",
+    "title": "荒坛血契",
+    "description": "被遗忘的祭坛只剩兽首与空盏。血痕指引你：先献「形」，再论「报」。",
+    "image": "assets/images/events/event_010.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 2,
+    "options": [
+      { "text": "滴血入盏：承剧痛，再观坛灵所赐", "next": "event_010a" },
+      { "text": "不污此坛", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_010a",
+    "title": "荒坛血契·回应",
+    "description": "盏中血起涟漪，一物虚影凝实——你可取遗物，或再舍气血换更深机缘。",
+    "image": "assets/images/events/event_010.png",
+    "options": [
+      { "text": "只取遗物，到此为止", "result": { "effects": [ { "type": "heal", "value": -8 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "再割一命数：遗物之外，再择一张机遇牌", "result": { "effects": [ { "type": "heal", "value": -10 }, { "type": "max_hp", "value": -3 }, { "type": "relic", "value": 1 }, { "type": "card_reward_choose", "value": 1 } ] } }
+    ]
+  },
+  {
+    "id": "event_011",
+    "title": "知颅问卜",
+    "description": "骷髅悬铃，眼窝里两点鬼火。它不问善恶，只问：你愿意用「气血」换「答案」吗？",
+    "image": "assets/images/events/event_011.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 3,
+    "options": [
+      { "text": "一问财路：损气血，得金银", "result": { "effects": [ { "type": "heal", "value": -10 }, { "type": "gold", "value": 45 } ] } },
+      { "text": "一问牌运：损气血，得机遇", "result": { "effects": [ { "type": "heal", "value": -8 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "不问鬼神", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_012",
+    "title": "蒙面剪径",
+    "description": "三条黑影拦于狭道，刃光比话更直：留下买路财，或留下伤痕。",
+    "image": "assets/images/events/event_012.png",
+    "layer_min": 1,
+    "layer_max": 2,
+    "weight": 4,
+    "options": [
+      { "text": "舍财消灾（四十金）", "result": { "effects": [ { "type": "gold", "value": -40 } ] } },
+      { "text": "硬闯：受创而去", "result": { "effects": [ { "type": "heal", "value": -18 } ] } },
+      { "text": "虚与委蛇，掷些零钱脱身", "result": { "effects": [ { "type": "gold", "value": -12 }, { "type": "heal", "value": -5 } ] } }
+    ]
+  },
+  {
+    "id": "event_012a",
+    "title": "祭灯引路·二炼",
+    "description": "灯焰被分成两股：一股稳，一股烈。你只能带走其中一种。",
+    "image": "assets/images/events/event_012.png",
+    "options": [
+      {
+        "text": "稳炼：安全升级一次",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 1 }, { "type": "max_hp", "value": -1 } ] }
+      },
+      {
+        "text": "烈炼：强行升级两次并背上一层诅咒",
+        "result": { "effects": [ { "type": "upgrade_random", "value": 2 }, { "type": "add_curse", "value": 1 } ] }
+      },
+      { "text": "熄灯离去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_013",
+    "title": "坠渊一瞬",
+    "description": "脚下一空，风如刀。你在下坠里看见两样东西同时伸手：一样是光，一样是痛。",
+    "image": "assets/images/events/event_013.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      { "text": "伸手抓光：重伤换遗物", "result": { "effects": [ { "type": "heal", "value": -15 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "护住要害：只受轻伤落地", "result": { "effects": [ { "type": "heal", "value": -8 } ] } },
+      { "text": "借壁缓势：耗神换稍许盘缠", "result": { "effects": [ { "type": "heal", "value": -5 }, { "type": "gold", "value": 20 } ] } }
+    ]
+  },
+  {
+    "id": "event_014",
+    "title": "玄球噬牌",
+    "description": "悬浮的玄球无声旋转，球面映出你牌组里的影子。它似乎在等一张「祭品」。",
+    "image": "assets/images/events/event_014.png",
+    "layer_min": 2,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      { "text": "献上一张牌：球裂为遗物之光", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "以血喂球：不献牌，亦取异物", "result": { "effects": [ { "type": "heal", "value": -12 }, { "type": "max_hp", "value": -2 }, { "type": "relic", "value": 1 } ] } },
+      { "text": "退后，任球自转", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_015",
+    "title": "旧债重逢",
+    "description": "雾中有人拍你肩头，笑声熟得发冷。他说：欠下的命数，该用「上限」还是「牌」来还？",
+    "image": "assets/images/events/event_015.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 2,
+    "options": [
+      { "text": "认债：削上限，换两次淬炼", "result": { "effects": [ { "type": "max_hp", "value": -5 }, { "type": "upgrade_random", "value": 2 } ] } },
+      { "text": "赖账：舍一张牌，换一口喘息", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "heal", "value": 14 } ] } },
+      { "text": "装不认得，疾步没入雾", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_016",
+    "title": "天工摹牌",
+    "description": "自称天工的影子摊开空白牌坯。他说：你可择一机遇，但要付「墨价」与「命价」之一。",
+    "image": "assets/images/events/event_016.png",
+    "layer_min": 1,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      { "text": "付墨价：重金换自选机遇", "result": { "effects": [ { "type": "gold", "value": -35 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "付命价：损气血换自选机遇", "result": { "effects": [ { "type": "heal", "value": -12 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "不摹此牌", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_017",
+    "title": "影抄祭坛",
+    "description": "祭坛无火，只有一面水镜。镜中牌影与手中牌重叠——抄影者，须付「一次升华」为笔锋。",
+    "image": "assets/images/events/event_017.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 2,
+    "options": [
+      { "text": "以锋为笔：先随机淬炼，再自选抄入一张机遇", "result": { "effects": [ { "type": "upgrade_random", "value": 1 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "只抄影，不淬锋：自选一张机遇，代价略重", "result": { "effects": [ { "type": "max_hp", "value": -3 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "碎镜离去", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_017a",
+    "title": "断卷封印·定价",
+    "description": "封印并不免费。你必须决定，是拿生命付账，还是拿资源付账。",
+    "image": "assets/images/events/event_017.png",
+    "options": [
+      {
+        "text": "血契封印：移除一张牌并换得遗物",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "max_hp", "value": -2 }, { "type": "relic", "value": 1 } ] }
+      },
+      {
+        "text": "财契封印：移除一张牌并回收一点路费",
+        "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "gold", "value": 20 } ] }
+      },
+      { "text": "终止封印", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_018",
+    "title": "金阶神龛",
+    "description": "金阶之上神龛静立，龛前空空如也。铭文写道：先献金，后赐命。",
+    "image": "assets/images/events/event_018.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      { "text": "献金二十五：气血与命格同涨", "result": { "effects": [ { "type": "gold", "value": -25 }, { "type": "heal", "value": 14 }, { "type": "max_hp", "value": 4 } ] } },
+      { "text": "只上一炷心香：小愈而去", "result": { "effects": [ { "type": "gold", "value": -5 }, { "type": "heal", "value": 8 } ] } },
+      { "text": "不登金阶", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_019",
+    "title": "净牌仙龛",
+    "description": "龛中无像，只有一泓清水。水纹里浮着「舍」字——舍一张牌，水自澄。",
+    "image": "assets/images/events/event_001.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 4,
+    "options": [
+      { "text": "投入一张牌：洗尽浊痕", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 } ] } },
+      { "text": "只掬水洗面：微愈", "result": { "effects": [ { "type": "heal", "value": 6 } ] } },
+      { "text": "不扰净水", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_020",
+    "title": "化形神龛",
+    "description": "神龛如炉，旧牌入火则形销，新纹自灰烬里浮起。化形者，一去一来。",
+    "image": "assets/images/events/event_002.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 3,
+    "options": [
+      { "text": "化去一张，塑成新章：自选移除与自选机遇", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "card_reward_choose", "value": 1 } ] } },
+      { "text": "只化不塑：移除一张，换些许盘缠", "result": { "effects": [ { "type": "remove_card_choose", "value": 1 }, { "type": "gold", "value": 25 } ] } },
+      { "text": "不启炉盖", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
+    ]
+  },
+  {
+    "id": "event_021",
+    "title": "淬锋神龛",
+    "description": "龛内藏风，风里有磨刀声。它不问你姓名，只问：要磨几下？",
+    "image": "assets/images/events/event_003.png",
+    "layer_min": 0,
+    "layer_max": 3,
+    "weight": 4,
+    "options": [
+      { "text": "连淬两次", "result": { "effects": [ { "type": "upgrade_random", "value": 2 } ] } },
+      { "text": "只淬一次，留余地", "result": { "effects": [ { "type": "upgrade_random", "value": 1 } ] } },
+      { "text": "不近风刃", "result": { "effects": [ { "type": "none", "value": 0 } ] } }
     ]
   }
 ]

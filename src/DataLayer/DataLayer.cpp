@@ -19,6 +19,37 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+// 可执行文件所在目录（用于从 build/ 双击运行时仍能定位项目根下的 data/）
+static std::string get_executable_directory() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    std::string full(buf, buf + n);
+    const size_t pos = full.find_last_of("\\/");
+    if (pos == std::string::npos) return {};
+    return full.substr(0, pos);
+#else
+    (void)0;
+    return {};
+#endif
+}
+
+static std::string join_path(const std::string& dir, const std::string& rel) {
+    if (dir.empty()) return rel;
+    if (!rel.empty() && (rel[0] == '/' || rel[0] == '\\')) return rel;
+    const char last = dir.back();
+    if (last == '/' || last == '\\') return dir + rel;
+    return dir + "/" + rel;
+}
+
 // -----------------------------------------------------------------------------
 // tce 命名空间：B/C 依赖的接口，存储由 load_cards/load_monsters 填充，此处仅做哈希查找 O(1)
 // 必须在 namespace DataLayer 之前定义，供 load_cards/load_monsters 写入 s_cards/s_monsters
@@ -34,9 +65,7 @@ std::unordered_map<CardId, CardData> s_cards{
     { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
     { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
 };
-std::unordered_map<MonsterId, MonsterData> s_monsters{
-    { "cultist", MonsterData{ "cultist", u8"邪教徒", MonsterType::Normal, 100 } },
-};
+std::unordered_map<MonsterId, MonsterData> s_monsters;
 
 const CardData* get_card_by_id(CardId id) {
     auto it = s_cards.find(id);
@@ -58,6 +87,24 @@ std::vector<CardId> get_all_card_ids() {
 }
 
 } // namespace tce
+
+namespace {
+void apply_builtin_monsters() {
+    tce::s_monsters.clear();
+    static const tce::MonsterData k_builtin[] = {
+        { "buguguiqi",     u8"卜骨龟蜮",     tce::MonsterType::Normal, 40 },
+        { "dading",        u8"大鼎",         tce::MonsterType::Normal, 45 },
+        { "fashengjiangli",u8"法绳降吏",     tce::MonsterType::Normal, 38 },
+        { "liejianshusheng",u8"裂简书生",    tce::MonsterType::Normal, 36 },
+        { "yazhongzhihun", u8"压冢之魂",     tce::MonsterType::Boss,   180 },
+    };
+    for (const auto& m : k_builtin) tce::s_monsters[m.id] = m;
+}
+struct BuiltinMonstersInit {
+    BuiltinMonstersInit() { apply_builtin_monsters(); }
+};
+static BuiltinMonstersInit g_builtin_monsters_init;
+} // namespace
 
 namespace DataLayer {
 
@@ -120,14 +167,21 @@ std::string DataLayerImpl::resolve_data_path(const std::string& base, const std:
     return b + "data/" + filename;
 }
 
-// 尝试多个路径加载 JSON 文件（解决从 x64/Debug 或项目根目录运行时的路径差异）
+// 尝试多个路径加载 JSON 文件（解决从 x64/Debug、build/ 或项目根目录运行时的路径差异）
 static JsonValue try_parse_json_file_multi_path(const std::string& filename) {
-    std::string candidates[] = {
+    std::vector<std::string> candidates = {
         "data/" + filename,
         "./data/" + filename,
         "../data/" + filename,
         "../../data/" + filename,
+        "../../../data/" + filename,
     };
+    const std::string exeDir = get_executable_directory();
+    if (!exeDir.empty()) {
+        candidates.push_back(join_path(exeDir, "data/" + filename));
+        candidates.push_back(join_path(exeDir, "../data/" + filename));
+        candidates.push_back(join_path(exeDir, "../../data/" + filename));
+    }
     for (const auto& path : candidates) {
         JsonValue root = parse_json_file(path);
         if (root.is_array() || root.is_object()) return root;
@@ -145,7 +199,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         root = parse_json_file(path);
     }
     if (!root.is_array()) {
-        log_error("load_cards: data/cards.json not found or not a JSON array (tried data/, ./data/, ../data/, ../../data/)");
+        log_error("load_cards: data/cards.json not found or not a JSON array (tried cwd-relative and exe-relative ../data/)");
         return false;
     }
     tce::s_cards.clear();
@@ -192,8 +246,9 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
         root = parse_json_file(path);
     }
     if (!root.is_array()) {
-        log_error("load_monsters: data/monsters.json not found or not a JSON array");
-        return false;
+        log_error("load_monsters: data/monsters.json not found or not a JSON array — using built-in monsters");
+        apply_builtin_monsters();
+        return true;
     }
     tce::s_monsters.clear();
     int loaded = 0;
@@ -230,8 +285,9 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
         ++loaded;
     }
     if (loaded == 0) {
-        log_error("load_monsters: no valid records loaded from \"" + path + "\"");
-        return false;
+        log_error("load_monsters: no valid records in \"" + path + "\" — using built-in monsters");
+        apply_builtin_monsters();
+        return true;
     }
     if (skipped_no_id > 0) {
         log_error("load_monsters: skipped " + std::to_string(skipped_no_id) + " records without id");
@@ -242,6 +298,139 @@ bool DataLayerImpl::load_monsters(const std::string& path_or_base_dir) {
     return true;
 }
 
+namespace {
+
+void pad_groups_nine(std::vector<std::vector<tce::MonsterId>>& g, const tce::MonsterId& fallback) {
+    if (g.empty()) g.push_back({fallback});
+    while (g.size() < 9) g.push_back(g.back());
+    if (g.size() > 9) g.resize(9);
+}
+
+std::vector<std::vector<tce::MonsterId>> parse_groups_array(const JsonValue* p) {
+    std::vector<std::vector<tce::MonsterId>> out;
+    if (!p || !p->is_array()) return out;
+    for (const JsonValue& g : p->arr) {
+        if (!g.is_array()) continue;
+        std::vector<tce::MonsterId> row;
+        for (const JsonValue& id : g.arr) {
+            if (id.is_string()) row.push_back(id.as_string());
+        }
+        if (!row.empty()) out.push_back(std::move(row));
+    }
+    return out;
+}
+
+std::vector<tce::MonsterId> parse_boss_array(const JsonValue* p) {
+    std::vector<tce::MonsterId> out;
+    if (!p || !p->is_array()) return out;
+    for (const JsonValue& id : p->arr) {
+        if (id.is_string()) out.push_back(id.as_string());
+    }
+    return out;
+}
+
+void apply_default_encounter_pages(std::vector<DataLayer::EncounterPage>& pages) {
+    pages.clear();
+    pages.resize(3);
+    const tce::MonsterId fb = "cultist";
+    for (int m = 0; m < 3; ++m) {
+        DataLayer::EncounterPage& pg = pages[static_cast<size_t>(m)];
+        pg.enemy_groups.clear();
+        pg.elite_groups.clear();
+        for (int i = 0; i < 9; ++i) {
+            if (i % 3 == 0) pg.enemy_groups.push_back({ "cultist" });
+            else if (i % 3 == 1) pg.enemy_groups.push_back({ "fat_gremlin" });
+            else pg.enemy_groups.push_back({ "cultist", "cultist" });
+        }
+        for (int i = 0; i < 9; ++i) {
+            pg.elite_groups.push_back({ "fat_gremlin", "cultist" });
+        }
+        pad_groups_nine(pg.enemy_groups, fb);
+        pad_groups_nine(pg.elite_groups, fb);
+        pg.boss = { "hexaghost" };
+    }
+}
+
+} // namespace
+
+bool DataLayerImpl::load_encounters(const std::string& path_or_base_dir) {
+    JsonValue root;
+    if (path_or_base_dir.empty()) {
+        root = try_parse_json_file_multi_path("encounters.json");
+    } else {
+        const std::string path = resolve_data_path(path_or_base_dir, "encounters.json");
+        root = parse_json_file(path);
+    }
+    encounter_pages_.clear();
+    if (!root.is_object()) {
+        log_error("load_encounters: data/encounters.json missing or not an object — using built-in 3×9 encounter tables");
+        apply_default_encounter_pages(encounter_pages_);
+        return true;
+    }
+    const JsonValue* maps = root.get_key("maps");
+    if (!maps || !maps->is_array() || maps->arr.empty()) {
+        log_error("load_encounters: \"maps\" missing or empty — using built-in encounter tables");
+        apply_default_encounter_pages(encounter_pages_);
+        return true;
+    }
+    for (const JsonValue& pageVal : maps->arr) {
+        if (!pageVal.is_object()) continue;
+        EncounterPage pg;
+        if (const JsonValue* p = pageVal.get_key("enemy_groups")) {
+            pg.enemy_groups = parse_groups_array(p);
+            pad_groups_nine(pg.enemy_groups, "cultist");
+        }
+        if (const JsonValue* p = pageVal.get_key("elite_groups")) {
+            pg.elite_groups = parse_groups_array(p);
+            pad_groups_nine(pg.elite_groups, "cultist");
+        }
+        if (const JsonValue* p = pageVal.get_key("boss")) {
+            pg.boss = parse_boss_array(p);
+        }
+        if (pg.boss.empty()) pg.boss = { "hexaghost" };
+        encounter_pages_.push_back(std::move(pg));
+    }
+    if (encounter_pages_.empty()) {
+        log_error("load_encounters: no valid \"maps\" entries — using built-in encounter tables");
+        apply_default_encounter_pages(encounter_pages_);
+        return true;
+    }
+    while (encounter_pages_.size() < 3) {
+        encounter_pages_.push_back(encounter_pages_.back());
+    }
+    if (encounter_pages_.size() > 3) encounter_pages_.resize(3);
+    return true;
+}
+
+std::vector<tce::MonsterId> DataLayerImpl::roll_monsters_for_battle(int map_page_index, NodeType node_type,
+                                                                    tce::RunRng& rng) const {
+    if (encounter_pages_.empty()) {
+        return { "cultist" };
+    }
+    const int clamped = map_page_index < 0 ? 0 : map_page_index;
+    size_t pi = static_cast<size_t>(clamped);
+    if (pi >= encounter_pages_.size()) pi = encounter_pages_.size() - 1;
+    const EncounterPage& p = encounter_pages_[pi];
+    switch (node_type) {
+    case NodeType::Boss:
+        if (!p.boss.empty()) return p.boss;
+        return { "hexaghost" };
+    case NodeType::Elite: {
+        if (p.elite_groups.empty()) return { "fat_gremlin", "cultist" };
+        const int ng = static_cast<int>(p.elite_groups.size());
+        const int pick = rng.uniform_int(0, ng - 1);
+        return p.elite_groups[static_cast<size_t>(pick)];
+    }
+    case NodeType::Enemy:
+    default: {
+        if (p.enemy_groups.empty()) return { "cultist" };
+        const int ng = static_cast<int>(p.enemy_groups.size());
+        const int pick = rng.uniform_int(0, ng - 1);
+        return p.enemy_groups[static_cast<size_t>(pick)];
+    }
+    }
+}
+
 static EventOption parse_option(const JsonValue& v) {
     EventOption opt;
     if (!v.is_object()) return opt;
@@ -249,8 +438,22 @@ static EventOption parse_option(const JsonValue& v) {
     if (const JsonValue* p = v.get_key("next")) opt.next = p->as_string();
     if (const JsonValue* p = v.get_key("result")) {
         if (p->is_object()) {
-            if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
-            if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            // 新版：result.effects（可携带多个效果）
+            if (const JsonValue* pe = p->get_key("effects")) {
+                if (pe->is_array()) {
+                    for (const JsonValue& ev : pe->arr) {
+                        if (!ev.is_object()) continue;
+                        EventEffect eff;
+                        if (const JsonValue* et = ev.get_key("type")) eff.type = et->as_string();
+                        if (const JsonValue* val = ev.get_key("value")) eff.value = val->as_int();
+                        if (!eff.type.empty()) opt.result.effects.push_back(std::move(eff));
+                    }
+                }
+            } else {
+                // 旧版：result.type + result.value
+                if (const JsonValue* pt = p->get_key("type")) opt.result.type = pt->as_string();
+                if (const JsonValue* pv = p->get_key("value")) opt.result.value = pv->as_int();
+            }
         }
     }
     return opt;
@@ -281,6 +484,9 @@ bool DataLayerImpl::load_events(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("title")) e.title = p->as_string();
         if (const JsonValue* p = v.get_key("description")) e.description = p->as_string();
         if (const JsonValue* p = v.get_key("image")) e.image = p->as_string();
+        if (const JsonValue* p = v.get_key("layer_min")) e.layer_min = p->as_int();
+        if (const JsonValue* p = v.get_key("layer_max")) e.layer_max = p->as_int();
+        if (const JsonValue* p = v.get_key("weight")) e.weight = p->as_int();
         if (const JsonValue* p = v.get_key("options")) {
             if (p->is_array())
                 for (const JsonValue& o : p->arr) e.options.push_back(parse_option(o));  // 顺序表尾插
@@ -319,6 +525,64 @@ const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
     auto it = events_.find(id);
     if (it == events_.end()) return nullptr;
     return &it->second;
+}
+
+std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<EventId> out;
+    out.reserve(events_.size());
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (ok) out.push_back(id);
+    }
+
+    // 为了可复现与 UI 好看：按 id 排序
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<RootEventCandidate> DataLayerImpl::get_root_event_candidates_for_layer(int layer) const {
+    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
+    static constexpr const char* kPrefix = "event_";
+    constexpr size_t kPrefixLen = 6;
+
+    std::vector<RootEventCandidate> out;
+    out.reserve(events_.size());
+
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (id.size() != kPrefixLen + 3) continue;
+        if (id.rfind(kPrefix, 0) != 0) continue;
+
+        bool ok = true;
+        for (size_t i = kPrefixLen; i < id.size(); ++i) {
+            const char ch = id[i];
+            if (ch < '0' || ch > '9') { ok = false; break; }
+        }
+        if (!ok) continue;
+
+        const Event& e = kv.second;
+        if (layer < e.layer_min || layer > e.layer_max) continue;
+        const int w = e.weight <= 0 ? 1 : e.weight;
+        out.push_back(RootEventCandidate{ e.id, w });
+    }
+
+    // 保证可复现：按 id 排序
+    std::sort(out.begin(), out.end(), [](const RootEventCandidate& a, const RootEventCandidate& b) {
+        return a.id < b.id;
+    });
+    return out;
 }
 
 int DataLayerImpl::rarity_order(tce::Rarity r) {

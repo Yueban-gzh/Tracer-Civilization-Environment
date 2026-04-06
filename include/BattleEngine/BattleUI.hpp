@@ -87,7 +87,17 @@ public:
     /** 在确认选牌并即将打出触发牌前调用：接下来若干张「离手进入弃牌/消耗」的飞牌从屏幕中央选牌区飞出并走弧线（与 main/GameFlow 中 play_card 配对） */
     void set_pending_select_ui_pile_fly(int discard_or_exhaust_count);
 
+    /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
+    void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
+
+    /** 打开/关闭暂停菜单（设置面板），用于全局 HUD 与战斗界面共用 */
+    void set_pause_menu_active(bool active);
+    bool is_pause_menu_active() const { return pause_menu_active_; }
+    /** 轮询一次暂停菜单选项：1=返回游戏 2=保存并退出 3=设置页面（进入二级设置界面） */
+    bool pollPauseMenuSelection(int& outChoice);
+
 private:
+    void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
@@ -98,7 +108,7 @@ private:
                             const sf::Color& outlineColor, float outlineThickness = 8.f);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
-    void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 右上角：牌组、抽牌堆
+    void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
     void show_center_tip(std::wstring text, float seconds);  // 内部：设置中央提示（供 showTip 调用）
     void draw_center_tip(sf::RenderWindow& window);          // 内部：绘制中央提示
     void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/药水悬停提示
@@ -138,6 +148,11 @@ private:
 
     unsigned width_;                            // 窗口宽度
     unsigned height_;                           // 窗口高度
+    /** 布局常量按 1920×1080 设计；与窗口不一致时用于缩放部分固定像素控件 */
+    static constexpr float kDesignWidth = 1920.f;
+    static constexpr float kDesignHeight = 1080.f;
+    float uiScaleX_ = 1.f;
+    float uiScaleY_ = 1.f;
     sf::Font font_;                             // 主字体（英文/数字）
     bool fontLoaded_ = false;                   // 主字体是否加载成功
     sf::Font fontChinese_;                     // 中文字体
@@ -194,6 +209,15 @@ private:
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
+
+    // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
+    bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
+    bool settings_panel_active_ = false;     // 二级“设置”页面是否打开
+    int  pending_pause_menu_choice_ = 0;     // 待处理的选择：1=返回游戏 2=保存并退出 3=进入设置
+    sf::FloatRect pauseResumeRect_;          // 暂停菜单：返回游戏按钮区域
+    sf::FloatRect pauseSaveQuitRect_;        // 暂停菜单：保存并退出按钮区域
+    sf::FloatRect pauseSettingsRect_;        // 暂停菜单：设置按钮区域
+    sf::FloatRect settingsBackRect_;         // 设置页面：返回按钮区域
     // 背景图（置于最底层）：多张按战斗序号索引，无图时用 clear 色
     std::vector<sf::Texture> backgroundTextures_;
     int                     currentBackgroundIndex_ = 0;
