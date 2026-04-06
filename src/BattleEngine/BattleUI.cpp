@@ -2208,7 +2208,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                       const BattleStateSnapshot* handSnap,
                                       const CardInstance* handInst) {
         auto base_art_key = [](const std::string& id) -> std::string {
-            // 目标：让 strike/strike+/strike_green/strike_green+ 都映射到 "strike"
+            // 用于纹理缓存 key：尽量把同一卡的变体归并（+ / _green 等）
             std::string k = id;
             if (!k.empty() && k.back() == '+') k.pop_back();
             const std::string suffixes[] = {"_green", "_blue", "_red", "_purple"};
@@ -2219,6 +2219,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
             }
             return k;
+        };
+
+        auto base_id_for_art_fallback = [](const std::string& id) -> std::string {
+            // 升级版优先回退到基础 id 的 art（例如 strike+ -> strike）
+            if (!id.empty() && id.back() == '+') return id.substr(0, id.size() - 1u);
+            return id;
         };
 
         const CardData* cd = get_card_by_id(card_id);
@@ -2468,18 +2474,21 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         artPanel.setOutlineThickness(std::max(2.f, 4.5f * s));
         window.draw(artPanel, states);
 
-        // 立绘：先用 test1/test2 为打击/防御添加插画（可后续扩展为按 card_id 自动加载）
+        // 立绘：数据驱动（cards.json: art 字段）。为空则不绘制立绘。
         {
-            const std::string key = base_art_key(card_id);
-            const char* path = nullptr;
-            if (key == "strike") path = "assets/cards/test1.png";
-            else if (key == "defend") path = "assets/cards/test2.png";
+            std::string artPath;
+            if (cd && !cd->art.empty()) {
+                artPath = cd->art;
+            } else if (const CardData* baseCd = get_card_by_id(base_id_for_art_fallback(card_id)); baseCd && !baseCd->art.empty()) {
+                artPath = baseCd->art;
+            }
 
-            if (path) {
+            if (!artPath.empty()) {
+                const std::string key = base_art_key(card_id);
                 auto it = cardArtTextures_.find(key);
                 if (it == cardArtTextures_.end()) {
                     sf::Texture tex;
-                    if (tex.loadFromFile(path)) it = cardArtTextures_.emplace(key, std::move(tex)).first;
+                    if (tex.loadFromFile(artPath)) it = cardArtTextures_.emplace(key, std::move(tex)).first;
                 }
                 if (it != cardArtTextures_.end()) {
                     const sf::Vector2u tsz = it->second.getSize();

@@ -58,12 +58,12 @@ namespace tce {
 
 // 初始内置一组简单卡牌/怪物数据，便于战斗调试；若主流程调用 load_cards/load_monsters 则会覆盖
 std::unordered_map<CardId, CardData> s_cards{
-    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true, false } },
-    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true, false } },
-    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false, false } },
-    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false, false } },
-    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
-    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
+    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   "assets/cards/test1.png", u8"造成6点伤害。", false, false, false, false, false, true, false } },
+    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   "assets/cards/test1.png", u8"造成9点伤害。", false, false, false, false, false, true, false } },
+    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   "assets/cards/test2.png", u8"获得5点格挡。", false, false, false, false, false, false, false } },
+    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   "assets/cards/test2.png", u8"获得8点格挡。", false, false, false, false, false, false, false } },
+    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, "", u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
+    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, "", u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
 };
 std::unordered_map<MonsterId, MonsterData> s_monsters;
 
@@ -221,6 +221,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
         if (const JsonValue* p = v.get_key("color")) cd.color = color_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("rarity")) cd.rarity = rarity_from_string(p->as_string());
+        if (const JsonValue* p = v.get_key("art")) cd.art = p->as_string();
         if (const JsonValue* p = v.get_key("description")) cd.description = p->as_string();
         if (const JsonValue* p = v.get_key("exhaust")) cd.exhaust = p->as_bool();
         if (const JsonValue* p = v.get_key("ethereal")) cd.ethereal = p->as_bool();
