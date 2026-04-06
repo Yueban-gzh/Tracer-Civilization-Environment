@@ -2207,6 +2207,20 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                       const sf::RenderStates& states,
                                       const BattleStateSnapshot* handSnap,
                                       const CardInstance* handInst) {
+        auto base_art_key = [](const std::string& id) -> std::string {
+            // 目标：让 strike/strike+/strike_green/strike_green+ 都映射到 "strike"
+            std::string k = id;
+            if (!k.empty() && k.back() == '+') k.pop_back();
+            const std::string suffixes[] = {"_green", "_blue", "_red", "_purple"};
+            for (const auto& sfx : suffixes) {
+                if (k.size() >= sfx.size() && k.compare(k.size() - sfx.size(), sfx.size(), sfx) == 0) {
+                    k.erase(k.size() - sfx.size());
+                    break;
+                }
+            }
+            return k;
+        };
+
         const CardData* cd = get_card_by_id(card_id);
         const bool isUpgradedCardId = !card_id.empty() && card_id.back() == '+';
         const CardData* baseCdForUpgrade = nullptr;
@@ -2453,6 +2467,52 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                                                : sf::Color(198, 202, 210));
         artPanel.setOutlineThickness(std::max(2.f, 4.5f * s));
         window.draw(artPanel, states);
+
+        // 立绘：先用 test1/test2 为打击/防御添加插画（可后续扩展为按 card_id 自动加载）
+        {
+            const std::string key = base_art_key(card_id);
+            const char* path = nullptr;
+            if (key == "strike") path = "assets/cards/test1.png";
+            else if (key == "defend") path = "assets/cards/test2.png";
+
+            if (path) {
+                auto it = cardArtTextures_.find(key);
+                if (it == cardArtTextures_.end()) {
+                    sf::Texture tex;
+                    if (tex.loadFromFile(path)) it = cardArtTextures_.emplace(key, std::move(tex)).first;
+                }
+                if (it != cardArtTextures_.end()) {
+                    const sf::Vector2u tsz = it->second.getSize();
+                    if (tsz.x > 0u && tsz.y > 0u) {
+                        // 用与 artPanel 相同的凸多边形承载纹理：天然裁剪，图片不会超出形状
+                        sf::ConvexShape artImg = artPanel;
+                        artImg.setFillColor(sf::Color::White);
+                        artImg.setOutlineThickness(0.f);
+                        artImg.setTexture(&it->second);
+
+                        // textureRect 采用 cover（填满立绘区，必要时裁切纹理边缘）
+                        const sf::FloatRect ab = artImg.getLocalBounds();
+                        const float panelAspect = (ab.size.y > 0.f) ? (ab.size.x / ab.size.y) : 1.f;
+                        const float texAspect = static_cast<float>(tsz.x) / static_cast<float>(tsz.y);
+
+                        int rx = 0, ry = 0;
+                        int rw = static_cast<int>(tsz.x);
+                        int rh = static_cast<int>(tsz.y);
+                        if (texAspect > panelAspect) {
+                            // 纹理更“宽” -> 裁左右
+                            rw = static_cast<int>(static_cast<float>(tsz.y) * panelAspect);
+                            rx = (static_cast<int>(tsz.x) - rw) / 2;
+                        } else if (texAspect < panelAspect) {
+                            // 纹理更“高” -> 裁上下
+                            rh = static_cast<int>(static_cast<float>(tsz.x) / panelAspect);
+                            ry = (static_cast<int>(tsz.y) - rh) / 2;
+                        }
+                        artImg.setTextureRect(sf::IntRect({rx, ry}, {rw, rh}));
+                        window.draw(artImg, states);
+                    }
+                }
+            }
+        }
 
         sf::String cardName;
         if (cd && !cd->name.empty())

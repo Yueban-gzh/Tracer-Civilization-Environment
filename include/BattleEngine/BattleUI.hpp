@@ -243,6 +243,8 @@ private:
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
+    // 卡牌立绘缓存（key -> texture），用于 artPanel 内的插画
+    std::unordered_map<std::string, sf::Texture> cardArtTextures_;
 
     // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
     bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
