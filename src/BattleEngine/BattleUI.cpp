@@ -2200,6 +2200,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float kCardLayoutRefH = 410.f;
         const float s = h / kCardLayoutRefH;
 
+        const bool greenCharacterCard = cd && cd->color == CardColor::Green;
+        const float thickOutline = std::max(1.f, outlineThickness * s);
+        const bool cardOutlineEmphasis = thickOutline > 9.5f;
+        sf::Color outerOutlineUse = outlineColor;
+        if (greenCharacterCard)
+            outerOutlineUse = cardOutlineEmphasis ? sf::Color(140, 250, 175) : sf::Color(72, 175, 108);
+
         const float outerR = 11.f * s;
         const float frameInset = 7.f * s;
         const float innerR = 6.f * s;
@@ -2207,16 +2214,21 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 投影（略偏移的圆角矩形）
         build_round_rect_poly(rr, cardX + 4.f * s, cardY + 5.f * s, w - 2.f * s, h - 2.f * s, std::max(4.f, outerR - 1.f * s), 3);
         draw_convex_poly(window, rr, sf::Color(0, 0, 0, 72), sf::Color::Transparent, 0.f, states);
-        // 外框：陶土色填充 + 传入描边（手牌悬停/选中加粗）
+        // 外框：红色牌=陶土色；绿色牌=翠绿厚边（参考猎手/绿牌）
         build_round_rect_poly(rr, cardX, cardY, w, h, outerR, 3);
-        draw_convex_poly(window, rr, sf::Color(128, 72, 54), outlineColor, std::max(1.f, outlineThickness * s), states);
+        draw_convex_poly(window, rr,
+                         greenCharacterCard ? sf::Color(42, 138, 78) : sf::Color(128, 72, 54),
+                         outerOutlineUse, thickOutline, states);
 
         const float ix = cardX + frameInset;
         const float iy = cardY + frameInset;
         const float iw = w - frameInset * 2.f;
         const float ih = h - frameInset * 2.f;
         build_round_rect_poly(rr, ix, iy, iw, ih, innerR, 3);
-        draw_convex_poly(window, rr, sf::Color(46, 42, 40), sf::Color(28, 24, 22), std::max(0.5f, 1.f * s), states);
+        draw_convex_poly(window, rr,
+                         greenCharacterCard ? sf::Color(34, 46, 38) : sf::Color(46, 42, 40),
+                         greenCharacterCard ? sf::Color(22, 32, 26) : sf::Color(28, 24, 22),
+                         std::max(0.5f, 1.f * s), states);
 
         const float padIn = 6.f * s;
         const float ribbonX = ix + padIn;
@@ -2242,25 +2254,48 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::Color ribOutline;
         float ribOutlineTh = 2.f * s;
         sf::Color ribGloss(255, 255, 255, 42);
-        switch (cardRarity) {
-        case Rarity::Common:
-            ribFill = sf::Color(122, 116, 112);
-            ribOutline = sf::Color(52, 48, 46);
-            ribGloss = sf::Color(255, 255, 255, 45);
-            break;
-        case Rarity::Uncommon:
-            ribFill = sf::Color(62, 118, 188);
-            ribOutline = sf::Color(24, 58, 112);
-            ribGloss = sf::Color(190, 228, 255, 58);
-            ribOutlineTh = 2.5f * s;
-            break;
-        case Rarity::Rare:
-        case Rarity::Special:
-            ribFill = sf::Color(224, 182, 72);
-            ribOutline = sf::Color(118, 78, 28);
-            ribGloss = sf::Color(255, 248, 200, 72);
-            ribOutlineTh = 3.f * s;
-            break;
+        if (greenCharacterCard) {
+            switch (cardRarity) {
+            case Rarity::Common:
+                ribFill = sf::Color(158, 162, 166);
+                ribOutline = sf::Color(88, 94, 90);
+                ribGloss = sf::Color(255, 255, 255, 50);
+                break;
+            case Rarity::Uncommon:
+                ribFill = sf::Color(48, 118, 210);
+                ribOutline = sf::Color(18, 62, 148);
+                ribGloss = sf::Color(210, 235, 255, 62);
+                ribOutlineTh = 2.5f * s;
+                break;
+            case Rarity::Rare:
+            case Rarity::Special:
+                ribFill = sf::Color(224, 182, 72);
+                ribOutline = sf::Color(118, 78, 28);
+                ribGloss = sf::Color(255, 248, 200, 72);
+                ribOutlineTh = 3.f * s;
+                break;
+            }
+        } else {
+            switch (cardRarity) {
+            case Rarity::Common:
+                ribFill = sf::Color(122, 116, 112);
+                ribOutline = sf::Color(52, 48, 46);
+                ribGloss = sf::Color(255, 255, 255, 45);
+                break;
+            case Rarity::Uncommon:
+                ribFill = sf::Color(40, 108, 215);
+                ribOutline = sf::Color(14, 52, 142);
+                ribGloss = sf::Color(185, 225, 255, 62);
+                ribOutlineTh = 2.5f * s;
+                break;
+            case Rarity::Rare:
+            case Rarity::Special:
+                ribFill = sf::Color(224, 182, 72);
+                ribOutline = sf::Color(118, 78, 28);
+                ribGloss = sf::Color(255, 248, 200, 72);
+                ribOutlineTh = 3.f * s;
+                break;
+            }
         }
         ribbon.setFillColor(ribFill);
         ribbon.setOutlineColor(ribOutline);
@@ -2327,8 +2362,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                   sf::Vector2f(ax + aw * t, ySide + (yMid - ySide) * sn));
             }
         }
-        artPanel.setFillColor(sf::Color(88, 32, 34));
-        artPanel.setOutlineColor(sf::Color(198, 202, 210));
+        artPanel.setFillColor(greenCharacterCard ? sf::Color(52, 78, 62) : sf::Color(88, 32, 34));
+        artPanel.setOutlineColor(greenCharacterCard ? sf::Color(175, 188, 178) : sf::Color(198, 202, 210));
         artPanel.setOutlineThickness(std::max(2.f, 4.5f * s));
         window.draw(artPanel, states);
 
@@ -2341,11 +2376,25 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             cardName = sf::String(card_id);
         const unsigned namePt = static_cast<unsigned>(std::max(15.f, std::round(31.f * s)));
         sf::Text nameText(fontForChinese(), cardName, namePt);
-        nameText.setFillColor(isUpgradedCardId ? kUpgradeNameGreen : sf::Color::White);
         const sf::FloatRect nb = nameText.getLocalBounds();
         nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-        nameText.setPosition(sf::Vector2f(ribbonX + ribbonW * 0.5f, (ribTop + ribBot) * 0.5f + 2.f * s));
-        window.draw(nameText, states);
+        const sf::Vector2f namePos(ribbonX + ribbonW * 0.5f, (ribTop + ribBot) * 0.5f + 2.f * s);
+        nameText.setPosition(namePos);
+        if (isUpgradedCardId) {
+            nameText.setFillColor(kUpgradeNameGreen);
+            window.draw(nameText, states);
+        } else if (greenCharacterCard) {
+            const float sh = std::max(1.f, 1.5f * s);
+            nameText.setFillColor(sf::Color(12, 28, 18));
+            nameText.setPosition(namePos + sf::Vector2f(sh, sh));
+            window.draw(nameText, states);
+            nameText.setFillColor(sf::Color::White);
+            nameText.setPosition(namePos);
+            window.draw(nameText, states);
+        } else {
+            nameText.setFillColor(sf::Color::White);
+            window.draw(nameText, states);
+        }
 
         sf::String typeStr = sf::String(L"?");
         if (cd) {
@@ -2359,8 +2408,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
         const unsigned typePt = static_cast<unsigned>(std::max(10.f, std::round(17.f * s)));
         sf::Text typeText(fontForChinese(), typeStr, typePt);
-        // 浅灰字，与深灰药丸底对比，类型（攻击/技能/能力…）更易辨认
-        typeText.setFillColor(sf::Color(198, 194, 188));
+        typeText.setFillColor(greenCharacterCard ? sf::Color(48, 52, 50) : sf::Color(198, 194, 188));
         const float tagCx = ax + aw * 0.5f;
         // 类型条中心压在立绘区底边（平底 / 三角尖端 / 弧底最低点均为 artTop + artH）
         const float artBottomY = artTop + artH;
@@ -2371,8 +2419,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::RectangleShape typePill(sf::Vector2f(pillW, pillH));
         typePill.setOrigin(sf::Vector2f(pillW * 0.5f, pillH * 0.5f));
         typePill.setPosition(sf::Vector2f(tagCx, tagCy));
-        typePill.setFillColor(sf::Color(94, 90, 86));
-        typePill.setOutlineColor(sf::Color(62, 58, 54));
+        typePill.setFillColor(greenCharacterCard ? sf::Color(118, 124, 118) : sf::Color(94, 90, 86));
+        typePill.setOutlineColor(greenCharacterCard ? sf::Color(78, 84, 80) : sf::Color(62, 58, 54));
         typePill.setOutlineThickness(std::max(0.5f, 1.f * s));
         window.draw(typePill, states);
         const sf::FloatRect tb = typeText.getLocalBounds();
@@ -2385,7 +2433,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (descBoxH > 18.f * s) {
             const float dPad = 5.f * s;
             build_round_rect_poly(rr, ix + dPad, descBoxTop, iw - dPad * 2.f, descBoxH, std::max(3.f, 5.f * s), 2);
-            draw_convex_poly(window, rr, sf::Color(22, 20, 24), sf::Color(40, 36, 38), std::max(0.5f, 1.f * s), states);
+            draw_convex_poly(window, rr,
+                             greenCharacterCard ? sf::Color(24, 34, 28) : sf::Color(22, 20, 24),
+                             greenCharacterCard ? sf::Color(48, 62, 52) : sf::Color(40, 36, 38),
+                             std::max(0.5f, 1.f * s), states);
         }
         sf::String descStr;
         if (cd && !cd->description.empty())
@@ -2397,7 +2448,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const unsigned descPt = static_cast<unsigned>(std::max(11.f, std::round(23.f * s)));
         draw_wrapped_text(window, fontForChinese(), descStr, descPt,
                           sf::Vector2f(descX, descY), descMaxW, descMaxH,
-                          sf::Color(218, 212, 204), states);
+                          greenCharacterCard ? sf::Color(232, 238, 232) : sf::Color(218, 212, 204), states);
 
         const bool handCostPath = (handSnap != nullptr && handInst != nullptr);
         const bool showCostCircle = cd && cd->cost != -2;
@@ -2413,7 +2464,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 sf::CircleShape costRing(gemR + ringPad);
                 costRing.setPosition(sf::Vector2f(costCx - gemR - ringPad, costCy - gemR - ringPad));
                 costRing.setFillColor(sf::Color(0, 0, 0, 0));
-                costRing.setOutlineColor(sf::Color(255, 200, 100));
+                costRing.setOutlineColor(greenCharacterCard ? sf::Color(160, 235, 195) : sf::Color(255, 200, 100));
                 costRing.setOutlineThickness(std::max(1.f, 3.f * s));
                 window.draw(costRing, states);
             }
@@ -2424,8 +2475,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 gem.setPoint(static_cast<std::size_t>(gi),
                              sf::Vector2f(costCx + gemR * std::cos(a), costCy + gemR * std::sin(a)));
             }
-            gem.setFillColor(sf::Color(208, 52, 44));
-            gem.setOutlineColor(sf::Color(255, 214, 130));
+            if (greenCharacterCard) {
+                gem.setFillColor(sf::Color(110, 215, 150));
+                gem.setOutlineColor(sf::Color(215, 255, 228));
+            } else {
+                gem.setFillColor(sf::Color(208, 52, 44));
+                gem.setOutlineColor(sf::Color(255, 214, 130));
+            }
             gem.setOutlineThickness(std::max(1.f, 2.f * s));
             window.draw(gem, states);
             if (displayCost == -1) {
