@@ -2228,6 +2228,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         };
 
         const CardData* cd = get_card_by_id(card_id);
+        // 详情预览的 card_id 可能带有后缀（如 "+", "_green" 等），这里做一次回退查找，
+        // 避免 cd 为空导致诅咒/状态等被当作默认 Common 灰色渲染。
+        if (!cd) cd = get_card_by_id(base_art_key(card_id));
         const bool isUpgradedCardId = !card_id.empty() && card_id.back() == '+';
         const CardData* baseCdForUpgrade = nullptr;
         if (isUpgradedCardId && card_id.size() > 1u)
@@ -2247,6 +2250,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const bool greenCharacterCard = cd && cd->color == CardColor::Green;
         const bool colorlessCard      = cd && cd->color == CardColor::Colorless;
         const bool curseCard          = cd && cd->color == CardColor::Curse;
+        const bool statusCard         = cd && cd->cardType == CardType::Status;
         const float thickOutline = std::max(1.f, outlineThickness * s);
         const bool cardOutlineEmphasis = thickOutline > 9.5f;
         sf::Color outerOutlineUse = outlineColor;
@@ -2313,27 +2317,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::Color ribOutline;
         float ribOutlineTh = 2.f * s;
         sf::Color ribGloss(255, 255, 255, 42);
-        if (curseCard) {
-            switch (cardRarity) {
-            case Rarity::Common:
-                ribFill = sf::Color(110, 108, 118);
-                ribOutline = sf::Color(52, 50, 60);
-                ribGloss = sf::Color(255, 255, 255, 38);
-                break;
-            case Rarity::Uncommon:
-                ribFill = sf::Color(72, 118, 190);
-                ribOutline = sf::Color(18, 62, 148);
-                ribGloss = sf::Color(205, 235, 255, 52);
-                ribOutlineTh = 2.5f * s;
-                break;
-            case Rarity::Rare:
-            case Rarity::Special:
-                ribFill = sf::Color(224, 182, 72);
-                ribOutline = sf::Color(118, 78, 28);
-                ribGloss = sf::Color(255, 248, 200, 72);
-                ribOutlineTh = 3.f * s;
-                break;
-            }
+        if (statusCard) {
+            // 状态牌：保持偏冷的灰系（不走稀有度金/蓝/灰），与诅咒区分
+            ribFill = sf::Color(138, 142, 150);
+            ribOutline = sf::Color(64, 68, 78);
+            ribGloss = sf::Color(255, 255, 255, 38);
+        } else if (curseCard) {
+            // 诅咒牌：固定紫系（不随稀有度变灰），与状态/无色区分
+            ribFill = sf::Color(146, 112, 184);
+            ribOutline = sf::Color(72, 44, 110);
+            ribGloss = sf::Color(255, 245, 255, 48);
+            ribOutlineTh = 2.5f * s;
         } else if (colorlessCard) {
             switch (cardRarity) {
             case Rarity::Common:
@@ -2467,11 +2461,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                         : colorlessCard ? sf::Color(92, 92, 96)
                                         : greenCharacterCard ? sf::Color(52, 78, 62)
                                                             : sf::Color(88, 32, 34));
-        artPanel.setOutlineColor(curseCard ? sf::Color(200, 180, 220)
-                                           : colorlessCard ? sf::Color(210, 210, 214)
-                                           : greenCharacterCard ? sf::Color(175, 188, 178)
-                                                               : sf::Color(198, 202, 210));
-        artPanel.setOutlineThickness(std::max(2.f, 4.5f * s));
+        // 立绘区边框：更粗，稀有度与丝带一致（用丝带主体 fill 色，避免 outline 过深）
+        artPanel.setOutlineColor(ribFill);
+        artPanel.setOutlineThickness(std::max(3.f, 6.5f * s));
         window.draw(artPanel, states);
 
         // 立绘：数据驱动（cards.json: art 字段）。为空则不绘制立绘。
