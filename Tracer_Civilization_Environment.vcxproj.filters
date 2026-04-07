@@ -43,6 +43,12 @@
     <ClCompile Include="src\GameFlow\CardCatalogScreen.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\GameFlow\PotionCatalogScreen.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GameFlow\RelicCatalogScreen.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -94,6 +100,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\GameFlow\CardCatalogScreen.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GameFlow\PotionCatalogScreen.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GameFlow\RelicCatalogScreen.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\GameFlow\CharacterSelectScreen.hpp">

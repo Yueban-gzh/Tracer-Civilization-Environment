@@ -184,6 +184,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\GameFlow\SaveSystem.cpp" />
     <ClCompile Include="src\GameFlow\StartScreen.cpp" />
     <ClCompile Include="src\GameFlow\CardCatalogScreen.cpp" />
+    <ClCompile Include="src\GameFlow\PotionCatalogScreen.cpp" />
+    <ClCompile Include="src\GameFlow\RelicCatalogScreen.cpp" />
     <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -225,6 +227,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\Common\NodeTypes.hpp" />
     <ClInclude Include="include\GameFlow\GameFlowController.hpp" />
     <ClInclude Include="include\GameFlow\CardCatalogScreen.hpp" />
+    <ClInclude Include="include\GameFlow\PotionCatalogScreen.hpp" />
+    <ClInclude Include="include\GameFlow\RelicCatalogScreen.hpp" />
     <ClInclude Include="include\GameFlow\CharacterSelectScreen.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

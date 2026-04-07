@@ -305,6 +305,68 @@ void draw_deck_view_detail_nav_arrow(sf::RenderWindow& window, const sf::FloatRe
             return {L"未知药水", L""};
         }
 
+        // ---- 供总览界面复用的对外接口（声明在 BattleUI.hpp）----
+        std::vector<std::string> ui_get_all_known_potion_ids() {
+            static const char* kIds[] = {
+                "strength_potion",
+                "block_potion",
+                "energy_potion",
+                "poison_potion",
+                "weak_potion",
+                "fear_potion",
+                "explosion_potion",
+                "swift_potion",
+                "blood_potion",
+                "fire_potion",
+            };
+            std::vector<std::string> out;
+            out.reserve(sizeof(kIds) / sizeof(kIds[0]));
+            for (const char* s : kIds) out.emplace_back(s);
+            return out;
+        }
+
+        std::vector<std::string> ui_get_all_known_relic_ids() {
+            static const char* kIds[] = {
+                "burning_blood",
+                "ring_of_the_snake",
+                "marble_bag",
+                "small_blood_vial",
+                "copper_scales",
+                "smooth_stone",
+                "lantern",
+                "happy_flower",
+                "clockwork_boots",
+                "centennial_puzzle",
+                "orichalcum",
+                "red_skull",
+                "snake_skull",
+                "strawberry",
+                "potion_belt",
+                "vajra",
+                "nunchaku",
+                "ceramic_fish",
+                "hand_drum",
+                "pen_nib",
+                "toy_ornithopter",
+                "preparation_pack",
+                "anchor",
+                "art_of_war",
+                "relic_strength_plus",
+            };
+            std::vector<std::string> out;
+            out.reserve(sizeof(kIds) / sizeof(kIds[0]));
+            for (const char* s : kIds) out.emplace_back(s);
+            return out;
+        }
+
+        std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id) {
+            return get_potion_display_info(id);
+        }
+
+        std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id) {
+            return get_relic_display_info(id);
+        }
+
         // 判断该手牌是否需要敌人目标：打击/重击等攻击牌需要，防御/能力等默认自选玩家
         inline bool card_targets_enemy(const BattleStateSnapshot& s, size_t handIndex) {
             if (handIndex >= s.hand.size()) return true;  // 越界默认需要目标（安全）

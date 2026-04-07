@@ -2,6 +2,8 @@
 #include <filesystem>
 
 #include "GameFlow/CardCatalogScreen.hpp"
+#include "GameFlow/PotionCatalogScreen.hpp"
+#include "GameFlow/RelicCatalogScreen.hpp"
 #include "GameFlow/CharacterSelectScreen.hpp"
 #include "GameFlow/GameFlowController.hpp"
 
@@ -62,6 +64,12 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     sf::FloatRect catalogRect(
                         sf::Vector2f(cx - btnW * 0.5f, cy + rowGap),
                         sf::Vector2f(btnW, btnH));
+                    sf::FloatRect potionCatalogRect(
+                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap * 2.f),
+                        sf::Vector2f(btnW, btnH));
+                    sf::FloatRect relicCatalogRect(
+                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap * 3.f),
+                        sf::Vector2f(btnW, btnH));
 
                     if (newGameRect.contains(mp)) {
                         // 新游戏：进入职业选择界面；确认后再初始化 Run
@@ -81,6 +89,16 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     if (catalogRect.contains(mp)) {
                         runCardCatalogScreen(window);
                         // 返回后可能已有存档变化，刷新一下
+                        hasSave = saveFileExists(savePath);
+                        break;
+                    }
+                    if (potionCatalogRect.contains(mp)) {
+                        runPotionCatalogScreen(window);
+                        hasSave = saveFileExists(savePath);
+                        break;
+                    }
+                    if (relicCatalogRect.contains(mp)) {
+                        runRelicCatalogScreen(window);
                         hasSave = saveFileExists(savePath);
                         break;
                     }
@@ -134,6 +152,8 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
         drawButton(L"开始新游戏", cy - rowGap + btnH * 0.5f, true);
         drawButton(L"继续游戏",   cy + btnH * 0.5f, hasSave);
         drawButton(L"卡牌总览",   cy + rowGap + btnH * 0.5f, true);
+        drawButton(L"药水总览",   cy + rowGap * 2.f + btnH * 0.5f, true);
+        drawButton(L"遗物总览",   cy + rowGap * 3.f + btnH * 0.5f, true);
 
         window.display();
     }

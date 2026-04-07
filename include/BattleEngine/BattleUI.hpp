@@ -328,4 +328,11 @@ private:
     sf::Clock                       card_select_confirm_pulse_clock_{};
 };
 
+/** 药水/遗物总览等界面复用：返回已知条目的 id 列表（用于总览展示） */
+std::vector<std::string> ui_get_all_known_potion_ids();
+std::vector<std::string> ui_get_all_known_relic_ids();
+/** 药水/遗物总览等界面复用：返回 (名称, 描述)，未知则返回 (未知*, 空) */
+std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id);
+std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id);
+
 } // namespace tce
