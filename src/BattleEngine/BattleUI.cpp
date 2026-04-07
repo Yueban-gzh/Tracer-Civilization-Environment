@@ -51,6 +51,55 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     return base;
 }
 
+/** 牌组详情：左右翻牌箭头（chevron，无衬板；pointRight=true 为下一张） */
+void draw_deck_view_detail_nav_arrow(sf::RenderWindow& window, const sf::FloatRect& r, bool pointRight, bool enabled) {
+    const float aw = r.size.x;
+    const float ah = r.size.y;
+    const float pad = std::clamp(std::min(aw, ah) * 0.11f, 12.f, 26.f);
+    const float tipInset = pad * 1.12f;
+    const float midY = ah * 0.5f;
+
+    auto makeChevron = [&](float grow) -> sf::ConvexShape {
+        sf::ConvexShape tri;
+        tri.setPointCount(3);
+        const float L = pad - grow;
+        const float R = aw - pad + grow;
+        const float T = pad * 0.82f - grow * 0.35f;
+        const float B = ah - pad * 0.82f + grow * 0.35f;
+        if (!pointRight) {
+            tri.setPoint(0, sf::Vector2f(R, T));
+            tri.setPoint(1, sf::Vector2f(R, B));
+            tri.setPoint(2, sf::Vector2f(L + tipInset, midY));
+        } else {
+            tri.setPoint(0, sf::Vector2f(L, T));
+            tri.setPoint(1, sf::Vector2f(L, B));
+            tri.setPoint(2, sf::Vector2f(R - tipInset, midY));
+        }
+        tri.setPosition(r.position);
+        return tri;
+    };
+
+    if (enabled) {
+        sf::ConvexShape halo = makeChevron(5.f);
+        halo.setFillColor(sf::Color(255, 235, 215, 38));
+        halo.setOutlineColor(sf::Color::Transparent);
+        halo.setOutlineThickness(0.f);
+        window.draw(halo);
+    }
+
+    sf::ConvexShape tri = makeChevron(0.f);
+    if (enabled) {
+        tri.setFillColor(sf::Color(245, 242, 255));
+        tri.setOutlineColor(sf::Color(205, 168, 118));
+        tri.setOutlineThickness(3.f);
+    } else {
+        tri.setFillColor(sf::Color(78, 78, 88));
+        tri.setOutlineColor(sf::Color(98, 98, 108));
+        tri.setOutlineThickness(2.25f);
+    }
+    window.draw(tri);
+}
+
 } // namespace
 
     /** 快照中玩家某状态总层数（用于 UI 与引擎规则对齐，如腐化） */
@@ -807,12 +856,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                 mousePos.y <= TOP_ROW_Y + btnH) {
                                 deck_view_detail_active_        = false;
                                 deck_view_detail_show_upgraded_ = false;
+                                deck_view_detail_index_         = -1;
                                 return false;
                             }
                         }
                         if (deckViewReturnButton_.contains(mousePos)) {
                             deck_view_detail_active_        = false;
                             deck_view_detail_show_upgraded_ = false;
+                            deck_view_detail_index_         = -1;
                             return false;
                         }
                         if (deck_view_detail_upgrade_btn_rect_.contains(mousePos)) {
@@ -820,13 +871,31 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                 deck_view_detail_show_upgraded_ = !deck_view_detail_show_upgraded_;
                             return false;
                         }
+                        {
+                            const int n = static_cast<int>(deck_view_cards_.size());
+                            if (n > 1 && deck_view_detail_prev_btn_rect_.contains(mousePos) && deck_view_detail_index_ > 0) {
+                                --deck_view_detail_index_;
+                                deck_view_detail_inst_          = deck_view_cards_[static_cast<size_t>(deck_view_detail_index_)];
+                                deck_view_detail_show_upgraded_ = false;
+                                return false;
+                            }
+                            if (n > 1 && deck_view_detail_next_btn_rect_.contains(mousePos) &&
+                                deck_view_detail_index_ >= 0 && deck_view_detail_index_ + 1 < n) {
+                                ++deck_view_detail_index_;
+                                deck_view_detail_inst_          = deck_view_cards_[static_cast<size_t>(deck_view_detail_index_)];
+                                deck_view_detail_show_upgraded_ = false;
+                                return false;
+                            }
+                        }
                         if (deck_view_detail_card_rect_.contains(mousePos)) {
                             deck_view_detail_active_        = false;
                             deck_view_detail_show_upgraded_ = false;
+                            deck_view_detail_index_         = -1;
                             return false;
                         }
                         deck_view_detail_active_        = false;
                         deck_view_detail_show_upgraded_ = false;
+                        deck_view_detail_index_         = -1;
                     }
                     return false;
                 }
@@ -874,6 +943,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             deck_view_scroll_y_             = 0.f;
                             deck_view_detail_active_        = false;
                             deck_view_detail_show_upgraded_ = false;
+                            deck_view_detail_index_         = -1;
                             return false;
                         }
                     }
@@ -882,19 +952,24 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         deck_view_scroll_y_             = 0.f;
                         deck_view_detail_active_        = false;
                         deck_view_detail_show_upgraded_ = false;
+                        deck_view_detail_index_         = -1;
                         return false;
                     }
+                    // 牌组网格点击判定：需要与实际绘制的布局一致
+                    // - 战斗/地图等叠加牌组：drawDeckView（带顶栏） -> viewTop=TOP_BAR_BG_H, contentTop=RELICS_ROW_Y+...
+                    // - 卡牌总览：drawDeckViewOnly -> drawDeckViewStandalone_（无顶栏） -> viewTop=0, contentTop=72, FIRST_ROW_CENTER_Y=260
+                    const bool standaloneLayout = (hide_top_right_map_button_ && deck_view_active_); // 卡牌总览等会开启此标记
                     constexpr float DECK_CARD_W = 206.f;
                     constexpr float DECK_CARD_H = 300.f;
                     constexpr float COL_CENTER_TO_CENTER = 276.f;
                     constexpr float ROW_CENTER_TO_CENTER = 360.f;
                     constexpr int COLS = 5;
-                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
-                    const float viewTop = TOP_BAR_BG_H;
+                    const float contentTop = standaloneLayout ? 72.f : (RELICS_ROW_Y + RELICS_ROW_H + 14.f);
+                    const float viewTop = standaloneLayout ? 0.f : TOP_BAR_BG_H;
                     const float viewBottom = static_cast<float>(height_);
                     const size_t cardCount = deck_view_cards_.size();
-                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
-                    const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+                    const float firstRowCenterY = standaloneLayout ? 260.f : 430.f;
+                    const float firstRowTop = firstRowCenterY - DECK_CARD_H * 0.5f;
                     const float padTop = firstRowTop - contentTop;
                     const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
                     const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
@@ -904,9 +979,20 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         const float cardX = contentLeft + col * COL_CENTER_TO_CENTER;
                         const float cardY = contentTop + padTop + row * ROW_CENTER_TO_CENTER - deck_view_scroll_y_;
                         if (cardY + DECK_CARD_H < viewTop || cardY > viewBottom) continue;
-                        if (mousePos.x >= cardX && mousePos.x <= cardX + DECK_CARD_W && mousePos.y >= cardY &&
-                            mousePos.y <= cardY + DECK_CARD_H) {
+                        // 点击判定与渲染保持一致：
+                        // 网格卡牌会在悬停时上浮/放大，但悬停插值状态是在 draw() 里更新的，
+                        // 事件触发这一帧可能尚未更新到最新 hover_blend_，会导致“判定区偏下”的错位感。
+                        // 因此这里同时判定：基础矩形 + 满悬停（pb=1）后的矩形，保证可点区域覆盖视觉牌面。
+                        const sf::FloatRect baseR(sf::Vector2f(cardX, cardY), sf::Vector2f(DECK_CARD_W, DECK_CARD_H));
+                        const float scaleHover = 1.f + 0.16f; // pb=1
+                        const float wH = DECK_CARD_W * scaleHover;
+                        const float hH = DECK_CARD_H * scaleHover;
+                        const float xH = cardX - (wH - DECK_CARD_W) * 0.5f;
+                        const float yH = cardY - (hH - DECK_CARD_H) * 0.5f - 18.f; // pb=1
+                        const sf::FloatRect hoverR(sf::Vector2f(xH, yH), sf::Vector2f(wH, hH));
+                        if (baseR.contains(mousePos) || hoverR.contains(mousePos)) {
                             deck_view_detail_inst_           = deck_view_cards_[i];
+                            deck_view_detail_index_          = static_cast<int>(i);
                             deck_view_detail_show_upgraded_  = false;
                             deck_view_detail_active_         = true;
                             return false;
@@ -1151,6 +1237,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         deck_view_cards_ = std::move(cards);
         deck_view_detail_active_        = false;
         deck_view_detail_show_upgraded_ = false;
+        deck_view_detail_index_         = -1;
     }
 
     void BattleUI::set_deck_view_active(bool active) {
@@ -1163,6 +1250,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
+            deck_view_detail_index_          = -1;
             deck_view_hover_index_ = -1;
             deck_view_hover_blend_ = 0.f;
             deck_view_hover_clock_.restart();
@@ -1172,6 +1260,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
+            deck_view_detail_index_          = -1;
             deck_view_hover_index_ = -1;
             deck_view_hover_blend_ = 0.f;
             pile_anim_snapshot_ready_ = false;
@@ -2819,6 +2908,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     }
 
     void BattleUI::updateDeckViewDetailLayout_() {
+        if (deck_view_detail_active_ && !deck_view_cards_.empty()) {
+            if (deck_view_detail_index_ < 0 || deck_view_detail_index_ >= static_cast<int>(deck_view_cards_.size())) {
+                deck_view_detail_index_ = 0;
+                deck_view_detail_inst_          = deck_view_cards_[0];
+                deck_view_detail_show_upgraded_ = false;
+            }
+        }
         constexpr float kAspect = 304.f / 410.f;
         float detailH = std::min(static_cast<float>(height_) * 0.62f, 660.f);
         float detailW = detailH * kAspect;
@@ -2834,10 +2930,24 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         deck_view_detail_card_rect_ = sf::FloatRect(sf::Vector2f(left, top), sf::Vector2f(detailW, detailH));
         constexpr float btnW = 236.f;
         constexpr float btnH = 52.f;
-        constexpr float cardToBtnGap = 44.f;  // 牌底与「查看升级」按钮之间的空隙
+        constexpr float cardToBtnGap = 72.f;  // 牌底与「查看升级」按钮间距（略下移）
         const float btnX = cx - btnW * 0.5f;
         const float btnY = top + detailH + cardToBtnGap;
         deck_view_detail_upgrade_btn_rect_ = sf::FloatRect(sf::Vector2f(btnX, btnY), sf::Vector2f(btnW, btnH));
+        // 左右翻牌箭头：加大按钮区，与牌侧留白加大（视觉上与牌更「分开」）
+        constexpr float arrowW = 92.f;
+        constexpr float arrowH = 128.f;
+        constexpr float cardSideGap = 64.f;
+        const float cardMidY = top + detailH * 0.5f;
+        float prevX = left - cardSideGap - arrowW;
+        if (prevX < 12.f) prevX = 12.f;
+        float nextX = left + detailW + cardSideGap;
+        const float screenR = static_cast<float>(width_) - 12.f;
+        if (nextX + arrowW > screenR) nextX = screenR - arrowW;
+        deck_view_detail_prev_btn_rect_ =
+            sf::FloatRect(sf::Vector2f(prevX, cardMidY - arrowH * 0.5f), sf::Vector2f(arrowW, arrowH));
+        deck_view_detail_next_btn_rect_ =
+            sf::FloatRect(sf::Vector2f(nextX, cardMidY - arrowH * 0.5f), sf::Vector2f(arrowW, arrowH));
     }
 
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
@@ -2949,6 +3059,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const sf::FloatRect& cr = deck_view_detail_card_rect_;
             drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
                              sf::Color(205, 75, 58), 11.f);
+            {
+                const size_t navN = deck_view_cards_.size();
+                const bool prevEn = navN > 1 && deck_view_detail_index_ > 0;
+                const bool nextEn =
+                    navN > 1 && deck_view_detail_index_ >= 0 && deck_view_detail_index_ + 1 < static_cast<int>(navN);
+                draw_deck_view_detail_nav_arrow(window, deck_view_detail_prev_btn_rect_, false, prevEn);
+                draw_deck_view_detail_nav_arrow(window, deck_view_detail_next_btn_rect_, true, nextEn);
+            }
             const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
             const bool alreadyUp =
                 !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';
@@ -3073,6 +3191,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const sf::FloatRect& cr = deck_view_detail_card_rect_;
             drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
                              sf::Color(205, 75, 58), 11.f);
+            {
+                const size_t navN = deck_view_cards_.size();
+                const bool prevEn = navN > 1 && deck_view_detail_index_ > 0;
+                const bool nextEn =
+                    navN > 1 && deck_view_detail_index_ >= 0 && deck_view_detail_index_ + 1 < static_cast<int>(navN);
+                draw_deck_view_detail_nav_arrow(window, deck_view_detail_prev_btn_rect_, false, prevEn);
+                draw_deck_view_detail_nav_arrow(window, deck_view_detail_next_btn_rect_, true, nextEn);
+            }
             const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
             const bool alreadyUp =
                 !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';

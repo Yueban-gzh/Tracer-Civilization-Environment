@@ -113,7 +113,7 @@ private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
-    void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌与「查看升级」按钮命中矩形
+    void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌、「查看升级」与左右翻牌箭头命中矩形
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
@@ -276,6 +276,9 @@ private:
     bool                          deck_view_detail_show_upgraded_ = false;
     sf::FloatRect                 deck_view_detail_card_rect_{};
     sf::FloatRect                 deck_view_detail_upgrade_btn_rect_{};
+    sf::FloatRect                 deck_view_detail_prev_btn_rect_{};
+    sf::FloatRect                 deck_view_detail_next_btn_rect_{};
+    int                           deck_view_detail_index_ = -1;  // 详情当前牌在 deck_view_cards_ 中的下标
     bool                          hide_top_right_map_button_ = false;
     bool                          map_overlay_blocks_world_input_ = false;
     int                           pending_map_browse_toggle_ = 0;
