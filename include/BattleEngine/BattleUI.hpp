@@ -151,9 +151,10 @@ private:
         CardId       card_id;
         sf::Vector2f start{};
         sf::Vector2f end{};
+        float        start_delay_sec = 0.f;
         float        duration_sec = 0.36f;
         sf::Clock    clock{};
-        enum Kind { DrawToHand, HandToDiscard, HandToExhaust } kind = DrawToHand;
+        enum Kind { DrawToHand, HandToDiscard, HandToExhaust, DiscardToDraw } kind = DrawToHand;
         InstanceId   instance_id = 0;
         bool         use_arc_path = false;
     };
@@ -161,6 +162,7 @@ private:
     std::unordered_set<InstanceId>      pile_draw_anim_hiding_;       // 抽到手的牌在飞入完成前不画在手牌区
     std::unordered_map<InstanceId, sf::Vector2f> instance_hand_center_cache_; // 上一帧手牌中心，供弃牌起点
     std::vector<CardInstance>           prev_hand_for_pile_anim_;
+    int                                 prev_draw_sz_for_anim_ = 0;
     int                                 prev_discard_sz_for_anim_ = 0;
     int                                 prev_exhaust_sz_for_anim_ = 0;
     bool                                pile_anim_snapshot_ready_ = false;

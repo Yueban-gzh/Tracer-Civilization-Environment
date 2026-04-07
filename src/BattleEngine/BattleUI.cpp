@@ -1646,7 +1646,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
 
     void BattleUI::tick_pile_card_anims_() {
         for (auto it = pile_card_flights_.begin(); it != pile_card_flights_.end();) {
-            const float t = it->clock.getElapsedTime().asSeconds() / it->duration_sec;
+            const float elapsed = it->clock.getElapsedTime().asSeconds();
+            const float t = (elapsed - it->start_delay_sec) / it->duration_sec;
             if (t >= 1.f) {
                 if (it->kind == PileCardFlightAnim::DrawToHand)
                     pile_draw_anim_hiding_.erase(it->instance_id);
@@ -1718,11 +1719,25 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
 
         if (!pile_anim_snapshot_ready_) {
             prev_hand_for_pile_anim_ = s.hand;
+            prev_draw_sz_for_anim_ = s.drawPileSize;
             prev_discard_sz_for_anim_ = s.discardPileSize;
             prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
             pile_anim_snapshot_ready_ = true;
             return;
         }
+
+        // 动画互斥：若正在播放“弃牌→抽牌（洗牌回堆）”动画，则抽牌→手牌动画延后，
+        // 避免两种飞牌同时出现造成视觉混乱。
+        auto block_draw_to_hand_for_sec = [&]() -> float {
+            float block = 0.f;
+            for (const auto& a : pile_card_flights_) {
+                if (a.kind != PileCardFlightAnim::DiscardToDraw) continue;
+                const float elapsed = a.clock.getElapsedTime().asSeconds();
+                const float remain = (a.start_delay_sec + a.duration_sec) - elapsed;
+                if (remain > block) block = remain;
+            }
+            return block;
+        };
 
         std::unordered_set<InstanceId> prev_ids;
         prev_ids.reserve(prev_hand_for_pile_anim_.size() + 4);
@@ -1736,7 +1751,42 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
 
         constexpr size_t kMaxNewAnims = 16;
 
+        std::vector<CardInstance> removed;
+        removed.reserve(8);
+        for (const auto& c : prev_hand_for_pile_anim_) {
+            if (!cur_ids.count(c.instanceId)) removed.push_back(c);
+        }
+
+        int discard_delta = s.discardPileSize - prev_discard_sz_for_anim_;
+        int exhaust_delta = s.exhaustPileSize - prev_exhaust_sz_for_anim_;
+        const int draw_delta = s.drawPileSize - prev_draw_sz_for_anim_;
+
+        // 弃牌堆洗回抽牌堆：表现层做“弃牌堆 -> 抽牌堆”的飞牌动画
+        // 判定：上一帧弃牌堆有牌，本帧弃牌堆变小且抽牌堆变大（常见为弃牌清空、抽牌增加）
+        if (prev_discard_sz_for_anim_ > 0 && s.discardPileSize < prev_discard_sz_for_anim_ && draw_delta > 0) {
+            const int moved = std::min(prev_discard_sz_for_anim_, draw_delta);
+            const int kMax = 10;
+            const int nAnim = std::min(moved, kMax);
+            // 先播放一小段“洗牌”停顿，再开始飞牌（避免洗牌与飞牌同时进行）
+            const float shuffleLead = 0.42f;
+            for (int i = 0; i < nAnim && pile_card_flights_.size() < kMaxNewAnims + 8; ++i) {
+                PileCardFlightAnim a;
+                a.card_id = "strike"; // 快照不含弃牌堆具体卡面，先用通用占位牌面做飞牌表现
+                a.start = discardC;
+                a.end = drawC;
+                a.kind = PileCardFlightAnim::DiscardToDraw;
+                a.start_delay_sec = shuffleLead + 0.06f * static_cast<float>(i);
+                a.duration_sec = 0.42f;
+                a.use_arc_path = true;
+                a.clock.restart();
+                pile_card_flights_.push_back(std::move(a));
+            }
+        }
+
         // 新入手牌：从抽牌堆飞向扇区目标位
+        // 注意：必须在“弃牌→抽牌堆（洗牌回堆）”动画入队之后，再计算阻塞时间，
+        // 否则同一帧内会出现抽牌动画未被延后而与洗牌飞牌并行。
+        const float drawToHandDelay = std::max(0.f, block_draw_to_hand_for_sec());
         for (size_t i = 0; i < s.hand.size() && pile_card_flights_.size() < kMaxNewAnims + 8; ++i) {
             const auto& c = s.hand[i];
             if (prev_ids.count(c.instanceId)) continue;
@@ -1746,21 +1796,15 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             a.end         = hand_fan_card_center_(i, s.hand.size());
             a.kind        = PileCardFlightAnim::DrawToHand;
             a.instance_id = c.instanceId;
+            a.start_delay_sec = drawToHandDelay;
             a.duration_sec = 0.38f;
             a.use_arc_path = true;
             a.clock.restart();
             pile_card_flights_.push_back(std::move(a));
+            // 顺序要求：先“弃牌→抽牌堆”，再“抽牌堆→手牌”
+            // 因此即便抽牌动画被延后，也要隐藏新抽到的手牌，避免在洗牌期间提前出现在手牌区。
             pile_draw_anim_hiding_.insert(c.instanceId);
         }
-
-        std::vector<CardInstance> removed;
-        removed.reserve(8);
-        for (const auto& c : prev_hand_for_pile_anim_) {
-            if (!cur_ids.count(c.instanceId)) removed.push_back(c);
-        }
-
-        int discard_delta = s.discardPileSize - prev_discard_sz_for_anim_;
-        int exhaust_delta = s.exhaustPileSize - prev_exhaust_sz_for_anim_;
 
         bool used_force_center_fly = false;
         for (const auto& c : removed) {
@@ -1805,16 +1849,20 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         }
 
         prev_hand_for_pile_anim_ = s.hand;
+        prev_draw_sz_for_anim_ = s.drawPileSize;
         prev_discard_sz_for_anim_ = s.discardPileSize;
         prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
     }
 
     void BattleUI::draw_pile_card_anims_(sf::RenderWindow& window) {
         if (!fontLoaded_ || pile_card_flights_.empty()) return;
-        constexpr float FW = 130.f;
-        constexpr float FH = 189.f;
+        // 飞牌表现：使用缩小版卡面（比手牌/详情更小），并在飞行过程中做轻微缩放，提升动感与可读性
+        constexpr float FW = 124.f;
+        constexpr float FH = 180.f;
         for (const auto& a : pile_card_flights_) {
-            float t = a.clock.getElapsedTime().asSeconds() / a.duration_sec;
+            const float elapsed = a.clock.getElapsedTime().asSeconds();
+            float t = (elapsed - a.start_delay_sec) / a.duration_sec;
+            if (t < 0.f) continue; // 未到启动时间
             if (t > 1.f) t = 1.f;
             const float te = 1.f - (1.f - t) * (1.f - t);
             sf::Vector2f pos;
@@ -1833,7 +1881,17 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             sf::Color outline(210, 190, 120);
             if (a.kind == PileCardFlightAnim::HandToDiscard) outline = sf::Color(130, 130, 220);
             else if (a.kind == PileCardFlightAnim::HandToExhaust) outline = sf::Color(150, 150, 150);
-            drawDetailedCardAt(window, a.card_id, pos.x - FW * 0.5f, pos.y - FH * 0.5f, FW, FH, outline, 3.f);
+            else if (a.kind == PileCardFlightAnim::DiscardToDraw) outline = sf::Color(225, 210, 150);
+
+            // 缩放：整体更小，且飞行过程略“放大到位”，让运动更自然
+            float scale = 0.74f;
+            if (a.kind == PileCardFlightAnim::DrawToHand) scale = 0.70f + 0.10f * te;
+            else if (a.kind == PileCardFlightAnim::DiscardToDraw) scale = 0.66f + 0.08f * te;
+            else scale = 0.70f + 0.08f * te;
+            const float w = FW * scale;
+            const float h = FH * scale;
+            const float th = 2.25f + 0.6f * te;
+            drawDetailedCardAt(window, a.card_id, pos.x - w * 0.5f, pos.y - h * 0.5f, w, h, outline, th);
         }
     }
 
@@ -1969,16 +2027,24 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         dimBg.setFillColor(sf::Color(10, 10, 16, 220));
         window.draw(dimBg);
 
-        const float panelW = 720.f;
-        const float panelH = settings_panel_active_ ? 460.f : 400.f;
+        const float panelW = 760.f;
+        float panelH = settings_panel_active_ ? 470.f : 420.f;
+        if (!settings_panel_active_ && pause_save_slot_panel_active_) panelH += 86.f;
         const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
         const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
 
+        // 面板投影
+        {
+            sf::RectangleShape shadow(sf::Vector2f(panelW, panelH));
+            shadow.setPosition(sf::Vector2f(panelX + 6.f, panelY + 8.f));
+            shadow.setFillColor(sf::Color(0, 0, 0, 90));
+            window.draw(shadow);
+        }
         sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
         panel.setPosition(sf::Vector2f(panelX, panelY));
-        panel.setFillColor(sf::Color(32, 30, 40, 255));
-        panel.setOutlineColor(sf::Color(200, 190, 150));
-        panel.setOutlineThickness(2.f);
+        panel.setFillColor(sf::Color(28, 26, 36, 248));
+        panel.setOutlineColor(sf::Color(205, 192, 150));
+        panel.setOutlineThickness(2.25f);
         window.draw(panel);
 
         const float titleY = panelY + 36.f;
@@ -1990,20 +2056,21 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         window.draw(title);
 
         if (!settings_panel_active_) {
-            const float btnW = 320.f;
-            const float btnH = 60.f;
-            const float firstY = panelY + 120.f;
-            const float gap = 24.f;
+            const float btnW = 360.f;
+            const float btnH = 58.f;
+            const float firstY = panelY + 122.f;
+            const float gap = 18.f;
             const float centerX = panelX + panelW * 0.5f;
 
             auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
                 const float x = centerX - btnW * 0.5f;
                 outRect = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+                const bool hover = outRect.contains(mousePos_);
                 sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
                 btn.setPosition(sf::Vector2f(x, y));
-                btn.setFillColor(sf::Color(70, 65, 75));
-                btn.setOutlineColor(sf::Color(170, 160, 130));
-                btn.setOutlineThickness(2.f);
+                btn.setFillColor(hover ? sf::Color(86, 80, 104) : sf::Color(62, 58, 78));
+                btn.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
+                btn.setOutlineThickness(hover ? 2.5f : 2.f);
                 window.draw(btn);
 
                 sf::Text t(fontForChinese(), sf::String(label), 26);
@@ -2020,20 +2087,21 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             drawPauseBtn(L"设置", firstY + 3.f * (btnH + gap), pauseSettingsRect_);
 
             if (pause_save_slot_panel_active_) {
-                const float slotW = 220.f;
+                const float slotW = 200.f;
                 const float slotH = 52.f;
-                const float slotGap = 16.f;
-                const float slotsY = pauseSaveRect_.position.y + btnH + 16.f;
+                const float slotGap = 14.f;
+                const float slotsY = pauseSaveRect_.position.y + btnH + 14.f;
                 const float slotsX = centerX - (slotW * 1.5f + slotGap);
                 for (int i = 0; i < 3; ++i) {
                     const float x = slotsX + i * (slotW + slotGap);
                     const float y = slotsY;
                     pauseSaveSlotRects_[static_cast<size_t>(i)] = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(slotW, slotH));
+                    const bool hover = pauseSaveSlotRects_[static_cast<size_t>(i)].contains(mousePos_);
                     sf::RectangleShape b(sf::Vector2f(slotW, slotH));
                     b.setPosition(sf::Vector2f(x, y));
-                    b.setFillColor(sf::Color(54, 50, 66));
-                    b.setOutlineColor(sf::Color(170, 160, 130));
-                    b.setOutlineThickness(2.f);
+                    b.setFillColor(hover ? sf::Color(78, 72, 96) : sf::Color(48, 46, 62));
+                    b.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(160, 150, 125));
+                    b.setOutlineThickness(hover ? 2.5f : 2.f);
                     window.draw(b);
 
                     const std::wstring label = L"槽位 " + std::to_wstring(i + 1);
@@ -2053,9 +2121,10 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
             sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
             btn.setPosition(sf::Vector2f(x, y));
-            btn.setFillColor(sf::Color(70, 65, 75));
-            btn.setOutlineColor(sf::Color(170, 160, 130));
-            btn.setOutlineThickness(2.f);
+            const bool hover = settingsBackRect_.contains(mousePos_);
+            btn.setFillColor(hover ? sf::Color(86, 80, 104) : sf::Color(62, 58, 78));
+            btn.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
+            btn.setOutlineThickness(hover ? 2.5f : 2.f);
             window.draw(btn);
 
             sf::Text t(fontForChinese(), sf::String(L"返回"), 26);

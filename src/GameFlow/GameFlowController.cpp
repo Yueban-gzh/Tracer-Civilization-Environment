@@ -1590,7 +1590,12 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Event;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Event;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面
@@ -2056,7 +2061,12 @@ bool GameFlowController::runTreasureScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Treasure;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Treasure;
                     saveRun();
                     exitToStartRequested_ = true;
@@ -2272,7 +2282,12 @@ bool GameFlowController::runShopScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Shop;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Shop;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面
@@ -2535,7 +2550,12 @@ bool GameFlowController::runRestScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Rest;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Rest;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面

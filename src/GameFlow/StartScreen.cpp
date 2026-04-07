@@ -1,6 +1,13 @@
 #include <SFML/Graphics.hpp>
 #include <filesystem>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "GameFlow/CardCatalogScreen.hpp"
 #include "GameFlow/PotionCatalogScreen.hpp"
 #include "GameFlow/RelicCatalogScreen.hpp"
@@ -11,8 +18,38 @@ namespace tce {
 
 namespace {
 
+static std::filesystem::path get_executable_directory() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    std::filesystem::path p(buf);
+    return p.parent_path();
+#else
+    return std::filesystem::current_path();
+#endif
+}
+
+static std::filesystem::path guess_project_root_from_exe() {
+    namespace fs = std::filesystem;
+    fs::path d = get_executable_directory();
+    for (int i = 0; i < 6 && !d.empty(); ++i) {
+        if (fs::exists(d / "src") && fs::exists(d / "include")) return d;
+        d = d.parent_path();
+    }
+    return {};
+}
+
+static std::filesystem::path resolve_save_path(const std::string& path) {
+    namespace fs = std::filesystem;
+    fs::path p = fs::u8path(path);
+    if (p.is_absolute()) return p;
+    if (fs::path root = guess_project_root_from_exe(); !root.empty()) return root / p;
+    return p;
+}
+
 bool saveFileExists(const std::string& path) {
-    return std::filesystem::exists(std::filesystem::u8path(path));
+    return std::filesystem::exists(resolve_save_path(path));
 }
 
 } // namespace
@@ -54,29 +91,22 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     const sf::Vector2u sz = window.getSize();
                     const float cx = static_cast<float>(sz.x) * 0.5f;
                     const float cy = static_cast<float>(sz.y) * 0.5f;
-                    const float btnW = 320.f;
-                    const float btnH = 70.f;
-                    const float gapY = 30.f;
+                    // 主菜单：统一纵向按钮布局（更整齐美观）
+                    const float btnW = 360.f;
+                    const float btnH = 68.f;
+                    const float gapY = 18.f;
+                    const float startY = cy - 38.f; // 第一项按钮中心 Y（整体略上移，为下方留空间）
+                    auto rectAt = [&](int idx) -> sf::FloatRect {
+                        const float centerY = startY + idx * (btnH + gapY);
+                        return sf::FloatRect(sf::Vector2f(cx - btnW * 0.5f, centerY - btnH * 0.5f), sf::Vector2f(btnW, btnH));
+                    };
 
-                    const float rowGap = btnH + gapY;
-                    sf::FloatRect newGameRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy - rowGap),
-                        sf::Vector2f(btnW, btnH));
-                    sf::FloatRect contRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy),
-                        sf::Vector2f(btnW, btnH));
-                    sf::FloatRect loadRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy + (btnH + gapY) * 0.5f),
-                        sf::Vector2f(btnW, btnH));
-                    sf::FloatRect catalogRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap),
-                        sf::Vector2f(btnW, btnH));
-                    sf::FloatRect potionCatalogRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap * 2.f),
-                        sf::Vector2f(btnW, btnH));
-                    sf::FloatRect relicCatalogRect(
-                        sf::Vector2f(cx - btnW * 0.5f, cy + rowGap * 3.f),
-                        sf::Vector2f(btnW, btnH));
+                    const sf::FloatRect newGameRect = rectAt(0);
+                    const sf::FloatRect contRect = rectAt(1);
+                    const sf::FloatRect loadRect = rectAt(2);
+                    const sf::FloatRect catalogRect = rectAt(3);
+                    const sf::FloatRect potionCatalogRect = rectAt(4);
+                    const sf::FloatRect relicCatalogRect = rectAt(5);
 
                     if (newGameRect.contains(mp)) {
                         // 新游戏：进入职业选择界面；确认后再初始化 Run
@@ -198,14 +228,15 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
         subtitle.setPosition(sf::Vector2f(cx, cy - 110.f));
         window.draw(subtitle);
 
-        const float btnW = 320.f;
-        const float btnH = 70.f;
-        const float gapY = 30.f;
+        // 主菜单：统一纵向按钮布局（更整齐美观）
+        const float btnW = 360.f;
+        const float btnH = 68.f;
+        const float gapY = 18.f;
 
         auto drawButton = [&](const std::wstring& text, float centerY, bool enabled) {
             sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
             btn.setPosition(sf::Vector2f(cx - btnW * 0.5f, centerY - btnH * 0.5f));
-            btn.setFillColor(enabled ? sf::Color(80, 70, 110) : sf::Color(50, 50, 70));
+            btn.setFillColor(enabled ? sf::Color(78, 70, 110) : sf::Color(46, 46, 62));
             btn.setOutlineColor(sf::Color(200, 190, 150));
             btn.setOutlineThickness(2.f);
             window.draw(btn);
@@ -218,13 +249,13 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
             window.draw(t);
         };
 
-        const float rowGap = btnH + gapY;
-        drawButton(L"开始新游戏", cy - rowGap + btnH * 0.5f, true);
-        drawButton(L"继续游戏",   cy + btnH * 0.5f, hasSave);
-        drawButton(L"读档",       cy + (btnH + gapY) * 0.5f + btnH * 0.5f, true);
-        drawButton(L"卡牌总览",   cy + rowGap + btnH * 0.5f, true);
-        drawButton(L"药水总览",   cy + rowGap * 2.f + btnH * 0.5f, true);
-        drawButton(L"遗物总览",   cy + rowGap * 3.f + btnH * 0.5f, true);
+        const float startY = cy - 38.f;
+        drawButton(L"开始新游戏", startY + 0.f * (btnH + gapY), true);
+        drawButton(L"继续游戏",   startY + 1.f * (btnH + gapY), hasSave);
+        drawButton(L"读档",       startY + 2.f * (btnH + gapY), true);
+        drawButton(L"卡牌总览",   startY + 3.f * (btnH + gapY), true);
+        drawButton(L"药水总览",   startY + 4.f * (btnH + gapY), true);
+        drawButton(L"遗物总览",   startY + 5.f * (btnH + gapY), true);
 
         window.display();
     }
