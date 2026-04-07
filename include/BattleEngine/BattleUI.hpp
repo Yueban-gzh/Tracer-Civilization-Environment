@@ -249,11 +249,16 @@ private:
     // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
     bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
     bool settings_panel_active_ = false;     // 二级“设置”页面是否打开
-    int  pending_pause_menu_choice_ = 0;     // 待处理的选择：1=返回游戏 2=保存并退出 3=进入设置
+    // 待处理的选择：
+    // 1=返回游戏 2=保存并退出 3=进入设置 41~43=存档到槽位(1~3)
+    int  pending_pause_menu_choice_ = 0;
     sf::FloatRect pauseResumeRect_;          // 暂停菜单：返回游戏按钮区域
+    sf::FloatRect pauseSaveRect_;            // 暂停菜单：存档按钮区域
     sf::FloatRect pauseSaveQuitRect_;        // 暂停菜单：保存并退出按钮区域
     sf::FloatRect pauseSettingsRect_;        // 暂停菜单：设置按钮区域
     sf::FloatRect settingsBackRect_;         // 设置页面：返回按钮区域
+    bool          pause_save_slot_panel_active_ = false;  // 暂停菜单：是否展开三槽存档选择
+    std::array<sf::FloatRect, 3> pauseSaveSlotRects_{};   // 暂停菜单：槽位按钮区域
     // 背景图（置于最底层）：多张按战斗序号索引，无图时用 clear 色
     std::vector<sf::Texture> backgroundTextures_;
     int                     currentBackgroundIndex_ = 0;

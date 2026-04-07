@@ -670,6 +670,12 @@ void GameFlowController::run() {
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
                 if (pauseChoice == 1) {
                     // 返回游戏：不做其它事
+                } else if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    // 存档到槽位（1~3）
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Map;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
                 } else if (pauseChoice == 2) {
                     // 保存并退出：写入存档后关闭窗口
                     lastSceneForSave_ = LastSceneKind::Map;
@@ -912,6 +918,11 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             if (ui.pollPauseMenuSelection(pauseChoice)) {
                 if (pauseChoice == 1) {
                     // 返回游戏：不做额外逻辑
+                } else if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Battle;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
                 } else if (pauseChoice == 2) {
                     // 保存并退出：写入存档并关闭窗口
                     lastSceneForSave_ = LastSceneKind::Battle;

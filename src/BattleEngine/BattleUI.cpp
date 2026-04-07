@@ -919,7 +919,23 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                         if (pauseResumeRect_.contains(mousePos)) {
                             pending_pause_menu_choice_ = 1;   // 返回游戏
                             pause_menu_active_ = false;
+                            pause_save_slot_panel_active_ = false;
                             return false;
+                        }
+                        if (pauseSaveRect_.contains(mousePos)) {
+                            // 展开/收起三槽存档选择
+                            pause_save_slot_panel_active_ = !pause_save_slot_panel_active_;
+                            return false;
+                        }
+                        if (pause_save_slot_panel_active_) {
+                            for (int i = 0; i < 3; ++i) {
+                                if (pauseSaveSlotRects_[static_cast<size_t>(i)].contains(mousePos)) {
+                                    pending_pause_menu_choice_ = 41 + i; // 41/42/43 => 槽位 1/2/3
+                                    pause_menu_active_ = false;
+                                    pause_save_slot_panel_active_ = false;
+                                    return false;
+                                }
+                            }
                         }
                         if (pauseSaveQuitRect_.contains(mousePos)) {
                             pending_pause_menu_choice_ = 2;   // 保存并退出
@@ -929,6 +945,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                         if (pauseSettingsRect_.contains(mousePos)) {
                             pending_pause_menu_choice_ = 3;   // 进入设置页面
                             settings_panel_active_ = true;
+                            pause_save_slot_panel_active_ = false;
                             return false;
                         }
                     } else {
@@ -1998,8 +2015,36 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             };
 
             drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
-            drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
-            drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+            drawPauseBtn(L"存档", firstY + (btnH + gap), pauseSaveRect_);
+            drawPauseBtn(L"保存并退出", firstY + 2.f * (btnH + gap), pauseSaveQuitRect_);
+            drawPauseBtn(L"设置", firstY + 3.f * (btnH + gap), pauseSettingsRect_);
+
+            if (pause_save_slot_panel_active_) {
+                const float slotW = 220.f;
+                const float slotH = 52.f;
+                const float slotGap = 16.f;
+                const float slotsY = pauseSaveRect_.position.y + btnH + 16.f;
+                const float slotsX = centerX - (slotW * 1.5f + slotGap);
+                for (int i = 0; i < 3; ++i) {
+                    const float x = slotsX + i * (slotW + slotGap);
+                    const float y = slotsY;
+                    pauseSaveSlotRects_[static_cast<size_t>(i)] = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(slotW, slotH));
+                    sf::RectangleShape b(sf::Vector2f(slotW, slotH));
+                    b.setPosition(sf::Vector2f(x, y));
+                    b.setFillColor(sf::Color(54, 50, 66));
+                    b.setOutlineColor(sf::Color(170, 160, 130));
+                    b.setOutlineThickness(2.f);
+                    window.draw(b);
+
+                    const std::wstring label = L"槽位 " + std::to_wstring(i + 1);
+                    sf::Text t(fontForChinese(), sf::String(label), 24);
+                    t.setFillColor(sf::Color(235, 230, 220));
+                    const sf::FloatRect lb = t.getLocalBounds();
+                    t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                    t.setPosition(sf::Vector2f(x + slotW * 0.5f, y + slotH * 0.5f));
+                    window.draw(t);
+                }
+            }
         } else {
             const float btnW = 240.f;
             const float btnH = 56.f;
