@@ -102,6 +102,112 @@ void draw_deck_view_detail_nav_arrow(sf::RenderWindow& window, const sf::FloatRe
 
 } // namespace
 
+// -----------------------------------------------------------------------------
+// 药水/遗物信息：供总览界面复用（外部链接符号，供其它编译单元调用）
+// -----------------------------------------------------------------------------
+
+std::vector<std::string> ui_get_all_known_potion_ids() {
+    static const char* kIds[] = {
+        "strength_potion",
+        "block_potion",
+        "energy_potion",
+        "poison_potion",
+        "weak_potion",
+        "fear_potion",
+        "explosion_potion",
+        "swift_potion",
+        "blood_potion",
+        "fire_potion",
+    };
+    std::vector<std::string> out;
+    out.reserve(sizeof(kIds) / sizeof(kIds[0]));
+    for (const char* s : kIds) out.emplace_back(s);
+    return out;
+}
+
+std::vector<std::string> ui_get_all_known_relic_ids() {
+    static const char* kIds[] = {
+        "burning_blood",
+        "ring_of_the_snake",
+        "marble_bag",
+        "small_blood_vial",
+        "copper_scales",
+        "smooth_stone",
+        "lantern",
+        "happy_flower",
+        "clockwork_boots",
+        "centennial_puzzle",
+        "orichalcum",
+        "red_skull",
+        "snake_skull",
+        "strawberry",
+        "potion_belt",
+        "vajra",
+        "nunchaku",
+        "ceramic_fish",
+        "hand_drum",
+        "pen_nib",
+        "toy_ornithopter",
+        "preparation_pack",
+        "anchor",
+        "art_of_war",
+        "relic_strength_plus",
+    };
+    std::vector<std::string> out;
+    out.reserve(sizeof(kIds) / sizeof(kIds[0]));
+    for (const char* s : kIds) out.emplace_back(s);
+    return out;
+}
+
+std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id) {
+    static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
+        {"strength_potion", {L"力量药水", L"获得 2 层力量"}},
+        {"block_potion", {L"格挡药水", L"获得 12 点格挡"}},
+        {"energy_potion", {L"能量药水", L"获得 2 点能量"}},
+        {"poison_potion", {L"毒药水", L"对目标施加 6 层中毒"}},
+        {"weak_potion", {L"虚弱药水", L"对目标施加 3 层虚弱"}},
+        {"fear_potion", {L"恐惧药水", L"对目标施加 3 层易伤"}},
+        {"explosion_potion", {L"爆炸药水", L"对所有敌人造成 10 点伤害"}},
+        {"swift_potion", {L"迅捷药水", L"抽 3 张牌"}},
+        {"blood_potion", {L"鲜血药水", L"回复最大生命值 20%"}},
+        {"fire_potion", {L"火焰药水", L"对目标造成 20 点伤害"}},
+    };
+    if (auto it = m.find(id); it != m.end()) return it->second;
+    return {L"未知药水", L""};
+}
+
+std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id) {
+    static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
+        {"burning_blood", {L"燃烧之血", L"战斗胜利时回复 6 点生命"}},
+        {"ring_of_the_snake", {L"蛇之戒", L"（起始遗物）暂未实现效果"}},
+        {"marble_bag", {L"弹珠袋", L"战斗开始时给所有敌人 1 层易伤"}},
+        {"small_blood_vial", {L"小血瓶", L"战斗开始时回复 2 点生命"}},
+        {"copper_scales", {L"铜制鳞片", L"（无战斗效果）"}},
+        {"smooth_stone", {L"意外光滑的石头", L"战斗开始时获得 1 点敏捷"}},
+        {"lantern", {L"灯笼", L"每场战斗第一回合获得 1 点能量"}},
+        {"happy_flower", {L"开心小花", L"每 3 回合获得 1 点能量"}},
+        {"clockwork_boots", {L"发条靴", L"攻击伤害≤5且未被格挡时提升为 5"}},
+        {"centennial_puzzle", {L"百年积木", L"第一次损伤生命时抽 3 张牌"}},
+        {"orichalcum", {L"奥利哈钢", L"回合结束时若没有格挡则获得 6 点格挡"}},
+        {"red_skull", {L"红头骨", L"生命≤50%时攻击伤害+3"}},
+        {"snake_skull", {L"异蛇头骨", L"给予敌人中毒时额外+1层"}},
+        {"strawberry", {L"草莓", L"拾起时最大生命+7"}},
+        {"potion_belt", {L"药水腰带", L"拾起时药水槽位+2"}},
+        {"vajra", {L"金刚杵", L"战斗开始时获得 1 点力量"}},
+        {"nunchaku", {L"双截棍", L"每打出10张攻击牌获得1点能量"}},
+        {"ceramic_fish", {L"陶瓷小鱼", L"每次往牌组加牌时获得9金币"}},
+        {"hand_drum", {L"手摇鼓", L"回合开始时获得1层真言"}},
+        {"pen_nib", {L"钢笔尖", L"每打出的第10张攻击牌造成双倍伤害"}},
+        {"toy_ornithopter", {L"玩具扑翼飞机", L"每使用一瓶药水回复5点生命"}},
+        {"preparation_pack", {L"准备背包", L"战斗开始时额外抽2张牌"}},
+        {"anchor", {L"锚", L"战斗开始时获得10点格挡"}},
+        {"art_of_war", {L"孙子兵法", L"回合中未打出攻击牌时，下一回合获得1点能量"}},
+        {"relic_strength_plus", {L"力量遗物", L"攻击伤害+2"}},
+    };
+    if (auto it = m.find(id); it != m.end()) return it->second;
+    return {L"未知遗物", L""};
+}
+
     /** 快照中玩家某状态总层数（用于 UI 与引擎规则对齐，如腐化） */
     inline int snapshot_player_status_stacks(const BattleStateSnapshot& s, const std::string& statusId) {
         int t = 0;
@@ -303,68 +409,6 @@ void draw_deck_view_detail_nav_arrow(sf::RenderWindow& window, const sf::FloatRe
             auto it = m.find(id);
             if (it != m.end()) return it->second;
             return {L"未知药水", L""};
-        }
-
-        // ---- 供总览界面复用的对外接口（声明在 BattleUI.hpp）----
-        std::vector<std::string> ui_get_all_known_potion_ids() {
-            static const char* kIds[] = {
-                "strength_potion",
-                "block_potion",
-                "energy_potion",
-                "poison_potion",
-                "weak_potion",
-                "fear_potion",
-                "explosion_potion",
-                "swift_potion",
-                "blood_potion",
-                "fire_potion",
-            };
-            std::vector<std::string> out;
-            out.reserve(sizeof(kIds) / sizeof(kIds[0]));
-            for (const char* s : kIds) out.emplace_back(s);
-            return out;
-        }
-
-        std::vector<std::string> ui_get_all_known_relic_ids() {
-            static const char* kIds[] = {
-                "burning_blood",
-                "ring_of_the_snake",
-                "marble_bag",
-                "small_blood_vial",
-                "copper_scales",
-                "smooth_stone",
-                "lantern",
-                "happy_flower",
-                "clockwork_boots",
-                "centennial_puzzle",
-                "orichalcum",
-                "red_skull",
-                "snake_skull",
-                "strawberry",
-                "potion_belt",
-                "vajra",
-                "nunchaku",
-                "ceramic_fish",
-                "hand_drum",
-                "pen_nib",
-                "toy_ornithopter",
-                "preparation_pack",
-                "anchor",
-                "art_of_war",
-                "relic_strength_plus",
-            };
-            std::vector<std::string> out;
-            out.reserve(sizeof(kIds) / sizeof(kIds[0]));
-            for (const char* s : kIds) out.emplace_back(s);
-            return out;
-        }
-
-        std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id) {
-            return get_potion_display_info(id);
-        }
-
-        std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id) {
-            return get_relic_display_info(id);
         }
 
         // 判断该手牌是否需要敌人目标：打击/重击等攻击牌需要，防御/能力等默认自选玩家
