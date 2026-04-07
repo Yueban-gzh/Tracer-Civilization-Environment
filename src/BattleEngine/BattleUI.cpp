@@ -120,9 +120,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float RELICS_ROW_H = 72.f;         // 遗物行高度
         constexpr float RELICS_ICON_SZ = 55.f;       // 遗物图标 55×55 像素
         constexpr float RELICS_ICON_Y_OFFSET = 16.f;  // 遗物图标下移偏移量
-        constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（屏幕高度 78% 处），留出空间给手牌
+        constexpr float BOTTOM_BAR_Y_RATIO = 0.78f;   // 底栏起始比例（与手牌区背景下沿一致）
         // 手牌区条带高度 = height - handBgY（与战场下沿对齐），不再用固定 220，避免压住血条
-        constexpr float BOTTOM_MARGIN = 20.f;        // 底边距，抽牌/弃牌图标贴底
+        constexpr float BOTTOM_MARGIN = 24.f;        // 底边距，保证抽牌/弃牌/消耗图标完整露出
         // 牌组视图滚到最底时，最后一行牌底边与窗口底之间多留的像素（再往上推一截）
         constexpr float DECK_VIEW_SCROLL_BOTTOM_INSET = 48.f;
         constexpr float SIDE_MARGIN = 24.f;          // 左右边距
@@ -144,7 +144,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float PILE_ICON_W = 52.f;         // 抽牌/弃牌堆图标宽度
         constexpr float PILE_ICON_H = 72.f;          // 抽牌/弃牌堆图标高度
         constexpr float PILE_CENTER_OFFSET = 36.f;   // 牌堆图标中心偏移
-        constexpr float PILE_NUM_CIRCLE_R = 17.f;    // 牌数小圆背景半径（角上显示张数）
+        constexpr float PILE_NUM_CIRCLE_R = 17.f;    // 牌数小圆背景半径（图标顶部居中显示张数）
         constexpr float END_TURN_W = 180.f;          // 结束回合按钮宽度
         constexpr float END_TURN_H = 70.f;           // 结束回合按钮高度
         constexpr float END_TURN_CENTER_X_BR = 280.f;  // 以右下为 (0,0) 时按钮中心 x
@@ -152,14 +152,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float HP_BAR_W = 230.f;            // 血条最大长度（固定，与生命上限无关）
         constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
         constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
-        constexpr float MODEL_PLACEHOLDER_W = 180.f;      // 玩家/怪物模型占位矩形宽度（1:1 比例）
-        constexpr float MODEL_PLACEHOLDER_H = 180.f;      // 玩家/怪物模型占位矩形高度（1:1 比例）
-        constexpr float MODEL_TOP_OFFSET = 90.f;      // 模型上边距中心，固定则上边框位置不变
-        constexpr float MODEL_CENTER_Y_RATIO = 0.58f; // 模型中心 Y 占战场高度的比例
-        constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 60.f;  // 模型+血条+效果栏整体下移量
+        constexpr float MODEL_PLACEHOLDER_W = 380.f;      // 玩家/怪物模型占位（1:1）
+        constexpr float MODEL_PLACEHOLDER_H = 380.f;
+        constexpr float MODEL_TOP_OFFSET = 190.f;      // 约为高度一半，使模型中心对齐 modelCenterY
+        constexpr float MODEL_CENTER_Y_RATIO = 0.50f; // 略上移，避免大模型压住下方手牌区与底栏图标
+        constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 32.f;  // 整体略上移，与 MODEL_CENTER_Y_RATIO 配合
 
         const sf::Color TOP_BAR_BG_COLOR(42, 38, 48);   // 顶栏背景色（深灰紫）
-        const sf::Color HAND_AREA_BG_COLOR(35, 33, 42); // 手牌区背景色（略深）
 
         constexpr float kCardFacePi = 3.14159265f;
 
@@ -450,6 +449,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     bool BattleUI::loadMonsterTexture(const std::string& monster_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;  // 加载失败返回 false
+        tex.setSmooth(true);  // 缩放时线性过滤，立绘放大后观感更柔和
         monsterTextures_[monster_id] = std::move(tex);  // 按 monster_id 缓存纹理
         return true;
     }
@@ -464,6 +464,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     bool BattleUI::loadPotionTexture(const std::string& potion_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;
+        tex.setSmooth(true);
         potionTextures_[potion_id] = std::move(tex);  // 按 potion_id 缓存
         return true;
     }
@@ -471,6 +472,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     bool BattleUI::loadPlayerTexture(const std::string& character_id, const std::string& path) {
         sf::Texture tex;
         if (!tex.loadFromFile(path)) return false;
+        tex.setSmooth(true);
         playerTextures_[character_id] = std::move(tex);  // 按角色 id 缓存（如 Ironclad）
         return true;
     }
@@ -1695,16 +1697,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏药水槽、遗物行图标）
 
-        // 手牌区背景：顶边必须与 drawBattleCenter 战场下边界一致。若用 height 减固定像素，
-        // 会比 BOTTOM_BAR_Y_RATIO 算出的战场更早盖住屏幕，把玩家血条/状态栏压在下面。
-        const float battleTopBg = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
-        const float battleHBg = (static_cast<float>(height_) * BOTTOM_BAR_Y_RATIO) - battleTopBg - 16.f;
-        const float handBgY = battleTopBg + battleHBg;
-        const float handStripH = static_cast<float>(height_) - handBgY;
-        sf::RectangleShape handBg(sf::Vector2f(static_cast<float>(width_), handStripH));
-        handBg.setPosition(sf::Vector2f(0.f, handBgY));
-        handBg.setFillColor(HAND_AREA_BG_COLOR);
-        window.draw(handBg);
+        // 不再铺手牌区整宽纯色底条，避免挡住战斗背景；手牌与底栏控件直接叠在背景上。
 
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
         draw_pile_card_anims_(window);
@@ -1745,6 +1738,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (pause_menu_active_ || settings_panel_active_) {
             drawPauseMenuOverlay(window);
         }
+
+        // 与战斗界面一致：中央提示（如地图/商店内 showTip）
+        draw_center_tip(window);
     }
 
     void BattleUI::drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s) {
@@ -3298,19 +3294,34 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         // ---------- 怪物区：1~3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
         // monsterModelRects_、monsterIntentRects_ 供出牌瞄准与点击检测
-        constexpr float MONSTER_GAP = 80.f;
-        float mModelTop = modelCenterY - MODEL_TOP_OFFSET;
+        constexpr float MONSTER_GAP = 88.f;
         const size_t nMonsters = s.monsters.size();
+        float monModelW = MODEL_PLACEHOLDER_W;
+        float monModelH = MODEL_PLACEHOLDER_H;
+        float monTopOff = MODEL_TOP_OFFSET;
+        if (nMonsters > 0) {
+            const float rawTotal = static_cast<float>(nMonsters) * MODEL_PLACEHOLDER_W
+                + static_cast<float>(nMonsters - 1) * MONSTER_GAP;
+            if (rawTotal > monsterW * 0.96f) {
+                const float slotW = (monsterW * 0.96f - static_cast<float>(nMonsters - 1) * MONSTER_GAP)
+                    / static_cast<float>(nMonsters);
+                const float s = slotW / MODEL_PLACEHOLDER_W;
+                monModelW = MODEL_PLACEHOLDER_W * s;
+                monModelH = MODEL_PLACEHOLDER_H * s;
+                monTopOff = MODEL_TOP_OFFSET * s;
+            }
+        }
+        const float mModelTop = modelCenterY - monTopOff;
         monsterModelRects_.clear();
         monsterIntentRects_.clear();
         std::vector<float> monsterCenterXs;
         const float totalMonsterW = nMonsters > 0
-            ? static_cast<float>(nMonsters) * MODEL_PLACEHOLDER_W + static_cast<float>(nMonsters - 1) * MONSTER_GAP
+            ? static_cast<float>(nMonsters) * monModelW + static_cast<float>(nMonsters - 1) * MONSTER_GAP
             : 0.f;
-        const float monsterStartX = monsterLeft + (monsterW - totalMonsterW) * 0.5f + MODEL_PLACEHOLDER_W * 0.5f;
+        const float monsterStartX = monsterLeft + (monsterW - totalMonsterW) * 0.5f + monModelW * 0.5f;
 
         for (size_t i = 0; i < nMonsters; ++i) {
-            const float monsterCenterX = monsterStartX + static_cast<float>(i) * (MODEL_PLACEHOLDER_W + MONSTER_GAP);
+            const float monsterCenterX = monsterStartX + static_cast<float>(i) * (monModelW + MONSTER_GAP);
             monsterCenterXs.push_back(monsterCenterX);
             const auto& m = s.monsters[i];
             float intentY = mModelTop - INTENT_ORB_R * 2.f - 6.f;
@@ -3447,34 +3458,64 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         for (size_t i = 0; i < nMonsters; ++i) {
             const float monsterCenterX = monsterCenterXs[i];
-            sf::FloatRect modelRect(sf::Vector2f(monsterCenterX - MODEL_PLACEHOLDER_W * 0.5f, mModelTop),
-                                    sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
+            sf::FloatRect modelRect(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop),
+                                    sf::Vector2f(monModelW, monModelH));
             monsterModelRects_.push_back(modelRect);
             const std::string& monsterId = s.monsters[i].id;
             auto it = monsterTextures_.find(monsterId);
             if (it != monsterTextures_.end()) {
                 sf::Sprite monsterSprite(it->second);
                 const sf::FloatRect texRect = monsterSprite.getLocalBounds();
-                const float scaleX = (texRect.size.x > 0.f) ? (MODEL_PLACEHOLDER_W / texRect.size.x) : 1.f;
-                const float scaleY = (texRect.size.y > 0.f) ? (MODEL_PLACEHOLDER_H / texRect.size.y) : 1.f;
+                const float scaleX = (texRect.size.x > 0.f) ? (monModelW / texRect.size.x) : 1.f;
+                const float scaleY = (texRect.size.y > 0.f) ? (monModelH / texRect.size.y) : 1.f;
                 monsterSprite.setScale(sf::Vector2f(scaleX, scaleY));
-                monsterSprite.setPosition(sf::Vector2f(monsterCenterX - MODEL_PLACEHOLDER_W * 0.5f, mModelTop));
+                monsterSprite.setPosition(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop));
                 window.draw(monsterSprite);
             } else {
-                sf::RectangleShape monsterModel(sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
-                monsterModel.setPosition(sf::Vector2f(monsterCenterX - MODEL_PLACEHOLDER_W * 0.5f, mModelTop));
+                sf::RectangleShape monsterModel(sf::Vector2f(monModelW, monModelH));
+                monsterModel.setPosition(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop));
                 monsterModel.setFillColor(sf::Color(70, 55, 65));
                 monsterModel.setOutlineColor(sf::Color(110, 90, 100));
                 monsterModel.setOutlineThickness(1.f);
                 window.draw(monsterModel);
             }
-            sf::Text monsterLabel(font_, monsterId.c_str(), 18);
-            monsterLabel.setFillColor(sf::Color(200, 180, 190));
-            monsterLabel.setPosition(sf::Vector2f(monsterCenterX - 28.f, modelCenterY - 24.f));
-            window.draw(monsterLabel);
         }
 
-        float mBarY = mModelTop + MODEL_PLACEHOLDER_H + 12.f;
+        // 悬停怪物模型时显示中文名称（默认不绘制怪物 id）
+        for (size_t i = 0; i < nMonsters; ++i) {
+            if (i >= monsterModelRects_.size()) break;
+            if (!monsterModelRects_[i].contains(mousePos_)) continue;
+            const float monsterCenterX = monsterCenterXs[i];
+            const std::string& mid = s.monsters[i].id;
+            const MonsterData* md = get_monster_by_id(mid);
+            sf::String tipStr;
+            if (md && !md->name.empty())
+                tipStr = sf::String::fromUtf8(md->name.begin(), md->name.end());
+            else
+                tipStr = sf::String(mid);
+            const float tipPad = 8.f;
+            sf::Text tipText(fontForChinese(), tipStr, 18);
+            tipText.setFillColor(sf::Color(240, 235, 220));
+            const sf::FloatRect tb = tipText.getLocalBounds();
+            const float tipW = tb.size.x + tipPad * 2.f;
+            const float tipH = tb.size.y + tipPad * 2.f;
+            float tipX = monsterCenterX - tipW * 0.5f;
+            float tipY = mModelTop - tipH - 6.f;
+            if (tipX < 10.f) tipX = 10.f;
+            if (tipX + tipW > static_cast<float>(width_) - 10.f) tipX = static_cast<float>(width_) - tipW - 10.f;
+            if (tipY < 10.f) tipY = mModelTop + monModelH + 6.f;
+            sf::RectangleShape tipBg(sf::Vector2f(tipW, tipH));
+            tipBg.setPosition(sf::Vector2f(tipX, tipY));
+            tipBg.setFillColor(sf::Color(30, 28, 35, 240));
+            tipBg.setOutlineColor(sf::Color(160, 155, 140));
+            tipBg.setOutlineThickness(1.f);
+            window.draw(tipBg);
+            tipText.setPosition(sf::Vector2f(tipX + tipPad - tb.position.x, tipY + tipPad - tb.position.y));
+            window.draw(tipText);
+            break;
+        }
+
+        float mBarY = mModelTop + monModelH + 12.f;
         int hoveredMonsterIndex = -1;
         int hoveredMonsterStatus = -1;
         for (size_t i = 0; i < nMonsters; ++i) {
@@ -3858,7 +3899,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (nMonsters > 0 && hoveredMonsterIndex >= 0 && static_cast<size_t>(hoveredMonsterIndex) < s.monsterStatuses.size() &&
             !s.monsterStatuses[static_cast<size_t>(hoveredMonsterIndex)].empty()) {  // 悬停怪物状态图标时
             const auto& mStatuses = s.monsterStatuses[static_cast<size_t>(hoveredMonsterIndex)];
-            const float boxRight = monsterCenterXs[static_cast<size_t>(hoveredMonsterIndex)] - MODEL_PLACEHOLDER_W * 0.5f - 16.f;  // 怪物模型左侧
+            const float boxRight = monsterCenterXs[static_cast<size_t>(hoveredMonsterIndex)] - monModelW * 0.5f - 16.f;  // 怪物模型左侧
             const float paddingX = 10.f;
             const float paddingY = 6.f;
             const float boxGapY = 6.f;
@@ -3931,7 +3972,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             dmgText.setPosition(sf::Vector2f(playerDamageX + dx, damageY + dy));  // 在玩家左侧，多数字往左下方叠
             window.draw(dmgText);  // 绘制玩家受伤数字
         } else if (ev.monster_index >= 0 && static_cast<size_t>(ev.monster_index) < monsterCenterXs.size()) {  // 否则是怪物受伤，且索引有效
-            const float mx = monsterCenterXs[static_cast<size_t>(ev.monster_index)] + MODEL_PLACEHOLDER_W * 0.5f + 20.f;  // 以对应怪物模型右侧为基准的 X 坐标
+            const float mx = monsterCenterXs[static_cast<size_t>(ev.monster_index)] + monModelW * 0.5f + 20.f;  // 以对应怪物模型右侧为基准的 X 坐标
             dmgText.setPosition(sf::Vector2f(mx + dx, damageY + dy));  // 把数字放在这个怪物右侧，多数字往右下方叠
             window.draw(dmgText);  // 绘制怪物受伤数字
         }

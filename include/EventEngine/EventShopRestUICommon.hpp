@@ -90,6 +90,33 @@ inline void draw_texture_fit(sf::RenderWindow& window, const sf::Texture& tex, c
     window.draw(s);
 }
 
+/** 与 draw_texture_fit 相同，但从源纹理底部裁掉若干像素（去除贴图自带、易超出装饰框的阴影带） */
+inline void draw_texture_fit_crop_bottom(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
+    int cropBottomPx, sf::Color tint = sf::Color::White) {
+    if (tex.getSize().x == 0 || tex.getSize().y == 0) return;
+    const sf::Vector2u sz = tex.getSize();
+    const int fullW = static_cast<int>(sz.x);
+    const int fullH = static_cast<int>(sz.y);
+    const int crop = std::clamp(cropBottomPx, 0, std::max(0, fullH - 1));
+    const int srcH = fullH - crop;
+    if (fullW < 1 || srcH < 1) return;
+    const sf::IntRect srcRect(sf::Vector2i(0, 0), sf::Vector2i(fullW, srcH));
+    sf::Sprite s(tex, srcRect);
+    const float sx = dest.size.x / static_cast<float>(fullW);
+    const float sy = dest.size.y / static_cast<float>(srcH);
+    s.setPosition(dest.position);
+    s.setScale(sf::Vector2f(sx, sy));
+    s.setColor(tint);
+    window.draw(s);
+}
+
+// 事件/商店共用装饰框：底部裁切量（按比例 + 下限像素，适配不同分辨率贴图）
+inline int event_panel_frame_bottom_crop_px(const sf::Texture& tex) {
+    const unsigned h = tex.getSize().y;
+    if (h == 0) return 0;
+    return std::max(5, static_cast<int>(static_cast<float>(h) * 0.035f + 0.5f));
+}
+
 /** 在 dest 内居中绘制纹理，保持原始宽高比（letterbox / pillarbox） */
 inline void draw_texture_contain(sf::RenderWindow& window, const sf::Texture& tex, const sf::FloatRect& dest,
     sf::Color tint = sf::Color::White) {

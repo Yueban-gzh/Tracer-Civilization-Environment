@@ -11,6 +11,53 @@
 namespace tce {
 
 namespace {
+
+// 抽牌从 draw_pile_.back() 依次弹出（先抽到的牌在 vector 末尾）。
+// 分层打乱后按「攻击(×2)→技能→能力→其它」轮流拼成抽牌序列，再 reverse 进 vector；
+// 攻击牌每轮多插一张，提高摸到攻击牌的概率（相对技能/能力）。
+void interleave_shuffle_draw_pile(std::vector<CardInstance>& pile,
+                                  const CardSystem::GetCardByIdFn& get_card,
+                                  RunRng* rng) {
+    if (pile.size() <= 1u || !rng) return;
+    if (!get_card) {
+        std::shuffle(pile.begin(), pile.end(), *rng);
+        return;
+    }
+    std::vector<CardInstance> atk, skl, pwr, oth;
+    atk.reserve(pile.size());
+    skl.reserve(pile.size());
+    pwr.reserve(pile.size());
+    oth.reserve(pile.size());
+    for (auto& c : pile) {
+        const CardData* cd = get_card(c.id);
+        if (!cd) {
+            oth.push_back(std::move(c));
+            continue;
+        }
+        switch (cd->cardType) {
+        case CardType::Attack: atk.push_back(std::move(c)); break;
+        case CardType::Skill: skl.push_back(std::move(c)); break;
+        case CardType::Power: pwr.push_back(std::move(c)); break;
+        default: oth.push_back(std::move(c)); break;
+        }
+    }
+    std::shuffle(atk.begin(), atk.end(), *rng);
+    std::shuffle(skl.begin(), skl.end(), *rng);
+    std::shuffle(pwr.begin(), pwr.end(), *rng);
+    std::shuffle(oth.begin(), oth.end(), *rng);
+    std::vector<CardInstance> seq;
+    seq.reserve(atk.size() + skl.size() + pwr.size() + oth.size());
+    size_t ia = 0, is = 0, ip = 0, io = 0;
+    while (ia < atk.size() || is < skl.size() || ip < pwr.size() || io < oth.size()) {
+        if (ia < atk.size()) seq.push_back(std::move(atk[ia++]));
+        if (ia < atk.size()) seq.push_back(std::move(atk[ia++]));
+        if (is < skl.size()) seq.push_back(std::move(skl[is++]));
+        if (ip < pwr.size()) seq.push_back(std::move(pwr[ip++]));
+        if (io < oth.size()) seq.push_back(std::move(oth[io++]));
+    }
+    pile.assign(seq.rbegin(), seq.rend());
+}
+
 bool can_upgrade_card_id(const CardSystem::GetCardByIdFn& get_card_by_id, const CardId& id) {
     if (id.empty() || id.back() == '+') return false;
     CardId upgraded = id + "+";
@@ -148,7 +195,7 @@ void CardSystem::init_deck(const std::vector<CardId>& initial_card_ids) {
         else draw_pile_.push_back(c);
     }
     for (const auto& c : normal_cards) draw_pile_.push_back(c);
-    std::shuffle(draw_pile_.begin(), draw_pile_.end(), *rng_);
+    interleave_shuffle_draw_pile(draw_pile_, get_card_by_id_, rng_);
 }
 
 // 抽牌：从抽牌堆顶部抽 n 张进手牌；抽牌堆空则洗弃牌入抽牌堆再继续；手牌最多 hand_limit_
@@ -219,7 +266,7 @@ void CardSystem::shuffle_discard_into_draw() {
     for (auto& c : discard_pile_)
         draw_pile_.push_back(c);
     discard_pile_.clear();
-    std::shuffle(draw_pile_.begin(), draw_pile_.end(), *rng_);
+    interleave_shuffle_draw_pile(draw_pile_, get_card_by_id_, rng_);
 }
 
 // 加入抽牌堆（常用于“洗入抽牌堆”）：如 instanceId==0 则分配新实例

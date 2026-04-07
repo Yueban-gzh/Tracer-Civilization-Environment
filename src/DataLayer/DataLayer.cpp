@@ -92,11 +92,30 @@ namespace {
 void apply_builtin_monsters() {
     tce::s_monsters.clear();
     static const tce::MonsterData k_builtin[] = {
-        { "buguguiqi",     u8"卜骨龟蜮",     tce::MonsterType::Normal, 40 },
-        { "dading",        u8"大鼎",         tce::MonsterType::Normal, 45 },
-        { "fashengjiangli",u8"法绳降吏",     tce::MonsterType::Normal, 38 },
-        { "liejianshusheng",u8"裂简书生",    tce::MonsterType::Normal, 36 },
-        { "yazhongzhihun", u8"压冢之魂",     tce::MonsterType::Boss,   180 },
+        { "1.1_xiuqicanzun",      u8"锈蚀残尊",     tce::MonsterType::Normal, 44 },
+        { "1.2_liejianshusheng",  u8"裂简书吏",     tce::MonsterType::Normal, 42 },
+        { "1.3_yazhongzhihun",    u8"压冢之魂",     tce::MonsterType::Boss,   200 },
+        { "1.4_buguguiqi",        u8"卜骨龟蜮",     tce::MonsterType::Normal, 46 },
+        { "1.5_fashengjiangli",   u8"法绳降吏",     tce::MonsterType::Normal, 40 },
+        { "1.6_jianaidulian",     u8"简哀毒怜",     tce::MonsterType::Normal, 40 },
+        { "1.7_wentiantuhai",     u8"问天涂骸",     tce::MonsterType::Normal, 42 },
+        { "1.8_bingyongcanju",    u8"兵俑残驹",     tce::MonsterType::Normal, 45 },
+        { "1.9_nongjihuijin",     u8"农籍汇烬",     tce::MonsterType::Normal, 43 },
+        { "2.1_huxuankongke",     u8"弧悬空壳",     tce::MonsterType::Normal, 46 },
+        { "2.2_canbiyansheng",    u8"残壁衍生",     tce::MonsterType::Normal, 44 },
+        { "2.3_gongdiduanchang",  u8"宫地断场",     tce::MonsterType::Normal, 45 },
+        { "2.4_fengsuiyapao",     u8"砜碎崖炮",     tce::MonsterType::Normal, 43 },
+        { "2.5_zuimocanbi",       u8"罪魔残壁",     tce::MonsterType::Boss,   210 },
+        { "2.6_nichangyuyi",      u8"霓裳羽衣",     tce::MonsterType::Normal, 41 },
+        { "2.7_tongjingsuizhaung",u8"铜镜碎桩",     tce::MonsterType::Normal, 44 },
+        { "2.8_fujielu",          u8"符戒戮",       tce::MonsterType::Normal, 42 },
+        { "3.1_youshimohun",     u8"游石魔魂",     tce::MonsterType::Normal, 45 },
+        { "3.2_bizhongguyin",     u8"笔冢古音",     tce::MonsterType::Normal, 43 },
+        { "3.3_xiusitiou",        u8"修思提欧",     tce::MonsterType::Normal, 40 },
+        { "3.4_sancerusheng",     u8"三策入生",     tce::MonsterType::Normal, 44 },
+        { "3.5_chenzhanhugong",   u8"沉栈湖宫",     tce::MonsterType::Normal, 46 },
+        { "3.6_jiaotongxianmo",   u8"交童衔魔",     tce::MonsterType::Normal, 42 },
+        { "3.7_suizhicanmu",      u8"碎枝残木",     tce::MonsterType::Boss,   230 },
     };
     for (const auto& m : k_builtin) tce::s_monsters[m.id] = m;
 }
@@ -333,22 +352,18 @@ std::vector<tce::MonsterId> parse_boss_array(const JsonValue* p) {
 void apply_default_encounter_pages(std::vector<DataLayer::EncounterPage>& pages) {
     pages.clear();
     pages.resize(3);
-    const tce::MonsterId fb = "cultist";
+    const tce::MonsterId fb = "1.1_xiuqicanzun";
     for (int m = 0; m < 3; ++m) {
         DataLayer::EncounterPage& pg = pages[static_cast<size_t>(m)];
         pg.enemy_groups.clear();
         pg.elite_groups.clear();
         for (int i = 0; i < 9; ++i) {
-            if (i % 3 == 0) pg.enemy_groups.push_back({ "cultist" });
-            else if (i % 3 == 1) pg.enemy_groups.push_back({ "fat_gremlin" });
-            else pg.enemy_groups.push_back({ "cultist", "cultist" });
-        }
-        for (int i = 0; i < 9; ++i) {
-            pg.elite_groups.push_back({ "fat_gremlin", "cultist" });
+            pg.enemy_groups.push_back({ fb });
+            pg.elite_groups.push_back({ fb });
         }
         pad_groups_nine(pg.enemy_groups, fb);
         pad_groups_nine(pg.elite_groups, fb);
-        pg.boss = { "hexaghost" };
+        pg.boss = { "1.3_yazhongzhihun" };
     }
 }
 
@@ -379,16 +394,16 @@ bool DataLayerImpl::load_encounters(const std::string& path_or_base_dir) {
         EncounterPage pg;
         if (const JsonValue* p = pageVal.get_key("enemy_groups")) {
             pg.enemy_groups = parse_groups_array(p);
-            pad_groups_nine(pg.enemy_groups, "cultist");
+            pad_groups_nine(pg.enemy_groups, "1.1_xiuqicanzun");
         }
         if (const JsonValue* p = pageVal.get_key("elite_groups")) {
             pg.elite_groups = parse_groups_array(p);
-            pad_groups_nine(pg.elite_groups, "cultist");
+            pad_groups_nine(pg.elite_groups, "1.1_xiuqicanzun");
         }
         if (const JsonValue* p = pageVal.get_key("boss")) {
             pg.boss = parse_boss_array(p);
         }
-        if (pg.boss.empty()) pg.boss = { "hexaghost" };
+        if (pg.boss.empty()) pg.boss = { "1.3_yazhongzhihun" };
         encounter_pages_.push_back(std::move(pg));
     }
     if (encounter_pages_.empty()) {
@@ -406,7 +421,7 @@ bool DataLayerImpl::load_encounters(const std::string& path_or_base_dir) {
 std::vector<tce::MonsterId> DataLayerImpl::roll_monsters_for_battle(int map_page_index, NodeType node_type,
                                                                     tce::RunRng& rng) const {
     if (encounter_pages_.empty()) {
-        return { "cultist" };
+        return { "1.1_xiuqicanzun" };
     }
     const int clamped = map_page_index < 0 ? 0 : map_page_index;
     size_t pi = static_cast<size_t>(clamped);
@@ -415,16 +430,16 @@ std::vector<tce::MonsterId> DataLayerImpl::roll_monsters_for_battle(int map_page
     switch (node_type) {
     case NodeType::Boss:
         if (!p.boss.empty()) return p.boss;
-        return { "hexaghost" };
+        return { "1.3_yazhongzhihun" };
     case NodeType::Elite: {
-        if (p.elite_groups.empty()) return { "fat_gremlin", "cultist" };
+        if (p.elite_groups.empty()) return { "1.1_xiuqicanzun" };
         const int ng = static_cast<int>(p.elite_groups.size());
         const int pick = rng.uniform_int(0, ng - 1);
         return p.elite_groups[static_cast<size_t>(pick)];
     }
     case NodeType::Enemy:
     default: {
-        if (p.enemy_groups.empty()) return { "cultist" };
+        if (p.enemy_groups.empty()) return { "1.1_xiuqicanzun" };
         const int ng = static_cast<int>(p.enemy_groups.size());
         const int pick = rng.uniform_int(0, ng - 1);
         return p.enemy_groups[static_cast<size_t>(pick)];

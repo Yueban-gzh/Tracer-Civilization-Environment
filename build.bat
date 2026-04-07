@@ -13,6 +13,8 @@ if not exist build mkdir build
 g++ -std=c++17 -Wall -I include -I %SFML_DIR%/include -D_DEBUG -DCONSOLE -DTEST_BATTLE_UI ^
     -c src/main.cpp -o build/main.o
 g++ -std=c++17 -Wall -I include -I %SFML_DIR%/include -D_DEBUG -DCONSOLE -DTEST_BATTLE_UI ^
+    -c src/Common/ImagePath.cpp -o build/ImagePath.o
+g++ -std=c++17 -Wall -I include -I %SFML_DIR%/include -D_DEBUG -DCONSOLE -DTEST_BATTLE_UI ^
     -c src/DataLayer/JsonParser.cpp -o build/JsonParser.o
 g++ -std=c++17 -Wall -I include -I %SFML_DIR%/include -D_DEBUG -DCONSOLE -DTEST_BATTLE_UI ^
     -c src/DataLayer/DataLayer.cpp -o build/DataLayer.o
@@ -42,7 +44,7 @@ g++ -std=c++17 -Wall -I include -I %SFML_DIR%/include -D_DEBUG -DCONSOLE -DTEST_
     -c src/EventEngine/EventEngine.cpp -o build/EventEngine.o
 
 g++ -o build/Tracer_Civilization_Environment.exe ^
-    build/main.o build/JsonParser.o build/DataLayer.o build/CardSystem.o build/DeckViewCollection.o ^
+    build/main.o build/ImagePath.o build/JsonParser.o build/DataLayer.o build/CardSystem.o build/DeckViewCollection.o ^
     build/BattleEngine.o build/BattleUI.o build/BattleUISnapshotAdapter.o build/MonsterBehaviors.o ^
     build/PotionEffects.o build/RelicModifiers.o build/StatusModifiers.o build/BattleCoreRefactorSnapshotAdapter.o ^
     build/CardEffects.o build/EventEngine.o ^

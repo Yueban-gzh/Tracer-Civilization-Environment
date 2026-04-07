@@ -4,6 +4,9 @@
     <ClCompile Include="src\main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\Common\ImagePath.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\CardSystem\CardSystem.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

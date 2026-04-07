@@ -1,61 +1,174 @@
 {
   "monsters": [
     {
-      "id": "buguguiqi",
+      "id": "1.1_xiuqicanzun",
       "cycle": [
-        {
-          "intent": { "kind": "Attack_And_Block", "value": 6, "block": 6, "ui_label": "龟壳冲撞" }
-        },
-        {
-          "intent": { "kind": "Attack", "value": 10, "use_strength": true }
-        }
+        { "intent": { "kind": "Attack", "value": 8, "use_strength": false, "ui_label": "锈蚀打击" } },
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 2, "ui_label": "残尊蓄力" } }
       ]
     },
     {
-      "id": "dading",
+      "id": "1.2_liejianshusheng",
       "cycle": [
-        {
-          "intent": { "kind": "Buff", "status": "strength", "stacks": 2, "ui_label": "鼎中炽焰" }
-        },
-        {
-          "intent": { "kind": "Attack", "value": 8, "use_strength": true }
-        }
+        { "intent": { "kind": "Attack_And_Weak", "value": 7, "stacks": 1, "ui_label": "简缚" } },
+        { "intent": { "kind": "Mul_Attack", "value": 3, "times": 2, "ui_label": "连撕" } }
       ]
     },
     {
-      "id": "fashengjiangli",
+      "id": "1.3_yazhongzhihun",
       "cycle": [
-        {
-          "intent": { "kind": "Attack_And_Weak", "value": 7, "stacks": 1, "ui_label": "缚魂鞭挞" }
-        },
-        {
-          "intent": { "kind": "Mul_Attack", "value": 3, "times": 3 }
-        }
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 3, "ui_label": "冢压" } },
+        { "intent": { "kind": "Mul_Attack", "value": 5, "times": 2, "ui_label": "魂铃" } },
+        { "intent": { "kind": "Strength_And_Player_Weak", "value": 2, "stacks": 2, "ui_label": "镇魂" } }
       ]
     },
     {
-      "id": "liejianshusheng",
+      "id": "1.4_buguguiqi",
       "cycle": [
-        {
-          "intent": { "kind": "Attack_And_Vulnerable", "value": 6, "stacks": 2, "ui_label": "断简诅咒" }
-        },
-        {
-          "intent": { "kind": "Strength_And_Block", "value": 2, "stacks": 5 }
-        }
+        { "intent": { "kind": "Attack_And_Block", "value": 6, "block": 8, "ui_label": "龟甲冲撞" } },
+        { "intent": { "kind": "Attack", "value": 10, "use_strength": true, "ui_label": "重咬" } }
       ]
     },
     {
-      "id": "yazhongzhihun",
+      "id": "1.5_fashengjiangli",
       "cycle": [
-        {
-          "intent": { "kind": "Buff", "status": "strength", "stacks": 3, "ui_label": "冢土苏醒" }
-        },
-        {
-          "intent": { "kind": "Mul_Attack", "value": 4, "times": 3 }
-        },
-        {
-          "intent": { "kind": "Strength_And_Player_Weak", "value": 2, "stacks": 2 }
-        }
+        { "intent": { "kind": "Attack_And_Weak", "value": 7, "stacks": 1, "ui_label": "缚魂鞭" } },
+        { "intent": { "kind": "Mul_Attack", "value": 3, "times": 3, "ui_label": "链影" } }
+      ]
+    },
+    {
+      "id": "1.6_jianaidulian",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Vulnerable", "value": 6, "stacks": 2, "ui_label": "毒怜" } },
+        { "intent": { "kind": "Attack", "value": 5, "use_strength": false, "ui_label": "哀刺" } }
+      ]
+    },
+    {
+      "id": "1.7_wentiantuhai",
+      "cycle": [
+        { "intent": { "kind": "Attack", "value": 9, "use_strength": false, "ui_label": "涂骸" } },
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 1, "ui_label": "问天" } }
+      ]
+    },
+    {
+      "id": "1.8_bingyongcanju",
+      "cycle": [
+        { "intent": { "kind": "Strength_And_Block", "value": 2, "stacks": 6, "ui_label": "俑阵" } },
+        { "intent": { "kind": "Attack", "value": 8, "use_strength": true, "ui_label": "残驹踏" } }
+      ]
+    },
+    {
+      "id": "1.9_nongjihuijin",
+      "cycle": [
+        { "intent": { "kind": "Mul_Attack", "value": 4, "times": 2, "ui_label": "烬雨" } },
+        { "intent": { "kind": "Attack_And_Weak", "value": 6, "stacks": 2, "ui_label": "农籍" } }
+      ]
+    },
+    {
+      "id": "2.1_huxuankongke",
+      "cycle": [
+        { "intent": { "kind": "Attack", "value": 8, "use_strength": false, "ui_label": "弧斩" } },
+        { "intent": { "kind": "Mul_Attack", "value": 3, "times": 4, "ui_label": "空壳连击" } }
+      ]
+    },
+    {
+      "id": "2.2_canbiyansheng",
+      "cycle": [
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 2, "ui_label": "壁生" } },
+        { "intent": { "kind": "Attack_And_Vulnerable", "value": 7, "stacks": 1, "ui_label": "残壁砸" } }
+      ]
+    },
+    {
+      "id": "2.3_gongdiduanchang",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Block", "value": 7, "block": 5, "ui_label": "断场" } },
+        { "intent": { "kind": "Attack", "value": 11, "use_strength": true, "ui_label": "宫地震" } }
+      ]
+    },
+    {
+      "id": "2.4_fengsuiyapao",
+      "cycle": [
+        { "intent": { "kind": "Mul_Attack", "value": 4, "times": 3, "ui_label": "崖炮" } },
+        { "intent": { "kind": "Attack_And_Weak", "value": 5, "stacks": 1, "ui_label": "碎风" } }
+      ]
+    },
+    {
+      "id": "2.5_zuimocanbi",
+      "cycle": [
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 3, "ui_label": "罪印" } },
+        { "intent": { "kind": "Mul_Attack", "value": 5, "times": 3, "ui_label": "魔壁" } },
+        { "intent": { "kind": "Strength_And_Player_Weak", "value": 2, "stacks": 3, "ui_label": "残噬" } }
+      ]
+    },
+    {
+      "id": "2.6_nichangyuyi",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Vulnerable", "value": 6, "stacks": 2, "ui_label": "霓裳" } },
+        { "intent": { "kind": "Attack", "value": 7, "use_strength": false, "ui_label": "羽袭" } }
+      ]
+    },
+    {
+      "id": "2.7_tongjingsuizhaung",
+      "cycle": [
+        { "intent": { "kind": "Attack", "value": 8, "use_strength": false, "ui_label": "镜碎" } },
+        { "intent": { "kind": "Strength_And_Block", "value": 1, "stacks": 10, "ui_label": "铜桩守" } }
+      ]
+    },
+    {
+      "id": "2.8_fujielu",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Weak", "value": 8, "stacks": 2, "ui_label": "符戒" } },
+        { "intent": { "kind": "Mul_Attack", "value": 3, "times": 3, "ui_label": "戮连" } }
+      ]
+    },
+    {
+      "id": "3.1_youshimohun",
+      "cycle": [
+        { "intent": { "kind": "Attack", "value": 9, "use_strength": false, "ui_label": "游石" } },
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 2, "ui_label": "魔魂聚" } }
+      ]
+    },
+    {
+      "id": "3.2_bizhongguyin",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Vulnerable", "value": 7, "stacks": 2, "ui_label": "笔冢" } },
+        { "intent": { "kind": "Attack", "value": 6, "use_strength": true, "ui_label": "古音刺" } }
+      ]
+    },
+    {
+      "id": "3.3_xiusitiou",
+      "cycle": [
+        { "intent": { "kind": "Mul_Attack", "value": 4, "times": 2, "ui_label": "细啄" } },
+        { "intent": { "kind": "Attack_And_Weak", "value": 6, "stacks": 1, "ui_label": "修思" } }
+      ]
+    },
+    {
+      "id": "3.4_sancerusheng",
+      "cycle": [
+        { "intent": { "kind": "Strength_And_Block", "value": 2, "stacks": 8, "ui_label": "三策守" } },
+        { "intent": { "kind": "Attack", "value": 10, "use_strength": true, "ui_label": "入生击" } }
+      ]
+    },
+    {
+      "id": "3.5_chenzhanhugong",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Block", "value": 8, "block": 6, "ui_label": "沉栈" } },
+        { "intent": { "kind": "Mul_Attack", "value": 4, "times": 2, "ui_label": "湖宫潮" } }
+      ]
+    },
+    {
+      "id": "3.6_jiaotongxianmo",
+      "cycle": [
+        { "intent": { "kind": "Attack_And_Weak", "value": 7, "stacks": 2, "ui_label": "衔魔" } },
+        { "intent": { "kind": "Attack", "value": 9, "use_strength": false, "ui_label": "交通缚" } }
+      ]
+    },
+    {
+      "id": "3.7_suizhicanmu",
+      "cycle": [
+        { "intent": { "kind": "Buff", "status": "strength", "stacks": 4, "ui_label": "碎枝觉醒" } },
+        { "intent": { "kind": "Mul_Attack", "value": 5, "times": 4, "ui_label": "残木连打" } },
+        { "intent": { "kind": "Strength_And_Player_Weak", "value": 3, "stacks": 2, "ui_label": "终幕" } }
       ]
     }
   ]

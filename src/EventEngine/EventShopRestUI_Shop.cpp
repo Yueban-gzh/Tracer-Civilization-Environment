@@ -6,6 +6,7 @@
  */
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
+#include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.h"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
@@ -57,9 +58,8 @@ const sf::Texture* resolve_offer_icon_texture(const std::string& id, bool relicS
 
     sf::Texture tex;
     const std::string baseDir = relicStyle ? "assets/relics/" : "assets/potions/";
-    const std::string p1 = baseDir + id + ".png";
-    const std::string p2 = "./" + p1;
-    if (tex.loadFromFile(p1) || tex.loadFromFile(p2)) {
+    const std::string resolved = resolve_image_path(baseDir + id);
+    if (!resolved.empty() && tex.loadFromFile(resolved)) {
         auto [insIt, _] = cache.emplace(id, std::move(tex));
         return &insIt->second;
     }
@@ -596,8 +596,9 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
     const float frameLeft = cx - frameWidth * 0.5f;
     const float frameTop = cy - frameHeight * 0.5f;
     if (eventPanelFrameLoaded_) {
-        draw_texture_fit(window, eventPanelFrameTexture_,
-            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)));
+        draw_texture_fit_crop_bottom(window, eventPanelFrameTexture_,
+            sf::FloatRect(sf::Vector2f(frameLeft, frameTop), sf::Vector2f(frameWidth, frameHeight)),
+            event_panel_frame_bottom_crop_px(eventPanelFrameTexture_));
     }
 
     const float bannerY = panelTop - BANNER_INNER_OVERHANG;
