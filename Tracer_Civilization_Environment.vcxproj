@@ -156,6 +156,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Common\ImagePath.cpp" />
+    <ClCompile Include="src\UI\CardVisual.cpp" />
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
     <ClCompile Include="src\CardSystem\CardSystem.cpp" />
@@ -184,6 +185,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\GameFlow\SaveSystem.cpp" />
     <ClCompile Include="src\GameFlow\StartScreen.cpp" />
     <ClCompile Include="src\GameFlow\CardCatalogScreen.cpp" />
+    <ClCompile Include="src\GameFlow\PotionCatalogScreen.cpp" />
+    <ClCompile Include="src\GameFlow\RelicCatalogScreen.cpp" />
     <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -205,6 +208,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\CardSystem\CardSystem.hpp" />
     <ClInclude Include="include\CardSystem\DeckViewCollection.hpp" />
     <ClInclude Include="include\Common\Types.hpp" />
+    <ClInclude Include="include\UI\CardVisual.hpp" />
     <ClInclude Include="include\DataLayer\DataLayer.h" />
     <ClInclude Include="include\DataLayer\DataLayer.hpp" />
     <ClInclude Include="include\DataLayer\DataTypes.h" />
@@ -225,6 +229,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\Common\NodeTypes.hpp" />
     <ClInclude Include="include\GameFlow\GameFlowController.hpp" />
     <ClInclude Include="include\GameFlow\CardCatalogScreen.hpp" />
+    <ClInclude Include="include\GameFlow\PotionCatalogScreen.hpp" />
+    <ClInclude Include="include\GameFlow\RelicCatalogScreen.hpp" />
     <ClInclude Include="include\GameFlow\CharacterSelectScreen.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -50,7 +50,7 @@ public:
     /** 问号房用：返回“根事件 id”集合（如 event_001），用于从事件树的起点随机抽取。 */
     std::vector<EventId>   get_root_event_ids() const;
 
-    /** 问号房加权抽取：返回满足 layer 范围的“根事件候选 + 权重”。 */
+    /** 问号房加权抽取：返回满足 layer 范围的“根事件候选 + 权重”；若无任何事件覆盖该层则退化为全部根事件。 */
     std::vector<RootEventCandidate> get_root_event_candidates_for_layer(int layer) const;
 
     // ---------- 排序：对卡牌 id 序列按稀有度关键字排序（common < uncommon < rare），用于战斗奖励展示 ----------

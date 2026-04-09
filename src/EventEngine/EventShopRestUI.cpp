@@ -116,6 +116,8 @@ void EventShopRestUI::setScreen(EventShopRestScreen screen) {
 
 void EventShopRestUI::setEventData(const EventDisplayData& data) {
     eventData_ = data;
+    if (eventData_.optionCardIds.size() > eventData_.optionTexts.size())
+        eventData_.optionCardIds.resize(eventData_.optionTexts.size());
     if (eventData_.optionTexts.empty()) {
         eventData_.optionTexts.push_back(std::wstring(L"离开"));
         eventData_.optionEffectTexts.push_back(std::wstring());
@@ -137,12 +139,14 @@ void EventShopRestUI::setEventData(const EventDisplayData& data) {
         eventIllustPath_ = data.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
     }
+    if (eventIllustLoaded_) syncEventIllustrationSceneBackup(eventIllustPath_);
 }
 
 void EventShopRestUI::setEventDataFromUtf8(const std::string& title, const std::string& description,
                                            const std::vector<std::string>& optionTexts,
                                            const std::string& imagePath,
-                                           const std::vector<std::string>& optionEffectTexts) {
+                                           const std::vector<std::string>& optionEffectTexts,
+                                           const std::vector<std::string>& optionCardIds) {
     eventData_.title = utf8_to_wstring(title);
     eventData_.description = utf8_to_wstring(description);
     eventData_.optionTexts.clear();
@@ -157,6 +161,9 @@ void EventShopRestUI::setEventDataFromUtf8(const std::string& title, const std::
         else
             eventData_.optionEffectTexts.push_back(std::wstring());
     }
+    eventData_.optionCardIds = optionCardIds;
+    if (eventData_.optionCardIds.size() > eventData_.optionTexts.size())
+        eventData_.optionCardIds.resize(eventData_.optionTexts.size());
     eventData_.imagePath = imagePath;
     eventOptionRects_.clear();
     pendingEventOption_ = -1;
@@ -169,6 +176,7 @@ void EventShopRestUI::setEventDataFromUtf8(const std::string& title, const std::
         eventIllustPath_ = eventData_.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
     }
+    if (eventIllustLoaded_) syncEventIllustrationSceneBackup(eventIllustPath_);
 }
 
 void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary, const std::string& imagePath) {
@@ -176,6 +184,7 @@ void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary, c
     eventData_.description = utf8_to_wstring(resultSummary);
     eventData_.optionTexts.assign(1, std::wstring(L"确定"));
     eventData_.optionEffectTexts.assign(1, std::wstring());
+    eventData_.optionCardIds.clear();
     eventData_.imagePath = imagePath;
     eventOptionRects_.clear();
     pendingEventOption_ = -1;
@@ -184,16 +193,20 @@ void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary, c
     eventCardScrollOffset_ = 0.f;
     eventCardScrollMax_ = 0.f;
     eventCardScrollStep_ = 42.f;
-    if (eventData_.imagePath != eventIllustPath_) {
+    // 无卡牌/遗物/药水等预览路径时保留进入结果页前的事件插图，避免左侧留白
+    if (!eventData_.imagePath.empty() && eventData_.imagePath != eventIllustPath_) {
         eventIllustPath_ = eventData_.imagePath;
-        // "__cardid:" / "__cards:" 走代码绘制，不加载贴图
-        if (!eventIllustPath_.empty() &&
-            eventIllustPath_.rfind("__cardid:", 0) != 0 &&
-            eventIllustPath_.rfind("__cards:", 0) != 0) {
+        // "__cardid:" / "__cards:" 等走代码绘制，不加载贴图
+        if (eventIllustPath_.rfind("__cardid:", 0) != 0 &&
+            eventIllustPath_.rfind("__cards:", 0) != 0 &&
+            eventIllustPath_.rfind("__cards_relic:", 0) != 0 &&
+            eventIllustPath_.rfind("__relic:", 0) != 0 &&
+            eventIllustPath_.rfind("__potion:", 0) != 0) {
             eventIllustLoaded_ = eventIllustTexture_.loadFromFile(eventIllustPath_);
         } else {
             eventIllustLoaded_ = false;
         }
+        if (eventIllustLoaded_) syncEventIllustrationSceneBackup(eventIllustPath_);
     }
 }
 
@@ -203,6 +216,7 @@ void EventShopRestUI::setEventDataFromEvent(const DataLayer::Event* event) {
     eventData_.description = utf8_to_wstring(event->description);
     eventData_.optionTexts.clear();
     eventData_.optionEffectTexts.clear();
+    eventData_.optionCardIds.clear();
     auto effectToPreview = [](const DataLayer::EventEffect& eff) -> std::string {
         const int v = eff.value;
         if (eff.type == "gold") {
@@ -262,6 +276,16 @@ void EventShopRestUI::setEventDataFromEvent(const DataLayer::Event* event) {
         eventIllustPath_ = eventData_.imagePath;
         eventIllustLoaded_ = !eventIllustPath_.empty() && eventIllustTexture_.loadFromFile(eventIllustPath_);
     }
+    if (eventIllustLoaded_) syncEventIllustrationSceneBackup(eventIllustPath_);
+}
+
+void EventShopRestUI::syncEventIllustrationSceneBackup(const std::string& path) {
+    if (path.empty()) return;
+    if (path.rfind("__cardid:", 0) == 0 || path.rfind("__cards:", 0) == 0 ||
+        path.rfind("__cards_relic:", 0) == 0 || path.rfind("__relic:", 0) == 0 ||
+        path.rfind("__potion:", 0) == 0)
+        return;
+    if (eventIllustSceneBackupTexture_.loadFromFile(path)) eventIllustSceneBackupLoaded_ = true;
 }
 
 void EventShopRestUI::setShopData(const ShopDisplayData& data) {

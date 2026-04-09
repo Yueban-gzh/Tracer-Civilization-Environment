@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -37,6 +38,156 @@ const std::unordered_map<std::string, std::string> kMonsterImageFileAliases = {
 int randomIndex(RunRng& rng, int boundExclusive) {
     if (boundExclusive <= 0) return 0;
     return rng.uniform_int(0, boundExclusive - 1);
+}
+
+bool shop_card_buyable_base(const CardData* cd) {
+    if (!cd) return false;
+    if (!cd->id.empty() && cd->id.back() == '+') return false;
+    if (cd->cardType == CardType::Status || cd->cardType == CardType::Curse) return false;
+    if (cd->unplayable) return false;
+    if (cd->irremovableFromDeck) return false;
+    if (cd->rarity == Rarity::Special) return false;
+    return true;
+}
+
+CardColor shop_class_color(const std::string& character) {
+    if (character == "Silent") return CardColor::Green;
+    return CardColor::Red;
+}
+
+std::vector<CardId> shop_pool_for_color_rarity(CardColor col, Rarity r) {
+    std::vector<CardId> out;
+    for (const CardId& id : get_all_card_ids()) {
+        const CardData* cd = get_card_by_id(id);
+        if (!shop_card_buyable_base(cd)) continue;
+        if (cd->color != col) continue;
+        if (cd->rarity != r) continue;
+        out.push_back(id);
+    }
+    return out;
+}
+
+std::vector<CardId> shop_colorless_pool_rarity(Rarity r) {
+    std::vector<CardId> out;
+    for (const CardId& id : get_all_card_ids()) {
+        const CardData* cd = get_card_by_id(id);
+        if (!shop_card_buyable_base(cd)) continue;
+        if (cd->color != CardColor::Colorless) continue;
+        if (cd->rarity != r) continue;
+        out.push_back(id);
+    }
+    return out;
+}
+
+CardId shop_pick_from_pool_excluding(std::vector<CardId> pool, const std::unordered_set<CardId>& used, RunRng& rng) {
+    const auto isUsed = [&used](const CardId& id) { return used.count(id) > 0; };
+    pool.erase(std::remove_if(pool.begin(), pool.end(), isUsed), pool.end());
+    if (pool.empty()) return {};
+    return pool[static_cast<size_t>(randomIndex(rng, static_cast<int>(pool.size())))];
+}
+
+void shop_degrade_rarity(Rarity& r) {
+    if (r == Rarity::Rare)
+        r = Rarity::Uncommon;
+    else if (r == Rarity::Uncommon)
+        r = Rarity::Common;
+}
+
+Rarity shop_roll_colored_row_rarity(RunRng& rng) {
+    const int x = randomIndex(rng, 100);
+    if (x < 52) return Rarity::Common;
+    if (x < 87) return Rarity::Uncommon;
+    return Rarity::Rare;
+}
+
+Rarity shop_roll_colorless_row_rarity(RunRng& rng) {
+    const int x = randomIndex(rng, 100);
+    if (x < 40) return Rarity::Common;
+    if (x < 85) return Rarity::Uncommon;
+    return Rarity::Rare;
+}
+
+int shop_price_for_card(const CardData& cd, RunRng& rng, int colorlessExtra) {
+    const int j = rng.uniform_int(-3, 3);
+    int base = 50;
+    switch (cd.rarity) {
+    case Rarity::Common: base = 49 + j; break;
+    case Rarity::Uncommon: base = 74 + j; break;
+    case Rarity::Rare: base = 143 + rng.uniform_int(-8, 8); break;
+    default: base = 50 + j; break;
+    }
+    base += colorlessExtra;
+    return std::max(25, base);
+}
+
+CardId shop_pick_colored_offer(CardColor classColor, std::unordered_set<CardId>& used, RunRng& rng) {
+    Rarity r = shop_roll_colored_row_rarity(rng);
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        std::vector<CardId> pool = shop_pool_for_color_rarity(classColor, r);
+        const CardId id = shop_pick_from_pool_excluding(std::move(pool), used, rng);
+        if (!id.empty()) return id;
+        shop_degrade_rarity(r);
+    }
+    std::vector<CardId> pool = shop_pool_for_color_rarity(classColor, Rarity::Common);
+    return shop_pick_from_pool_excluding(std::move(pool), used, rng);
+}
+
+CardId shop_pick_colorless_offer(std::unordered_set<CardId>& used, RunRng& rng) {
+    Rarity r = shop_roll_colorless_row_rarity(rng);
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        std::vector<CardId> pool = shop_colorless_pool_rarity(r);
+        const CardId id = shop_pick_from_pool_excluding(std::move(pool), used, rng);
+        if (!id.empty()) return id;
+        shop_degrade_rarity(r);
+    }
+    return shop_pick_from_pool_excluding(shop_colorless_pool_rarity(Rarity::Common), used, rng);
+}
+
+void fill_random_shop_card_offers(ShopDisplayData& shop, const std::string& character, RunRng& rng) {
+    shop.forSale.clear();
+    shop.colorlessForSale.clear();
+    const CardColor classColor = shop_class_color(character);
+    std::unordered_set<CardId> used;
+    for (int i = 0; i < 5; ++i) {
+        const CardId id = shop_pick_colored_offer(classColor, used, rng);
+        if (id.empty()) continue;
+        used.insert(id);
+        ShopCardOffer c;
+        c.id = id;
+        const CardData* cd = get_card_by_id(id);
+        c.price = cd ? shop_price_for_card(*cd, rng, 0) : 50;
+        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(id);
+        shop.forSale.push_back(std::move(c));
+    }
+    for (int i = 0; i < 2; ++i) {
+        const CardId id = shop_pick_colorless_offer(used, rng);
+        if (id.empty()) continue;
+        used.insert(id);
+        ShopCardOffer c;
+        c.id = id;
+        const CardData* cd = get_card_by_id(id);
+        const int extra = rng.uniform_int(10, 24);
+        c.price = cd ? shop_price_for_card(*cd, rng, extra) : (75 + extra);
+        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(id);
+        shop.colorlessForSale.push_back(std::move(c));
+    }
+}
+
+CardId pick_map_merchant_random_card(const std::string& character, RunRng& rng) {
+    const CardColor classColor = shop_class_color(character);
+    const int x = randomIndex(rng, 100);
+    Rarity r = Rarity::Common;
+    if (x >= 72 && x < 94) r = Rarity::Uncommon;
+    else if (x >= 94) r = Rarity::Rare;
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        std::vector<CardId> pool = shop_pool_for_color_rarity(classColor, r);
+        if (!pool.empty())
+            return pool[static_cast<size_t>(randomIndex(rng, static_cast<int>(pool.size())))];
+        shop_degrade_rarity(r);
+    }
+    std::vector<CardId> fallback = shop_pool_for_color_rarity(classColor, Rarity::Common);
+    if (!fallback.empty()) return fallback[0];
+    return classColor == CardColor::Green ? CardId{"strike_green"} : CardId{"strike"};
 }
 
 std::string join_names_cn(const std::vector<std::string>& names) {
@@ -453,7 +604,7 @@ void GameFlowController::draw_cheat_mode_hint() {
     line1.setOutlineThickness(2);
     line1.setOutlineColor(sf::Color(40, 20, 10, 200));
 
-    sf::Text line2(hudFont_, sf::String(L"F2 关闭  |  战斗中按 K 秒杀全部怪物"), 17);
+    sf::Text line2(hudFont_, sf::String(L"F2 关闭  |  J 重生成地图  |  战斗中按 K 秒杀全部怪物"), 17);
     line2.setFillColor(sf::Color(235, 235, 245));
     line2.setOutlineThickness(1);
     line2.setOutlineColor(sf::Color(0, 0, 0, 180));
@@ -593,6 +744,14 @@ void GameFlowController::run() {
                         ? "作弊模式 ON：地图任意节点；战斗按 K 秒杀（F2 关闭）"
                         : "作弊模式已关闭";
                 }
+                if (map_cheat_free_travel_ && key->scancode == sf::Keyboard::Scancode::J) {
+                    mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    seenEventRootsByLayer_.clear();
+                    mapUI_.setMap(&mapEngine_);
+                    mapUI_.setCurrentLayer(0);
+                    captureCheckpointForCurrentNode();
+                    statusText_ = "作弊：已重新生成当前地图（J）。";
+                }
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     mapConfigManager_.prevMap();
                     mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
@@ -670,6 +829,12 @@ void GameFlowController::run() {
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
                 if (pauseChoice == 1) {
                     // 返回游戏：不做其它事
+                } else if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    // 存档到槽位（1~3）
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Map;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
                 } else if (pauseChoice == 2) {
                     // 保存并退出：写入存档后关闭窗口
                     lastSceneForSave_ = LastSceneKind::Map;
@@ -912,6 +1077,11 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             if (ui.pollPauseMenuSelection(pauseChoice)) {
                 if (pauseChoice == 1) {
                     // 返回游戏：不做额外逻辑
+                } else if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Battle;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
                 } else if (pauseChoice == 2) {
                     // 保存并退出：写入存档并关闭窗口
                     lastSceneForSave_ = LastSceneKind::Battle;
@@ -1367,7 +1537,12 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         for (const auto& c : candidates) {
             if (seenInLayer.find(c.id) == seenInLayer.end()) freshCandidates.push_back(c);
         }
-        const auto& pickPool = freshCandidates.empty() ? candidates : freshCandidates;
+        // 本层已出现过池中每一个根事件时，清空记录再开一轮，避免立刻按权重放回全池造成高频重复。
+        if (freshCandidates.empty() && !candidates.empty()) {
+            seenInLayer.clear();
+            freshCandidates = candidates;
+        }
+        const auto& pickPool = freshCandidates;
 
         int totalWeight = 0;
         for (const auto& c : pickPool) totalWeight += std::max(1, c.weight);
@@ -1467,9 +1642,10 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
     auto pickFromEventOptions = [&](const std::string& title,
                                     const std::string& desc,
                                     const std::vector<std::string>& options,
-                                    const std::vector<std::string>& optionEffects = std::vector<std::string>{}) -> int {
+                                    const std::vector<std::string>& optionEffects = std::vector<std::string>{},
+                                    const std::vector<std::string>& optionCardIds = std::vector<std::string>{}) -> int {
         if (options.empty()) return -1;
-        ui.setEventDataFromUtf8(title, desc, options, "", optionEffects);
+        ui.setEventDataFromUtf8(title, desc, options, "", optionEffects, optionCardIds);
         while (window_.isOpen()) {
             while (const std::optional ev = window_.pollEvent()) {
                 if (ev->is<sf::Event::Closed>()) {
@@ -1579,7 +1755,12 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Event;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Event;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面
@@ -1661,7 +1842,8 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                         "择术",
                                         "请选择 1 张要加入牌组的卡牌",
                                         optionTexts,
-                                        optionEffects);
+                                        optionEffects,
+                                        cards);
                                     if (pick < 0 || pick >= static_cast<int>(cards.size())) break;
                                     const CardId chosen = cards[static_cast<size_t>(pick)];
                                     cardSystem_.add_to_master_deck(chosen);
@@ -1715,11 +1897,15 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                             effects.push_back("未知卡牌效果");
                                         }
                                     }
+                                    std::vector<std::string> idStrs;
+                                    idStrs.reserve(deck.size());
+                                    for (const auto& inst : deck) idStrs.push_back(inst.id);
                                     const int pick = pickFromEventOptions(
                                         "断舍",
                                         "请选择 1 张要移除的卡牌",
                                         names,
-                                        effects);
+                                        effects,
+                                        idStrs);
                                     if (pick < 0 || pick >= static_cast<int>(ids.size())) break;
                                     const InstanceId chosenInstId = ids[static_cast<size_t>(pick)];
                                     for (const auto& inst : deck) {
@@ -1781,11 +1967,15 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                             if (cd) effects.push_back("费" + std::to_string(std::max(0, cd->cost)) + "｜" + cd->description);
                                             else effects.push_back("未知卡牌效果");
                                         }
+                                        std::vector<std::string> upgradeIds;
+                                        upgradeIds.reserve(deck.size());
+                                        for (const auto& inst : deck) upgradeIds.push_back(inst.id);
                                         const int pick = pickFromEventOptions(
                                             "精修",
                                             "请选择 1 张要升级的卡牌",
                                             names,
-                                            effects);
+                                            effects,
+                                            upgradeIds);
                                         if (pick >= 0 && pick < static_cast<int>(ids.size())) {
                                             const InstanceId iid = ids[static_cast<size_t>(pick)];
                                             for (const auto& inst : deck) {
@@ -1940,8 +2130,7 @@ void GameFlowController::resolveMerchant() {
         statusText_ = "金币不足，离开商店。";
         return;
     }
-    static const std::vector<CardId> shopCards = { "iron_wave", "cleave", "shrug_it_off", "quick_slash" };
-    const CardId picked = shopCards[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(shopCards.size())))];
+    const CardId picked = pick_map_merchant_random_card(playerState_.character, runRng_);
     cardSystem_.add_to_master_deck(picked);
     playerState_.gold -= 50;
     statusText_ = "商店购买 1 张牌（-50 金币）。";
@@ -2045,7 +2234,12 @@ bool GameFlowController::runTreasureScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Treasure;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Treasure;
                     saveRun();
                     exitToStartRequested_ = true;
@@ -2136,29 +2330,7 @@ bool GameFlowController::runShopScene() {
         }
     };
 
-    static const std::vector<std::pair<std::string, int>> kShopCards = {
-        {"iron_wave", 50}, {"cleave", 60}, {"shrug_it_off", 45}, {"quick_slash", 55}, {"strike", 40},
-    };
-    for (const auto& [cid, price] : kShopCards) {
-        ShopCardOffer c;
-        c.id = cid;
-        c.price = price;
-        const CardData* cd = get_card_by_id(cid);
-        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(cid);
-        shop.forSale.push_back(c);
-    }
-
-    static const std::vector<std::pair<std::string, int>> kShopColorless = {
-        {"card_001", 85}, {"card_007", 55},
-    };
-    for (const auto& [cid, price] : kShopColorless) {
-        ShopCardOffer c;
-        c.id = cid;
-        c.price = price;
-        const CardData* cd = get_card_by_id(cid);
-        c.name = cd ? esr_detail::utf8_to_wstring(cd->name) : esr_detail::utf8_to_wstring(cid);
-        shop.colorlessForSale.push_back(c);
-    }
+    fill_random_shop_card_offers(shop, playerState_.character, runRng_);
 
     static const std::vector<std::pair<std::string, int>> kShopRelics = {
         {"vajra", 180}, {"anchor", 160}, {"strawberry", 120},
@@ -2261,7 +2433,12 @@ bool GameFlowController::runShopScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Shop;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Shop;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面
@@ -2524,7 +2701,12 @@ bool GameFlowController::runRestScene() {
         {
             int pauseChoice = 0;
             if (hudBattleUi_.pollPauseMenuSelection(pauseChoice)) {
-                if (pauseChoice == 2) {
+                if (pauseChoice >= 41 && pauseChoice <= 43) {
+                    const int slot = pauseChoice - 40;
+                    lastSceneForSave_ = LastSceneKind::Rest;
+                    const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
+                    (void)saveRun(path);
+                } else if (pauseChoice == 2) {
                     lastSceneForSave_ = LastSceneKind::Rest;
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面

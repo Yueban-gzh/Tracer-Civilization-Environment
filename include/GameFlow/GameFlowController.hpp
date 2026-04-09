@@ -117,7 +117,7 @@ private:
     bool            map_browse_overlay_active_ = false;
     sf::FloatRect   map_browse_return_rect_;
 
-    // 事件去重：同一地图层中已经触发过的根事件 id（尽量避免同层重复事件）
+    // 事件去重：同一地图层本轮尚未抽过的根事件；一轮抽完后清空再开下一轮（不立刻加权放回全池）
     std::unordered_map<int, std::unordered_set<std::string>> seenEventRootsByLayer_;
 };
 

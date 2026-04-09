@@ -5,6 +5,7 @@
 #include "EventEngine/EventShopRestUICommon.hpp"
 #include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.h"
+#include "UI/CardVisual.hpp"
 #include <SFML/Graphics.hpp>
 #include <cmath>
 #include <cstdint>
@@ -162,16 +163,6 @@ void draw_event_item_solo(sf::RenderWindow& window, const sf::Font& font,
     nm.setPosition(sf::Vector2f(cx, iconCy + iconMax * 0.55f + catSize + 6.f));
     window.draw(nm);
 }
-
-bool event_upgraded_static_fee_reduced(const std::string& cid, const CardData* cd) {
-    if (!cd || cid.empty() || cid.back() != '+' || cid.size() < 2) return false;
-    const CardData* base = get_card_by_id(cid.substr(0, cid.size() - 1));
-    if (!base || base->cost < 0 || cd->cost < 0) return false;
-    return cd->cost < base->cost;
-}
-
-const sf::Color kEventUpgradeTitleGreen(140, 255, 165);
-const sf::Color kEventUpgradeFeeDownGreen(200, 255, 225);
 
 } // namespace
 
@@ -373,9 +364,10 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             sf::Vector2f(illustW / lwIll, illustH / lhIll)));
         window.setView(clipVI);
     }
-    if (eventIllustLoaded_ && eventIllustTexture_.getSize().x > 0) {
-        sf::Sprite sprite(eventIllustTexture_);
-        const sf::Vector2u texSize = eventIllustTexture_.getSize();
+    auto drawIllustTexFit = [&](const sf::Texture& tex) {
+        if (tex.getSize().x == 0) return;
+        sf::Sprite sprite(tex);
+        const sf::Vector2u texSize = tex.getSize();
         const float scaleX = illustW / static_cast<float>(texSize.x);
         const float scaleY = illustH / static_cast<float>(texSize.y);
         const float s = std::min(scaleX, scaleY);
@@ -383,6 +375,9 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         sprite.setOrigin(sf::Vector2f(texSize.x * 0.5f, texSize.y * 0.5f));
         sprite.setPosition(sf::Vector2f(illustCx, illustCy));
         window.draw(sprite);
+    };
+    if (eventIllustLoaded_ && eventIllustTexture_.getSize().x > 0) {
+        drawIllustTexFit(eventIllustTexture_);
     } else if (illustIsCard) {
         std::vector<std::string> cardIds;
         std::string comboRelicId;
@@ -417,102 +412,9 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
         if (cardIds.size() > 4) cardIds.resize(4);
 
         auto drawCardInRect = [&](const std::string& cid, const sf::FloatRect& rect) {
-            const CardData* cd = get_card_by_id(cid);
-            const bool upgradeVisual = !cid.empty() && cid.back() == '+';
-            sf::RectangleShape bg(rect.size);
-            bg.setPosition(rect.position);
-            bg.setFillColor(sf::Color(55, 50, 48));
-            bg.setOutlineColor(sf::Color(210, 175, 95));
-            bg.setOutlineThickness(2.5f);
-            window.draw(bg);
-
-            const float w = rect.size.x;
-            const float h = rect.size.y;
-            const float pad = 6.f;
-            const float innerL = rect.position.x + pad;
-            const float innerT = rect.position.y + pad;
-            const float innerW = w - pad * 2.f;
-            const float titleH = std::max(20.f, h * 0.10f);
-            const float artH = std::max(26.f, h * 0.24f);
-            const float typeH = std::max(16.f, h * 0.08f);
-
-            sf::RectangleShape titleBar(sf::Vector2f(innerW - 8.f, titleH));
-            titleBar.setPosition(sf::Vector2f(innerL + 4.f, innerT + 6.f));
-            titleBar.setFillColor(sf::Color(72, 68, 65));
-            titleBar.setOutlineColor(sf::Color(90, 85, 82));
-            titleBar.setOutlineThickness(1.f);
-            window.draw(titleBar);
-
-            sf::ConvexShape artPanel;
-            artPanel.setPointCount(8);
-            const float artTop = innerT + 6.f + titleH + 4.f;
-            artPanel.setPoint(0, sf::Vector2f(innerL, artTop));
-            artPanel.setPoint(1, sf::Vector2f(innerL + innerW, artTop));
-            artPanel.setPoint(2, sf::Vector2f(innerL + innerW, artTop + artH - 8.f));
-            artPanel.setPoint(3, sf::Vector2f(innerL + innerW * 0.75f, artTop + artH));
-            artPanel.setPoint(4, sf::Vector2f(innerL + innerW * 0.5f, artTop + artH - 7.f));
-            artPanel.setPoint(5, sf::Vector2f(innerL + innerW * 0.25f, artTop + artH));
-            artPanel.setPoint(6, sf::Vector2f(innerL, artTop + artH - 8.f));
-            artPanel.setPoint(7, sf::Vector2f(innerL, artTop));
-            artPanel.setFillColor(sf::Color(120, 45, 42));
-            artPanel.setOutlineColor(sf::Color(100, 38, 35));
-            artPanel.setOutlineThickness(1.f);
-            window.draw(artPanel);
-
-            const float typeTop = artTop + artH + 4.f;
-            sf::RectangleShape typeBar(sf::Vector2f(innerW - 12.f, typeH));
-            typeBar.setPosition(sf::Vector2f(innerL + 6.f, typeTop));
-            typeBar.setFillColor(sf::Color(72, 68, 65));
-            typeBar.setOutlineColor(sf::Color(90, 85, 82));
-            typeBar.setOutlineThickness(1.f);
-            window.draw(typeBar);
-
-            const sf::String name = sf::String(cd ? utf8_to_wstring(cd->name) : utf8_to_wstring(cid));
-            sf::Text nameText(fontForText(), name, static_cast<unsigned>(std::max(11.f, h * 0.06f)));
-            nameText.setFillColor(upgradeVisual ? kEventUpgradeTitleGreen : sf::Color::White);
-            const sf::FloatRect nb = nameText.getLocalBounds();
-            nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-            nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 6.f + titleH * 0.5f));
-            window.draw(nameText);
-
-            sf::Text typeText(fontForText(), sf::String(L"卡牌"), static_cast<unsigned>(std::max(9.f, h * 0.045f)));
-            typeText.setFillColor(sf::Color::White);
-            const sf::FloatRect tb = typeText.getLocalBounds();
-            typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-            typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
-            window.draw(typeText);
-
-            if (cd && cd->cost != -2) {
-                const float costR = std::max(10.f, h * 0.05f);
-                const float costCx = innerL + costR - 2.f;
-                const float costCy = innerT + costR - 1.f;
-                sf::CircleShape costRing(costR + 2.f);
-                costRing.setPosition(sf::Vector2f(costCx - costR - 2.f, costCy - costR - 2.f));
-                costRing.setFillColor(sf::Color(0, 0, 0, 0));
-                costRing.setOutlineColor(sf::Color(255, 190, 90));
-                costRing.setOutlineThickness(1.5f);
-                window.draw(costRing);
-                sf::CircleShape costCircle(costR);
-                costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-                costCircle.setFillColor(sf::Color(200, 55, 50));
-                costCircle.setOutlineColor(sf::Color(255, 190, 90));
-                costCircle.setOutlineThickness(1.f);
-                window.draw(costCircle);
-                sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
-                sf::Text costText(fontForText(), costStr, static_cast<unsigned>(std::max(9.f, h * 0.05f)));
-                costText.setFillColor(event_upgraded_static_fee_reduced(cid, cd) ? kEventUpgradeFeeDownGreen
-                                                                               : sf::Color::White);
-                const sf::FloatRect cb = costText.getLocalBounds();
-                costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-                costText.setPosition(sf::Vector2f(costCx, costCy));
-                window.draw(costText);
-            }
-
-            const sf::String desc = sf::String(cd ? utf8_to_wstring(cd->description) : std::wstring(L"未知卡牌效果"));
-            const float descY = typeTop + typeH + 6.f;
-            draw_wrapped_text(window, fontForText(), desc, static_cast<unsigned>(std::max(8.f, h * 0.04f)),
-                sf::Vector2f(innerL + 6.f, descY), innerW - 12.f, rect.position.y + rect.size.y - descY - 6.f,
-                sf::Color(240, 238, 235));
+            constexpr sf::Color kOutline(210, 175, 95);
+            draw_detailed_card_at(window, fontForText(), cid, rect.position.x, rect.position.y, rect.size.x, rect.size.y,
+                kOutline, 8.f);
         };
 
         const float relicRowH = (!comboRelicId.empty()) ? std::max(72.f, illustH * 0.19f) : 0.f;
@@ -555,12 +457,18 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             draw_relic_combo_strip(window, fontForText(), illustLeft, illustW, rowY, relicRowH, comboRelicId, relicTex,
                 bodySize);
         }
+        if (cardIds.empty() && comboRelicId.empty() && eventIllustSceneBackupLoaded_ &&
+            eventIllustSceneBackupTexture_.getSize().x > 0) {
+            drawIllustTexFit(eventIllustSceneBackupTexture_);
+        }
     } else if (illustIsRelic || illustIsPotion) {
         const std::string itemId = eventData_.imagePath.substr(illustIsRelic ? 8 : 9);
         const sf::Texture* tex = resolveOfferIconTexture(illustIsRelic ? "relic" : "potion", itemId);
         if (tex && tex->getSize().x > 0 && tex->getSize().y > 0) {
             draw_event_item_solo(window, fontForText(), illustCx, illustTop, illustH, illustW, itemId, tex, bodySize,
                 illustIsRelic);
+        } else if (eventIllustSceneBackupLoaded_ && eventIllustSceneBackupTexture_.getSize().x > 0) {
+            drawIllustTexFit(eventIllustSceneBackupTexture_);
         } else {
             sf::Text illustHint(fontForText(), sf::String(L"[ 图标加载失败 ]"), static_cast<unsigned>(BODY_CHAR_SIZE - 2));
             illustHint.setFillColor(sf::Color(120, 95, 95));
@@ -569,6 +477,8 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             illustHint.setPosition(sf::Vector2f(illustCx, illustCy));
             window.draw(illustHint);
         }
+    } else if (eventIllustSceneBackupLoaded_ && eventIllustSceneBackupTexture_.getSize().x > 0) {
+        drawIllustTexFit(eventIllustSceneBackupTexture_);
     } else {
         sf::Text illustHint(fontForText(), sf::String(L"[ 插图 ]"), static_cast<unsigned>(BODY_CHAR_SIZE - 2));
         illustHint.setFillColor(sf::Color(80, 78, 90));
@@ -679,6 +589,21 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
                 const bool hover = rect.contains(mousePos_);
                 const bool pressed = (eventOptionPressedIndex_ == static_cast<int>(i));
                 const bool keyFocus = (selectedEventOption_ == static_cast<int>(i));
+
+                if (i < eventData_.optionCardIds.size() && !eventData_.optionCardIds[i].empty()) {
+                    constexpr sf::Color kCardOutline(210, 175, 95);
+                    draw_detailed_card_at(window, fontForText(), eventData_.optionCardIds[i], rect.position.x, rect.position.y,
+                        rect.size.x, rect.size.y, kCardOutline, 8.f);
+                    if (hover || keyFocus) {
+                        sf::RectangleShape hi(sf::Vector2f(rect.size.x + 8.f, rect.size.y + 8.f));
+                        hi.setPosition(sf::Vector2f(rect.position.x - 4.f, rect.position.y - 4.f));
+                        hi.setFillColor(sf::Color::Transparent);
+                        hi.setOutlineColor(sf::Color(220, 185, 95));
+                        hi.setOutlineThickness(5.f);
+                        window.draw(hi);
+                    }
+                    continue;
+                }
 
                 const float w = rect.size.x;
                 const float h = rect.size.y;

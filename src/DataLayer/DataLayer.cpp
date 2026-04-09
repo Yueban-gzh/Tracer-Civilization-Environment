@@ -58,12 +58,12 @@ namespace tce {
 
 // 初始内置一组简单卡牌/怪物数据，便于战斗调试；若主流程调用 load_cards/load_monsters 则会覆盖
 std::unordered_map<CardId, CardData> s_cards{
-    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成6点伤害。", false, false, false, false, false, true, false } },
-    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   u8"造成9点伤害。", false, false, false, false, false, true, false } },
-    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得5点格挡。", false, false, false, false, false, false, false } },
-    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   u8"获得8点格挡。", false, false, false, false, false, false, false } },
-    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
-    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
+    { "strike",  CardData{ "strike",  u8"打击",  CardType::Attack, 1, CardColor::Red, Rarity::Common,   "assets/cards/test1.png", u8"造成6点伤害。", false, false, false, false, false, true, false } },
+    { "strike+", CardData{ "strike+", u8"打击+", CardType::Attack, 1, CardColor::Red, Rarity::Common,   "assets/cards/test1.png", u8"造成9点伤害。", false, false, false, false, false, true, false } },
+    { "defend",  CardData{ "defend",  u8"防御",  CardType::Skill,  1, CardColor::Red, Rarity::Common,   "assets/cards/test2.png", u8"获得5点格挡。", false, false, false, false, false, false, false } },
+    { "defend+", CardData{ "defend+", u8"防御+", CardType::Skill,  1, CardColor::Red, Rarity::Common,   "assets/cards/test2.png", u8"获得8点格挡。", false, false, false, false, false, false, false } },
+    { "bash",    CardData{ "bash",    u8"重击",  CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, "", u8"造成8点伤害，并施加2层易伤", false, false, false, false, false, true, false } },
+    { "bash+",   CardData{ "bash+",   u8"重击+", CardType::Attack, 2, CardColor::Red, Rarity::Uncommon, "", u8"造成10点伤害，并施加3层易伤。", false, false, false, false, false, true, false } },
 };
 std::unordered_map<MonsterId, MonsterData> s_monsters;
 
@@ -240,6 +240,7 @@ bool DataLayerImpl::load_cards(const std::string& path_or_base_dir) {
         if (const JsonValue* p = v.get_key("cost")) cd.cost = p->as_int();
         if (const JsonValue* p = v.get_key("color")) cd.color = color_from_string(p->as_string());
         if (const JsonValue* p = v.get_key("rarity")) cd.rarity = rarity_from_string(p->as_string());
+        if (const JsonValue* p = v.get_key("art")) cd.art = p->as_string();
         if (const JsonValue* p = v.get_key("description")) cd.description = p->as_string();
         if (const JsonValue* p = v.get_key("exhaust")) cd.exhaust = p->as_bool();
         if (const JsonValue* p = v.get_key("ethereal")) cd.ethereal = p->as_bool();
@@ -542,24 +543,30 @@ const Event* DataLayerImpl::get_event_by_id(const EventId& id) const {
     return &it->second;
 }
 
-std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
-    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
-    static constexpr const char* kPrefix = "event_";
-    constexpr size_t kPrefixLen = 6;
+namespace {
 
+// 根事件：id 形如 "event_001"（三位数字，不含 event_001a 等子节点）
+bool is_strict_root_event_id(const DataLayer::EventId& id) {
+    static constexpr const char kPrefix[] = "event_";
+    constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+    if (id.size() != kPrefixLen + 3) return false;
+    if (id.rfind(kPrefix, 0) != 0) return false;
+    for (size_t i = kPrefixLen; i < id.size(); ++i) {
+        const char ch = id[i];
+        if (ch < '0' || ch > '9') return false;
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
     std::vector<EventId> out;
     out.reserve(events_.size());
     for (const auto& kv : events_) {
         const EventId& id = kv.first;
-        if (id.size() != kPrefixLen + 3) continue;
-        if (id.rfind(kPrefix, 0) != 0) continue;
-
-        bool ok = true;
-        for (size_t i = kPrefixLen; i < id.size(); ++i) {
-            const char ch = id[i];
-            if (ch < '0' || ch > '9') { ok = false; break; }
-        }
-        if (ok) out.push_back(id);
+        if (!is_strict_root_event_id(id)) continue;
+        out.push_back(id);
     }
 
     // 为了可复现与 UI 好看：按 id 排序
@@ -568,24 +575,12 @@ std::vector<EventId> DataLayerImpl::get_root_event_ids() const {
 }
 
 std::vector<RootEventCandidate> DataLayerImpl::get_root_event_candidates_for_layer(int layer) const {
-    // 根事件：id 形如 "event_001"（只包含三位数字，不含后缀如 event_001a / event_001b）
-    static constexpr const char* kPrefix = "event_";
-    constexpr size_t kPrefixLen = 6;
-
     std::vector<RootEventCandidate> out;
     out.reserve(events_.size());
 
     for (const auto& kv : events_) {
         const EventId& id = kv.first;
-        if (id.size() != kPrefixLen + 3) continue;
-        if (id.rfind(kPrefix, 0) != 0) continue;
-
-        bool ok = true;
-        for (size_t i = kPrefixLen; i < id.size(); ++i) {
-            const char ch = id[i];
-            if (ch < '0' || ch > '9') { ok = false; break; }
-        }
-        if (!ok) continue;
+        if (!is_strict_root_event_id(id)) continue;
 
         const Event& e = kv.second;
         if (layer < e.layer_min || layer > e.layer_max) continue;
@@ -594,6 +589,21 @@ std::vector<RootEventCandidate> DataLayerImpl::get_root_event_candidates_for_lay
     }
 
     // 保证可复现：按 id 排序
+    std::sort(out.begin(), out.end(), [](const RootEventCandidate& a, const RootEventCandidate& b) {
+        return a.id < b.id;
+    });
+
+    // 表中 layer_min/max 未覆盖当前地图层时，若直接返回空，主流程会反复落到默认 event_001。
+    // 退化为「全部根事件」参与加权随机，仍由主流程按层做不重复轮询。
+    if (!out.empty()) return out;
+
+    for (const auto& kv : events_) {
+        const EventId& id = kv.first;
+        if (!is_strict_root_event_id(id)) continue;
+        const Event& e = kv.second;
+        const int w = e.weight <= 0 ? 1 : e.weight;
+        out.push_back(RootEventCandidate{ e.id, w });
+    }
     std::sort(out.begin(), out.end(), [](const RootEventCandidate& a, const RootEventCandidate& b) {
         return a.id < b.id;
     });

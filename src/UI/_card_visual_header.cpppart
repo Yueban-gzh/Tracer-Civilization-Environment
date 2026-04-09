@@ -1,0 +1,157 @@
+/**
+ * 与 BattleUI 手牌/奖励/选牌共用的完整卡面绘制（供事件/商店/休息等复用）。
+ */
+#include "UI/CardVisual.hpp"
+#include "BattleEngine/BattleStateSnapshot.hpp"
+#include "CardSystem/CardSystem.hpp"
+#include "DataLayer/DataLayer.hpp"
+#include <SFML/Graphics.hpp>
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace tce {
+
+namespace {
+
+std::unordered_map<std::string, sf::Texture>& card_art_cache() {
+    static std::unordered_map<std::string, sf::Texture> m;
+    return m;
+}
+
+int snapshot_player_status_stacks(const BattleStateSnapshot& s, const std::string& statusId) {
+    int t = 0;
+    for (const auto& st : s.playerStatuses) {
+        if (st.id == statusId) t += st.stacks;
+    }
+    return t;
+}
+
+int effective_hand_card_energy_cost(const CardData* cd, const CardInstance& inst, const BattleStateSnapshot* snap_opt) {
+    if (!cd) return 0;
+    int c = cd->cost;
+    if (c < 0) return c;
+    if (snap_opt) {
+        if (cd->cardType == CardType::Skill && snapshot_player_status_stacks(*snap_opt, "corruption") > 0) return 0;
+        if (cd->cardType == CardType::Skill && inst.combat_cost_zero) return 0;
+        if (cd->cardType == CardType::Attack && snapshot_player_status_stacks(*snap_opt, "free_attack") > 0) return 0;
+        const std::string& hid = inst.id;
+        if (hid == "eviscerate" || hid == "eviscerate+") {
+            const int disc = snapshot_player_status_stacks(*snap_opt, "discarded_this_turn");
+            return std::max(0, cd->cost - disc - inst.combatCostDiscount);
+        }
+    }
+    int e = c - inst.combatCostDiscount;
+    return e < 0 ? 0 : e;
+}
+
+constexpr float kCardFacePi = 3.14159265f;
+
+void build_round_rect_poly(std::vector<sf::Vector2f>& out, float x, float y, float rw, float rh, float r, int seg) {
+    out.clear();
+    r = std::max(0.f, std::min(r, std::min(rw, rh) * 0.5f - 0.5f));
+    if (r < 0.5f) {
+        out.push_back(sf::Vector2f(x, y));
+        out.push_back(sf::Vector2f(x + rw, y));
+        out.push_back(sf::Vector2f(x + rw, y + rh));
+        out.push_back(sf::Vector2f(x, y + rh));
+        return;
+    }
+    auto add_arc = [&](float cx, float cy, float a0, float a1) {
+        for (int j = 1; j <= seg; ++j) {
+            const float t = static_cast<float>(j) / static_cast<float>(seg);
+            const float a = a0 + (a1 - a0) * t;
+            out.push_back(sf::Vector2f(cx + r * std::cos(a), cy + r * std::sin(a)));
+        }
+    };
+    out.push_back(sf::Vector2f(x + r, y));
+    out.push_back(sf::Vector2f(x + rw - r, y));
+    add_arc(x + rw - r, y + r, -kCardFacePi * 0.5f, 0.f);
+    out.push_back(sf::Vector2f(x + rw, y + rh - r));
+    add_arc(x + rw - r, y + rh - r, 0.f, kCardFacePi * 0.5f);
+    out.push_back(sf::Vector2f(x + r, y + rh));
+    add_arc(x + r, y + rh - r, kCardFacePi * 0.5f, kCardFacePi);
+    out.push_back(sf::Vector2f(x, y + r));
+    add_arc(x + r, y + r, kCardFacePi, kCardFacePi * 1.5f);
+}
+
+void draw_convex_poly(sf::RenderWindow& window, const std::vector<sf::Vector2f>& pts, const sf::Color& fill,
+    const sf::Color& stroke, float strokeTh, const sf::RenderStates& rs) {
+    if (pts.size() < 3) return;
+    sf::ConvexShape poly;
+    poly.setPointCount(pts.size());
+    for (std::size_t j = 0; j < pts.size(); ++j)
+        poly.setPoint(j, pts[j]);
+    poly.setFillColor(fill);
+    poly.setOutlineColor(stroke);
+    poly.setOutlineThickness(strokeTh);
+    window.draw(poly, rs);
+}
+
+void draw_wrapped_text(sf::RenderTarget& target, const sf::Font& font, const sf::String& text, unsigned int charSize,
+    sf::Vector2f pos, float maxWidth, float maxHeight, sf::Color color, const sf::RenderStates& states = sf::RenderStates::Default) {
+    if (maxWidth <= 1.f || maxHeight <= 1.f || text.isEmpty()) return;
+    sf::Text measure(font, sf::String(L""), charSize);
+    measure.setFillColor(color);
+    const float lineH = font.getLineSpacing(charSize);
+    const int maxLines = static_cast<int>(std::floor(maxHeight / lineH));
+    if (maxLines <= 0) return;
+    std::vector<sf::String> lines;
+    lines.reserve(static_cast<size_t>(maxLines));
+    sf::String current;
+    auto flush_line = [&]() {
+        lines.push_back(current);
+        current.clear();
+    };
+    for (std::size_t ii = 0; ii < text.getSize(); ++ii) {
+        const char32_t ch = text[ii];
+        if (ch == U'\r') continue;
+        if (ch == U'\n') {
+            flush_line();
+            if (static_cast<int>(lines.size()) >= maxLines) break;
+            continue;
+        }
+        sf::String candidate = current;
+        candidate += ch;
+        measure.setString(candidate);
+        const float w = measure.getLocalBounds().size.x;
+        if (!current.isEmpty() && w > maxWidth) {
+            flush_line();
+            if (static_cast<int>(lines.size()) >= maxLines) break;
+            current += ch;
+        } else {
+            current = std::move(candidate);
+        }
+    }
+    if (!current.isEmpty() && static_cast<int>(lines.size()) < maxLines)
+        lines.push_back(current);
+    if (lines.empty()) return;
+    std::size_t joinedLen = 0;
+    for (const auto& l : lines) joinedLen += l.getSize();
+    if (static_cast<int>(lines.size()) == maxLines && joinedLen + 1 < text.getSize()) {
+        sf::String& last = lines.back();
+        const sf::String ell = sf::String(L"…");
+        while (true) {
+            measure.setString(last + ell);
+            if (measure.getLocalBounds().size.x <= maxWidth) break;
+            if (last.isEmpty()) break;
+            last.erase(last.getSize() - 1, 1);
+        }
+        last += ell;
+    }
+    for (std::size_t li = 0; li < lines.size(); ++li) {
+        sf::Text t(font, lines[li], charSize);
+        t.setFillColor(color);
+        t.setPosition(sf::Vector2f(pos.x, pos.y + static_cast<float>(li) * lineH));
+        target.draw(t, states);
+    }
+}
+
+} // namespace
+
+void draw_detailed_card_at(sf::RenderWindow& window, const sf::Font& fontZh, const std::string& card_id, float cardX, float cardY,
+    float w, float h, const sf::Color& outlineColor, float outlineThickness, const sf::RenderStates& states,
+    const BattleStateSnapshot* handSnap, const CardInstance* handInst) {

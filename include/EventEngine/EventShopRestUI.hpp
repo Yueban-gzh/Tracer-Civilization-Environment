@@ -31,9 +31,10 @@ public:
     void setEventDataFromUtf8(const std::string& title, const std::string& description,
                               const std::vector<std::string>& optionTexts,
                               const std::string& imagePath = "",
-                              const std::vector<std::string>& optionEffectTexts = {});
+                              const std::vector<std::string>& optionEffectTexts = {},
+                              const std::vector<std::string>& optionCardIds = {});
 
-    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”，可选传入 imagePath（支持 "__cardid:<id>"） */
+    /** 设置为“事件结果”页：同一界面展示结果文案与“确定”；imagePath 支持 "__cardid:" / "__cards:" 等；为空则左侧仍显示原事件插图 */
     void setEventResultFromUtf8(const std::string& resultSummary, const std::string& imagePath = "");
 
     /** 从 DataLayer::Event 填充事件展示（主流程用 EventEngine::get_current_event() 取得后传入） */
@@ -77,6 +78,8 @@ private:
     void drawRestForgeUpgradeConfirmOverlay(sf::RenderWindow& window);
     /** 商店净简选牌后「移除确认」：单卡放大预览（在 drawShopScreen 删牌页内调用） */
     void drawShopRemoveConfirmOverlay(sf::RenderWindow& window);
+    /** 成功加载普通事件插图时写入，供结果页/预览缺省时不留白 */
+    void syncEventIllustrationSceneBackup(const std::string& path);
     void drawPanel(sf::RenderWindow& window, float centerX, float centerY, float w, float h);
     /**
      * 主牌组选卡网格（商店删牌 / 休息锻造共用）：5 列、裁剪、滚轮偏移；可选顶部提示行。
@@ -109,6 +112,8 @@ private:
     sf::Texture eventIllustTexture_;
     std::string eventIllustPath_;
     bool eventIllustLoaded_ = false;
+    sf::Texture eventIllustSceneBackupTexture_;
+    bool eventIllustSceneBackupLoaded_ = false;
     sf::Texture restBgTexture_;
     bool restBgLoaded_ = false;
     sf::Texture shopBgTexture_;

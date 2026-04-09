@@ -25,6 +25,8 @@ struct EventDisplayData {
     std::vector<std::wstring> optionTexts;
     // 每个选项对应的“选后效果预览”，会在选项下方以红字单独显示
     std::vector<std::wstring> optionEffectTexts;
+    /** 与 optionTexts 同序；非空则该选项用战斗同款卡面绘制（择术/断舍/精修） */
+    std::vector<std::string> optionCardIds;
     std::string imagePath;  // 可选，插图路径，空则显示占位
 };
 

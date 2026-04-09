@@ -113,7 +113,7 @@ private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
-    void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌与「查看升级」按钮命中矩形
+    void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌、「查看升级」与左右翻牌箭头命中矩形
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
@@ -151,9 +151,10 @@ private:
         CardId       card_id;
         sf::Vector2f start{};
         sf::Vector2f end{};
+        float        start_delay_sec = 0.f;
         float        duration_sec = 0.36f;
         sf::Clock    clock{};
-        enum Kind { DrawToHand, HandToDiscard, HandToExhaust } kind = DrawToHand;
+        enum Kind { DrawToHand, HandToDiscard, HandToExhaust, DiscardToDraw } kind = DrawToHand;
         InstanceId   instance_id = 0;
         bool         use_arc_path = false;
     };
@@ -161,6 +162,7 @@ private:
     std::unordered_set<InstanceId>      pile_draw_anim_hiding_;       // 抽到手的牌在飞入完成前不画在手牌区
     std::unordered_map<InstanceId, sf::Vector2f> instance_hand_center_cache_; // 上一帧手牌中心，供弃牌起点
     std::vector<CardInstance>           prev_hand_for_pile_anim_;
+    int                                 prev_draw_sz_for_anim_ = 0;
     int                                 prev_discard_sz_for_anim_ = 0;
     int                                 prev_exhaust_sz_for_anim_ = 0;
     bool                                pile_anim_snapshot_ready_ = false;
@@ -243,17 +245,19 @@ private:
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
-    // 卡牌立绘缓存（key -> texture），用于 artPanel 内的插画
-    std::unordered_map<std::string, sf::Texture> cardArtTextures_;
-
     // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
     bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
     bool settings_panel_active_ = false;     // 二级“设置”页面是否打开
-    int  pending_pause_menu_choice_ = 0;     // 待处理的选择：1=返回游戏 2=保存并退出 3=进入设置
+    // 待处理的选择：
+    // 1=返回游戏 2=保存并退出 3=进入设置 41~43=存档到槽位(1~3)
+    int  pending_pause_menu_choice_ = 0;
     sf::FloatRect pauseResumeRect_;          // 暂停菜单：返回游戏按钮区域
+    sf::FloatRect pauseSaveRect_;            // 暂停菜单：存档按钮区域
     sf::FloatRect pauseSaveQuitRect_;        // 暂停菜单：保存并退出按钮区域
     sf::FloatRect pauseSettingsRect_;        // 暂停菜单：设置按钮区域
     sf::FloatRect settingsBackRect_;         // 设置页面：返回按钮区域
+    bool          pause_save_slot_panel_active_ = false;  // 暂停菜单：是否展开三槽存档选择
+    std::array<sf::FloatRect, 3> pauseSaveSlotRects_{};   // 暂停菜单：槽位按钮区域
     // 背景图（置于最底层）：多张按战斗序号索引，无图时用 clear 色
     std::vector<sf::Texture> backgroundTextures_;
     int                     currentBackgroundIndex_ = 0;
@@ -276,6 +280,9 @@ private:
     bool                          deck_view_detail_show_upgraded_ = false;
     sf::FloatRect                 deck_view_detail_card_rect_{};
     sf::FloatRect                 deck_view_detail_upgrade_btn_rect_{};
+    sf::FloatRect                 deck_view_detail_prev_btn_rect_{};
+    sf::FloatRect                 deck_view_detail_next_btn_rect_{};
+    int                           deck_view_detail_index_ = -1;  // 详情当前牌在 deck_view_cards_ 中的下标
     bool                          hide_top_right_map_button_ = false;
     bool                          map_overlay_blocks_world_input_ = false;
     int                           pending_map_browse_toggle_ = 0;
@@ -324,5 +331,12 @@ private:
     std::vector<CardSelectPullAnim> card_select_pull_anims_;
     sf::Clock                       card_select_confirm_pulse_clock_{};
 };
+
+/** 药水/遗物总览等界面复用：返回已知条目的 id 列表（用于总览展示） */
+std::vector<std::string> ui_get_all_known_potion_ids();
+std::vector<std::string> ui_get_all_known_relic_ids();
+/** 药水/遗物总览等界面复用：返回 (名称, 描述)，未知则返回 (未知*, 空) */
+std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id);
+std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id);
 
 } // namespace tce

@@ -27,6 +27,8 @@
      int        cost       = 0;                  // 费用
      CardColor  color      = CardColor::Colorless;  // 颜色
      Rarity     rarity     = Rarity::Common;     // 稀有度
+    /** 立绘图片路径（相对项目根目录），为空则不绘制立绘 */
+    std::string art;                            // 立绘资源路径（如 "assets/cards/strike.png"）
      std::string description;                    // 描述文本
      bool       exhaust    = false;              // 消耗：打出后移入消耗堆
      bool       ethereal   = false;              // 虚无：回合末未打出则消耗

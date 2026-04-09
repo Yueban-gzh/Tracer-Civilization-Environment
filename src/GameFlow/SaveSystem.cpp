@@ -7,9 +7,50 @@
 
 #include "DataLayer/JsonParser.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace tce {
 
 namespace {
+
+// 将相对路径的存档统一落到“项目根/saves/”：
+// 从可执行文件所在目录向上查找包含 src/ 与 include/ 的目录，作为项目根。
+static std::filesystem::path get_executable_directory() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    std::filesystem::path p(buf);
+    return p.parent_path();
+#else
+    return std::filesystem::current_path();
+#endif
+}
+
+static std::filesystem::path guess_project_root_from_exe() {
+    namespace fs = std::filesystem;
+    fs::path d = get_executable_directory();
+    for (int i = 0; i < 6 && !d.empty(); ++i) {
+        if (fs::exists(d / "src") && fs::exists(d / "include")) return d;
+        d = d.parent_path();
+    }
+    return {};
+}
+
+static std::filesystem::path resolve_save_path(const std::string& path) {
+    namespace fs = std::filesystem;
+    fs::path p = fs::u8path(path);
+    if (p.is_absolute()) return p;
+    if (fs::path root = guess_project_root_from_exe(); !root.empty()) {
+        return root / p;
+    }
+    return p; // fallback: 当前工作目录
+}
 
 std::string json_escape(const std::string& s) {
     std::string o;
@@ -50,7 +91,7 @@ NodeType node_type_from_json(const std::string& s) {
 bool GameFlowController::saveRun(const std::string& path) const {
     namespace fs = std::filesystem;
     try {
-        fs::path savePath(path);
+        fs::path savePath = resolve_save_path(path);
         fs::path dir = savePath.parent_path();
         if (!dir.empty() && !fs::exists(dir)) {
             fs::create_directories(dir);
@@ -181,11 +222,12 @@ bool GameFlowController::loadRun(const std::string& path) {
     namespace fs = std::filesystem;
     try {
         seenEventRootsByLayer_.clear();
-        if (!fs::exists(path)) {
+        const fs::path loadPath = resolve_save_path(path);
+        if (!fs::exists(loadPath)) {
             return false;
         }
 
-        DataLayer::JsonValue root = DataLayer::parse_json_file(path);
+        DataLayer::JsonValue root = DataLayer::parse_json_file(loadPath.u8string());
         if (!root.is_object()) return false;
 
         // --- 运行级随机数状态 ---

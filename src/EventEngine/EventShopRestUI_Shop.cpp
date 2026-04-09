@@ -8,6 +8,7 @@
 #include "EventEngine/EventShopRestUICommon.hpp"
 #include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.h"
+#include "UI/CardVisual.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
@@ -25,29 +26,6 @@ constexpr float kPriceReserveBelowCard = 20.f; // 价签字形占用（略加大
 // 遗物/灵液：框下名称 + 价签预留高度（与 draw_icon_offer 一致）
 constexpr float kOfferGapBelowBox = 4.f;
 constexpr float kOfferGapNameToPrice = 3.f;
-
-inline bool card_id_is_upgraded(const CardId& id) { return !id.empty() && id.back() == '+'; }
-
-/** 升级版且 CardData 上费用低于去掉 + 后的原版（均为非负整数费） */
-inline bool upgraded_static_fee_reduced(const CardId& cid, const CardData* cd) {
-    if (!cd || !card_id_is_upgraded(cid) || cid.size() < 2) return false;
-    const CardData* base = get_card_by_id(cid.substr(0, cid.size() - 1));
-    if (!base || base->cost < 0 || cd->cost < 0) return false;
-    return cd->cost < base->cost;
-}
-
-// 与 BattleUI drawDetailedCardAt 升级版配色一致（更亮）
-const sf::Color kUpgradeCardTitleGreen(140, 255, 165);
-const sf::Color kUpgradeFeeDownGreen(200, 255, 225);
-
-sf::Color rarity_outline(Rarity r) {
-    switch (r) {
-    case Rarity::Uncommon: return sf::Color(80, 180, 120);
-    case Rarity::Rare: return sf::Color(230, 180, 70);
-    case Rarity::Special: return sf::Color(180, 100, 220);
-    default: return sf::Color(210, 175, 95);
-    }
-}
 
 const sf::Texture* resolve_offer_icon_texture(const std::string& id, bool relicStyle) {
     static std::unordered_map<std::string, sf::Texture> relicCache;
@@ -69,92 +47,17 @@ const sf::Texture* resolve_offer_icon_texture(const std::string& id, bool relicS
 void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Vector2f& mousePos,
     CardId cid, int price, const sf::FloatRect& rect, bool canAfford, unsigned shopPriceFont,
     std::wstring& outTooltip, bool& outHover) {
-    const CardData* cd = get_card_by_id(cid);
-    const bool upgradeVisual = card_id_is_upgraded(cid);
     outHover = rect.contains(mousePos);
     outTooltip.clear();
-
-    const sf::Color borderCol = cd ? rarity_outline(cd->rarity) : sf::Color(160, 150, 140);
-    sf::RectangleShape bg(rect.size);
-    bg.setPosition(rect.position);
-    bg.setFillColor(sf::Color(55, 50, 48));
-    bg.setOutlineColor(outHover ? sf::Color(255, 230, 160) : borderCol);
-    bg.setOutlineThickness(outHover ? 2.5f : 2.f);
-    window.draw(bg);
-
-    const float w = rect.size.x;
-    const float h = rect.size.y;
-    const float pad = 5.f;
-    const float innerL = rect.position.x + pad;
-    const float innerT = rect.position.y + pad;
-    const float innerW = w - pad * 2.f;
-    const float titleH = std::max(16.f, h * 0.10f);
-    const float artH = std::max(22.f, h * 0.22f);
-    const float typeH = std::max(14.f, h * 0.07f);
-
-    sf::RectangleShape titleBar(sf::Vector2f(innerW - 6.f, titleH));
-    titleBar.setPosition(sf::Vector2f(innerL + 3.f, innerT + 4.f));
-    titleBar.setFillColor(sf::Color(72, 68, 65));
-    titleBar.setOutlineColor(sf::Color(90, 85, 82));
-    titleBar.setOutlineThickness(1.f);
-    window.draw(titleBar);
-
-    const float artTop = innerT + 4.f + titleH + 3.f;
-    sf::ConvexShape artPanel;
-    artPanel.setPointCount(8);
-    artPanel.setPoint(0, sf::Vector2f(innerL, artTop));
-    artPanel.setPoint(1, sf::Vector2f(innerL + innerW, artTop));
-    artPanel.setPoint(2, sf::Vector2f(innerL + innerW, artTop + artH - 6.f));
-    artPanel.setPoint(3, sf::Vector2f(innerL + innerW * 0.75f, artTop + artH));
-    artPanel.setPoint(4, sf::Vector2f(innerL + innerW * 0.5f, artTop + artH - 6.f));
-    artPanel.setPoint(5, sf::Vector2f(innerL + innerW * 0.25f, artTop + artH));
-    artPanel.setPoint(6, sf::Vector2f(innerL, artTop + artH - 6.f));
-    artPanel.setPoint(7, sf::Vector2f(innerL, artTop));
-    artPanel.setFillColor(sf::Color(95, 42, 38));
-    artPanel.setOutlineColor(sf::Color(120, 55, 48));
-    artPanel.setOutlineThickness(1.f);
-    window.draw(artPanel);
-
-    const float typeTop = artTop + artH + 3.f;
-    sf::RectangleShape typeBar(sf::Vector2f(innerW - 10.f, typeH));
-    typeBar.setPosition(sf::Vector2f(innerL + 5.f, typeTop));
-    typeBar.setFillColor(sf::Color(72, 68, 65));
-    typeBar.setOutlineThickness(1.f);
-    typeBar.setOutlineColor(sf::Color(90, 85, 82));
-    window.draw(typeBar);
-
-    const sf::String name = sf::String(cd ? utf8_to_wstring(cd->name) : utf8_to_wstring(cid));
-    sf::Text nameText(font, name, static_cast<unsigned>(std::max(10.f, h * 0.055f)));
-    nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
-    const sf::FloatRect nb = nameText.getLocalBounds();
-    nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-    nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 4.f + titleH * 0.5f));
-    window.draw(nameText);
-
-    sf::Text typeText(font, sf::String(L"招式"), static_cast<unsigned>(std::max(9.f, h * 0.042f)));
-    typeText.setFillColor(sf::Color(220, 215, 205));
-    const sf::FloatRect tb = typeText.getLocalBounds();
-    typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-    typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
-    window.draw(typeText);
-
-    if (cd && cd->cost != -2) {
-        const float costR = std::max(9.f, h * 0.048f);
-        const float costCx = innerL + costR;
-        const float costCy = innerT + costR;
-        sf::CircleShape costCircle(costR);
-        costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-        costCircle.setFillColor(sf::Color(200, 55, 50));
-        costCircle.setOutlineColor(sf::Color(255, 190, 90));
-        costCircle.setOutlineThickness(1.f);
-        window.draw(costCircle);
-        sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
-        sf::Text costText(font, costStr, static_cast<unsigned>(std::max(8.f, h * 0.045f)));
-        costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
-        const sf::FloatRect cb = costText.getLocalBounds();
-        costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-        costText.setPosition(sf::Vector2f(costCx, costCy));
-        window.draw(costText);
+    constexpr sf::Color kOutline(210, 175, 95);
+    draw_detailed_card_at(window, font, cid, rect.position.x, rect.position.y, rect.size.x, rect.size.y, kOutline, 8.f);
+    if (outHover) {
+        sf::RectangleShape hi(sf::Vector2f(rect.size.x + 6.f, rect.size.y + 6.f));
+        hi.setPosition(sf::Vector2f(rect.position.x - 3.f, rect.position.y - 3.f));
+        hi.setFillColor(sf::Color::Transparent);
+        hi.setOutlineColor(sf::Color(255, 230, 160));
+        hi.setOutlineThickness(2.5f);
+        window.draw(hi);
     }
 
     std::wstring priceStr = std::to_wstring(price) + L" 文钱";
@@ -167,28 +70,12 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
     window.draw(priceText);
 }
 
-// 战斗系统卡面（复用 StS 风格）：无价签、不绘制描述，用于商店删牌选择页 / 休息锻造
-sf::String type_label_for_card(const CardData* cd) {
-    if (!cd) return sf::String(L"招式");
-    switch (cd->cardType) {
-    case CardType::Attack: return sf::String(L"攻击");
-    case CardType::Skill: return sf::String(L"技能");
-    case CardType::Power: return sf::String(L"能力");
-    case CardType::Status: return sf::String(L"状态");
-    case CardType::Curse: return sf::String(L"诅咒");
-    default: return sf::String(L"招式");
-    }
-}
-
+// 与 CardVisual / 战斗手牌同一套完整卡面；用于删牌列表、锻造对比、净简预览等（无价签）。
 void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& font,
     const sf::Vector2f& mousePos, CardId cid, const std::wstring& fallbackName,
-    const sf::FloatRect& rect, bool& outHover, bool forgeOrangeHover = false, bool drawDescription = false,
-    bool upgradedGreenStyle = false, bool forceGoldBorder = false) {
-    const CardData* cd = get_card_by_id(cid);
-    const bool upgradeVisual = upgradedGreenStyle || card_id_is_upgraded(cid);
+    const sf::FloatRect& rect, bool& outHover, bool forgeOrangeHover = false, bool /*drawDescription*/ = false,
+    bool /*upgradedGreenStyle*/ = false, bool forceGoldBorder = false) {
     outHover = rect.contains(mousePos);
-
-    const sf::Color borderCol = cd ? rarity_outline(cd->rarity) : sf::Color(160, 150, 140);
     const bool forgeGoldOn = forgeOrangeHover && (outHover || forceGoldBorder);
     if (forgeGoldOn) {
         sf::RectangleShape outer(sf::Vector2f(rect.size.x + 10.f, rect.size.y + 10.f));
@@ -198,196 +85,42 @@ void draw_battle_card_tile_no_price(sf::RenderWindow& window, const sf::Font& fo
         outer.setOutlineThickness(4.f);
         window.draw(outer);
     }
-    sf::RectangleShape bg(rect.size);
-    bg.setPosition(rect.position);
-    bg.setFillColor(sf::Color(55, 50, 48));
-    if (forgeGoldOn) {
-        bg.setOutlineColor(sf::Color(255, 200, 110));
-        bg.setOutlineThickness(4.f);
-    } else {
-        bg.setOutlineColor(outHover ? sf::Color(255, 230, 160) : borderCol);
-        bg.setOutlineThickness(outHover ? 2.5f : 2.f);
-    }
-    window.draw(bg);
 
-    const float w = rect.size.x;
-    const float h = rect.size.y;
-
-    // 与 BattleUI 手牌卡一致：基准 206×300，整体按比例缩放（标题/立绘/类型/描述/费用字号同战斗）
-    if (drawDescription) {
-        constexpr float kBattleCardW = 206.f;
-        constexpr float kBattleCardH = 300.f;
-        const float s = std::max(0.18f, std::min(w / kBattleCardW, h / kBattleCardH));
-        const float pad = 4.f * s;
-        const float innerL = rect.position.x + pad;
-        const float innerT = rect.position.y + pad;
-        const float innerW = w - 2.f * pad;
-
-        const float titleY = innerT + 24.f * s;
-        const float titleH = 32.f * s;
-        sf::RectangleShape titleBar(sf::Vector2f(std::max(4.f, innerW - 16.f * s), titleH));
-        titleBar.setPosition(sf::Vector2f(innerL + 8.f * s, titleY));
-        titleBar.setFillColor(sf::Color(72, 68, 65));
-        titleBar.setOutlineColor(sf::Color(90, 85, 82));
-        titleBar.setOutlineThickness(1.f);
-        window.draw(titleBar);
-
-        const float artTop = titleY + titleH + 4.f * s;
-        const float artH = 98.f * s;
-        const float chop12 = 12.f * s;
-        const float chop10 = 10.f * s;
-        sf::ConvexShape artPanel;
-        artPanel.setPointCount(8);
-        artPanel.setPoint(0, sf::Vector2f(innerL, artTop));
-        artPanel.setPoint(1, sf::Vector2f(innerL + innerW, artTop));
-        artPanel.setPoint(2, sf::Vector2f(innerL + innerW, artTop + artH - chop12));
-        artPanel.setPoint(3, sf::Vector2f(innerL + innerW * 0.75f, artTop + artH));
-        artPanel.setPoint(4, sf::Vector2f(innerL + innerW * 0.5f, artTop + artH - chop10));
-        artPanel.setPoint(5, sf::Vector2f(innerL + innerW * 0.25f, artTop + artH));
-        artPanel.setPoint(6, sf::Vector2f(innerL, artTop + artH - chop12));
-        artPanel.setPoint(7, sf::Vector2f(innerL, artTop));
-        artPanel.setFillColor(sf::Color(120, 45, 42));
-        artPanel.setOutlineColor(sf::Color(100, 38, 35));
-        artPanel.setOutlineThickness(1.f);
-        window.draw(artPanel);
-
-        const float typeY = artTop + artH + 6.f * s;
-        const float typeH = 26.f * s;
-        sf::RectangleShape typeBar(sf::Vector2f(std::max(4.f, innerW - 24.f * s), typeH));
-        typeBar.setPosition(sf::Vector2f(innerL + 12.f * s, typeY));
-        typeBar.setFillColor(sf::Color(72, 68, 65));
-        typeBar.setOutlineColor(sf::Color(90, 85, 82));
-        typeBar.setOutlineThickness(1.f);
-        window.draw(typeBar);
-
-        if (cd && cd->cost != -2) {
-            const float costR = 22.f * s;
-            const float costCx = innerL + costR - 10.f * s;
-            const float costCy = innerT + costR - 10.f * s;
-            sf::CircleShape costCircle(costR);
-            costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-            costCircle.setFillColor(sf::Color(200, 55, 50));
-            costCircle.setOutlineColor(sf::Color(255, 190, 90));
-            costCircle.setOutlineThickness(2.f);
-            window.draw(costCircle);
-            sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
-            const unsigned costFont = std::max(8u, static_cast<unsigned>(std::round(26.f * s)));
-            sf::Text costText(font, costStr, costFont);
-            costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
-            const sf::FloatRect cb = costText.getLocalBounds();
-            costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-            costText.setPosition(sf::Vector2f(costCx, costCy));
-            window.draw(costText);
-        }
-
-        sf::String cardName;
-        if (cd && !cd->name.empty())
-            cardName = sf::String::fromUtf8(cd->name.begin(), cd->name.end());
-        else
-            cardName = sf::String(fallbackName);
-        const unsigned nameFont = std::max(8u, static_cast<unsigned>(std::round(20.f * s)));
-        sf::Text nameText(font, cardName, nameFont);
-        nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
+    if (cid.empty()) {
+        sf::RectangleShape bg(rect.size);
+        bg.setPosition(rect.position);
+        bg.setFillColor(sf::Color(55, 50, 48));
+        bg.setOutlineColor(forgeGoldOn ? sf::Color(255, 200, 110)
+                                       : (outHover ? sf::Color(255, 230, 160) : sf::Color(160, 150, 140)));
+        bg.setOutlineThickness(forgeGoldOn ? 4.f : (outHover ? 2.5f : 2.f));
+        window.draw(bg);
+        const sf::String lab = fallbackName.empty() ? sf::String(L"?") : sf::String(fallbackName);
+        sf::Text nameText(font, lab, static_cast<unsigned>(std::max(10.f, rect.size.y * 0.055f)));
+        nameText.setFillColor(sf::Color::White);
         const sf::FloatRect nb = nameText.getLocalBounds();
         nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-        nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, titleY + titleH * 0.5f));
+        nameText.setPosition(
+            sf::Vector2f(rect.position.x + rect.size.x * 0.5f, rect.position.y + rect.size.y * 0.5f));
         window.draw(nameText);
-
-        const unsigned typeFont = std::max(8u, static_cast<unsigned>(std::round(16.f * s)));
-        sf::Text typeText(font, type_label_for_card(cd), typeFont);
-        typeText.setFillColor(upgradeVisual ? sf::Color(140, 235, 175) : sf::Color::White);
-        const sf::FloatRect tb = typeText.getLocalBounds();
-        typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-        typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeY + typeH * 0.5f));
-        window.draw(typeText);
-
-        if (cd && !cd->description.empty()) {
-            sf::String descStr = sf::String::fromUtf8(cd->description.begin(), cd->description.end());
-            const float descX = innerL + 12.f * s;
-            const float descY = typeY + typeH + 14.f * s;
-            const float descMaxW = std::max(8.f, innerW - 24.f * s);
-            const float descMaxH = std::max(4.f, (rect.position.y + h) - descY - 14.f * s);
-            const unsigned descFontSz = std::max(8u, static_cast<unsigned>(std::round(15.f * s)));
-            const sf::Color descCol =
-                upgradeVisual ? sf::Color(130, 235, 175) : sf::Color(240, 238, 235);
-            draw_wrapped_text(window, font, descStr, descFontSz, sf::Vector2f(descX, descY), descMaxW, descMaxH,
-                descCol);
-        }
         return;
     }
 
-    const float pad = 5.f;
-    const float innerL = rect.position.x + pad;
-    const float innerT = rect.position.y + pad;
-    const float innerW = w - pad * 2.f;
-    const float titleH = std::max(16.f, h * 0.10f);
-    const float artH = std::max(22.f, h * 0.22f);
-    const float typeH = std::max(14.f, h * 0.07f);
-
-    sf::RectangleShape titleBar(sf::Vector2f(innerW - 6.f, titleH));
-    titleBar.setPosition(sf::Vector2f(innerL + 3.f, innerT + 4.f));
-    titleBar.setFillColor(sf::Color(72, 68, 65));
-    titleBar.setOutlineColor(sf::Color(90, 85, 82));
-    titleBar.setOutlineThickness(1.f);
-    window.draw(titleBar);
-
-    const float artTop = innerT + 4.f + titleH + 3.f;
-    sf::ConvexShape artPanel;
-    artPanel.setPointCount(8);
-    artPanel.setPoint(0, sf::Vector2f(innerL, artTop));
-    artPanel.setPoint(1, sf::Vector2f(innerL + innerW, artTop));
-    artPanel.setPoint(2, sf::Vector2f(innerL + innerW, artTop + artH - 6.f));
-    artPanel.setPoint(3, sf::Vector2f(innerL + innerW * 0.75f, artTop + artH));
-    artPanel.setPoint(4, sf::Vector2f(innerL + innerW * 0.5f, artTop + artH - 6.f));
-    artPanel.setPoint(5, sf::Vector2f(innerL + innerW * 0.25f, artTop + artH));
-    artPanel.setPoint(6, sf::Vector2f(innerL, artTop + artH - 6.f));
-    artPanel.setPoint(7, sf::Vector2f(innerL, artTop));
-    artPanel.setFillColor(sf::Color(95, 42, 38));
-    artPanel.setOutlineColor(sf::Color(120, 55, 48));
-    artPanel.setOutlineThickness(1.f);
-    window.draw(artPanel);
-
-    const float typeTop = artTop + artH + 3.f;
-    sf::RectangleShape typeBar(sf::Vector2f(innerW - 10.f, typeH));
-    typeBar.setPosition(sf::Vector2f(innerL + 5.f, typeTop));
-    typeBar.setFillColor(sf::Color(72, 68, 65));
-    typeBar.setOutlineThickness(1.f);
-    typeBar.setOutlineColor(sf::Color(90, 85, 82));
-    window.draw(typeBar);
-
-    const sf::String name = cd ? sf::String(utf8_to_wstring(cd->name)) : sf::String(fallbackName);
-    sf::Text nameText(font, name, static_cast<unsigned>(std::max(10.f, h * 0.055f)));
-    nameText.setFillColor(upgradeVisual ? kUpgradeCardTitleGreen : sf::Color::White);
-    const sf::FloatRect nb = nameText.getLocalBounds();
-    nameText.setOrigin(sf::Vector2f(nb.position.x + nb.size.x * 0.5f, nb.position.y + nb.size.y * 0.5f));
-    nameText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, innerT + 4.f + titleH * 0.5f));
-    window.draw(nameText);
-
-    sf::Text typeText(font, type_label_for_card(cd), static_cast<unsigned>(std::max(9.f, h * 0.042f)));
-    typeText.setFillColor(sf::Color(220, 215, 205));
-    const sf::FloatRect tb = typeText.getLocalBounds();
-    typeText.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-    typeText.setPosition(sf::Vector2f(innerL + innerW * 0.5f, typeTop + typeH * 0.5f));
-    window.draw(typeText);
-
-    if (cd && cd->cost != -2) {
-        const float costR = std::max(9.f, h * 0.048f);
-        const float costCx = innerL + costR;
-        const float costCy = innerT + costR;
-        sf::CircleShape costCircle(costR);
-        costCircle.setPosition(sf::Vector2f(costCx - costR, costCy - costR));
-        costCircle.setFillColor(sf::Color(200, 55, 50));
-        costCircle.setOutlineColor(sf::Color(255, 190, 90));
-        costCircle.setOutlineThickness(1.f);
-        window.draw(costCircle);
-
-        sf::String costStr = (cd->cost < 0) ? sf::String(L"X") : sf::String(std::to_string(cd->cost));
-        sf::Text costText(font, costStr, static_cast<unsigned>(std::max(8.f, h * 0.045f)));
-        costText.setFillColor(upgraded_static_fee_reduced(cid, cd) ? kUpgradeFeeDownGreen : sf::Color::White);
-        const sf::FloatRect cb = costText.getLocalBounds();
-        costText.setOrigin(sf::Vector2f(cb.position.x + cb.size.x * 0.5f, cb.position.y + cb.size.y * 0.5f));
-        costText.setPosition(sf::Vector2f(costCx, costCy));
-        window.draw(costText);
+    constexpr sf::Color kOutline(210, 175, 95);
+    draw_detailed_card_at(window, font, cid, rect.position.x, rect.position.y, rect.size.x, rect.size.y, kOutline, 8.f);
+    if (forgeGoldOn) {
+        sf::RectangleShape hi(sf::Vector2f(rect.size.x + 6.f, rect.size.y + 6.f));
+        hi.setPosition(sf::Vector2f(rect.position.x - 3.f, rect.position.y - 3.f));
+        hi.setFillColor(sf::Color::Transparent);
+        hi.setOutlineColor(sf::Color(255, 200, 110));
+        hi.setOutlineThickness(3.f);
+        window.draw(hi);
+    } else if (outHover) {
+        sf::RectangleShape hi(sf::Vector2f(rect.size.x + 6.f, rect.size.y + 6.f));
+        hi.setPosition(sf::Vector2f(rect.position.x - 3.f, rect.position.y - 3.f));
+        hi.setFillColor(sf::Color::Transparent);
+        hi.setOutlineColor(sf::Color(255, 230, 160));
+        hi.setOutlineThickness(2.5f);
+        window.draw(hi);
     }
 }
 
@@ -1203,10 +936,9 @@ void EventShopRestUI::drawShopRemoveConfirmOverlay(sf::RenderWindow& window) {
     const float centerY = lh * 0.44f;
     const sf::FloatRect cardRect(sf::Vector2f(lw * 0.5f - cardW * 0.5f, centerY - cardH * 0.5f),
         sf::Vector2f(cardW, cardH));
-    const bool upgradedGreen = !pick->cardId.empty() && pick->cardId.back() == '+';
     bool hoverPreview = false;
     draw_battle_card_tile_no_price(window, fontForText(), mousePos_, pick->cardId, pick->cardName, cardRect, hoverPreview,
-        true, true, upgradedGreen, true);
+        true, true, false, true);
 
     constexpr float kBottomBand = 96.f;
     constexpr float kSideMargin = 40.f;
