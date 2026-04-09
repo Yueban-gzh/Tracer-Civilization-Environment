@@ -624,7 +624,7 @@ namespace MapEngine {
             if (layer == 0) {
                 node_count = rand_int_fallback(run_rng_, 1, 3);
             }
-            // layer 5: 宝箱层，节点数随机1~3
+            // layer 5: 宝箱层，节点数随机1~3（但只会有 1 个宝箱节点）
             else if (layer == 5) {
                 node_count = rand_int_fallback(run_rng_, 1, 3);
             }
@@ -650,15 +650,7 @@ namespace MapEngine {
                     node.type = NodeType::Enemy;
                 }
                 else if (layer == 5) {
-                    if (idx == 0) {
-                        node.type = NodeType::Treasure;
-                    }
-                    else {
-                        node.type = random_by_weight(run_rng_);
-                        if (node.type == NodeType::Enemy) {
-                            node.type = get_monster_type(run_rng_, has_elite);
-                        }
-                    }
+                    node.type = NodeType::Treasure;
                 }
                 else if (layer == 9) {
                     node.type = NodeType::Enemy;
