@@ -25,9 +25,6 @@
     <ClCompile Include="src\DataLayer\DataLayer.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\Effects\StatusEffects.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="src\Effects\CardEffects.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -44,6 +41,57 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CardSystem\DeckViewCollection.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\BattleCoreRefactor\PotionEffects.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\BattleCoreRefactor\RelicModifiers.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\BattleCoreRefactor\StatusModifiers.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\EventShopRestUI.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Event.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Shop.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\EventShopRestUI_Rest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\TreasureRoomLogic.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EventEngine\TreasureRoomUI.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Cheat\CheatEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Cheat\CheatPanel.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MapEngine\MapEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MapEngine\MapUI.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GameFlow\SaveSystem.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GameFlow\StartScreen.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -99,6 +147,72 @@
     <ClInclude Include="include\GameFlow\CharacterSelectScreen.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="include\BattleEngine\BattleStateSnapshot.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\BattleEngine.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\BattleState.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\BattleModifier.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\Damage.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\Types.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\PotionEffects.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\RelicModifiers.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\StatusModifiers.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\CardSystem\DeckViewCollection.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\EventShopRestUIData.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\EventShopRestUI.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\EventShopRestUICommon.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\TreasureRoomLogic.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\EventEngine\TreasureRoomUI.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Cheat\CheatEngine.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Cheat\CheatPanel.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\MapEngine\MapEngine.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\MapEngine\MapUI.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\MapEngine\MapConfig.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Common\NodeTypes.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="源文件">
@@ -109,7 +223,7 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
+    <Filter Include="源文件\资源文件">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>

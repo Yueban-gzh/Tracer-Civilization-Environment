@@ -639,6 +639,29 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
             }
             const float scrollOff = eventCardScrollOffset_;
             const sf::FloatRect viewport(sf::Vector2f(rightLeft + contentPad, cardsTop), sf::Vector2f(textAreaW, availH));
+            const sf::View viewBeforeCards = window.getView();
+            const float lwCards = std::max(1.f, static_cast<float>(width_));
+            const float lhCards = std::max(1.f, static_cast<float>(height_));
+            if (viewport.size.x > 1.f && viewport.size.y > 1.f) {
+                // 给 scissor 留出描边/高亮安全边距，避免边沿卡牌被裁掉外框。
+                const float clipPad = std::max(6.f, 9.f * scale);
+                // 允许裁剪区域扩展到“事件主面板内边界”，而不是卡死在内容区边界，
+                // 否则左/上/右三侧描边会被持续截断。
+                const float panelInset = std::max(8.f, 10.f * scale);
+                const float hardL = panelLeft + panelInset;
+                const float hardT = panelTop + panelInset;
+                const float hardR = panelLeft + panelW - panelInset;
+                const float hardB = panelTop + panelH - panelInset;
+                const float clipL = std::max(hardL, viewport.position.x - clipPad);
+                const float clipT = std::max(hardT, viewport.position.y - clipPad);
+                const float clipR = std::min(hardR, viewport.position.x + viewport.size.x + clipPad);
+                const float clipB = std::min(hardB, viewport.position.y + viewport.size.y + clipPad);
+                sf::View clipVC = window.getDefaultView();
+                clipVC.setScissor(sf::FloatRect(
+                    sf::Vector2f(clipL / lwCards, clipT / lhCards),
+                    sf::Vector2f(std::max(1.f, clipR - clipL) / lwCards, std::max(1.f, clipB - clipT) / lhCards)));
+                window.setView(clipVC);
+            }
 
             for (std::size_t i = 0; i < n; ++i) {
                 const int c = static_cast<int>(i % static_cast<std::size_t>(cols));
@@ -647,7 +670,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
                 const float by = cardsTop + static_cast<float>(r) * (cardH + gapY) - scrollOff;
                 sf::FloatRect rect(sf::Vector2f(bx, by), sf::Vector2f(cardW, cardH));
                 eventOptionRects_.push_back(rect);
-                // 与可视区无交集则跳过；有交集就绘制，避免“整页空白”
+                // 与可视区无交集则跳过；有交集即绘制，交由 scissor 做边界裁剪。
                 if (rect.position.y + rect.size.y < viewport.position.y ||
                     rect.position.y > viewport.position.y + viewport.size.y) {
                     continue;
@@ -776,6 +799,7 @@ void EventShopRestUI::drawEventScreen(sf::RenderWindow& window) {
                     sf::Vector2f(descX, descY), descMaxW, descMaxH,
                     sf::Color(240, 238, 235));
             }
+            window.setView(viewBeforeCards);
 
             // 滚动条提示（可下滑）
             if (eventCardScrollMax_ > 0.f) {
