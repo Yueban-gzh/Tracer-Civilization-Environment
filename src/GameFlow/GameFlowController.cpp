@@ -453,7 +453,7 @@ void GameFlowController::draw_cheat_mode_hint() {
     line1.setOutlineThickness(2);
     line1.setOutlineColor(sf::Color(40, 20, 10, 200));
 
-    sf::Text line2(hudFont_, sf::String(L"F2 关闭  |  战斗中按 K 秒杀全部怪物"), 17);
+    sf::Text line2(hudFont_, sf::String(L"F2 关闭  |  J 重生成地图  |  战斗中按 K 秒杀全部怪物"), 17);
     line2.setFillColor(sf::Color(235, 235, 245));
     line2.setOutlineThickness(1);
     line2.setOutlineColor(sf::Color(0, 0, 0, 180));
@@ -592,6 +592,14 @@ void GameFlowController::run() {
                     statusText_ = map_cheat_free_travel_
                         ? "作弊模式 ON：地图任意节点；战斗按 K 秒杀（F2 关闭）"
                         : "作弊模式已关闭";
+                }
+                if (map_cheat_free_travel_ && key->scancode == sf::Keyboard::Scancode::J) {
+                    mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+                    seenEventRootsByLayer_.clear();
+                    mapUI_.setMap(&mapEngine_);
+                    mapUI_.setCurrentLayer(0);
+                    captureCheckpointForCurrentNode();
+                    statusText_ = "作弊：已重新生成当前地图（J）。";
                 }
                 if (key->scancode == sf::Keyboard::Scancode::Left) {
                     mapConfigManager_.prevMap();

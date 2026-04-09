@@ -571,13 +571,12 @@ namespace MapEngine {
 
     // 辅助函数：按权重随机选择
     static NodeType random_by_weight(tce::RunRng* rng) {
-        // 权重：怪物3，事件1.5，火堆1.5，商店1
-        // 放大10倍变成整数：30, 15, 15, 10
-        int roll = rand_int_fallback(rng, 0, 69);  // 30+15+15+10-1 = 69
+
+        int roll = rand_int_fallback(rng, 0, 69); 
 
         if (roll < 30) return NodeType::Enemy;      // 怪物
-        if (roll < 45) return NodeType::Event;      // 事件
-        if (roll < 60) return NodeType::Rest;       // 火堆
+        if (roll < 55) return NodeType::Event;      // 事件
+        if (roll < 65) return NodeType::Rest;       // 火堆
         return NodeType::Merchant;                   // 商店
     }
 
@@ -620,11 +619,11 @@ namespace MapEngine {
         for (int layer = 0; layer < total_layers_; ++layer) {
             int node_count;
 
-            // layer 0: 节点数随机1~3
+            // layer 0: 起点（更接近杀戮尖塔：固定 1 个起点）
             if (layer == 0) {
-                node_count = rand_int_fallback(run_rng_, 1, 3);
+                node_count = 1;
             }
-            // layer 5: 宝箱层，节点数随机1~3（但只会有 1 个宝箱节点）
+            // layer 5: 宝箱层，节点数随机 1~3（该层全为宝箱）
             else if (layer == 5) {
                 node_count = rand_int_fallback(run_rng_, 1, 3);
             }
@@ -632,9 +631,13 @@ namespace MapEngine {
             else if (layer == 9 || layer == 10 || layer == 11) {
                 node_count = 1;
             }
-            // 其他层：随机1~3个节点
+            // 其他层：更像爬塔的密度（偏向 3），随机 2~4
             else {
-                node_count = rand_int_fallback(run_rng_, 1, 3);
+                // 2..4，且 3 的概率更高
+                int roll = rand_int_fallback(run_rng_, 0, 99);
+                if (roll < 20) node_count = 2;
+                else if (roll < 80) node_count = 3;
+                else node_count = 4;
             }
 
             std::cout << "  第" << layer << "层: " << node_count << "个节点" << std::endl;
@@ -725,116 +728,102 @@ namespace MapEngine {
             pair.second.prev_nodes.clear();
         }
 
-        // 对每一层的节点按X坐标排序，确定"相邻"关系
-        for (int layer = 0; layer < total_layers_; ++layer) {
-            auto& ids = layers_[layer];
-            std::sort(ids.begin(), ids.end(), [this](const NodeId& a, const NodeId& b) {
+        // 更像杀戮尖塔的连线：
+        // - 每个节点通常连接到下一层的“同列/相邻列”(±1) 1~2 条边，形成分叉-汇合节奏
+        // - 连接限制在相邻列可以显著减少交叉线
+        // - 最后仍做一次兜底，确保每个节点至少有入边/出边
+
+        auto add_edge = [&](const NodeId& from, const NodeId& to) {
+            // 防重复
+            for (const auto& e : nodes_[from].next_nodes) {
+                if (e == to) return;
+            }
+            nodes_[from].next_nodes.push_back(to);
+            nodes_[to].prev_nodes.push_back(from);
+        };
+
+        auto clampi = [](int v, int lo, int hi) {
+            return std::max(lo, std::min(hi, v));
+        };
+
+        auto sorted_by_x = [&](const std::vector<NodeId>& ids) {
+            std::vector<NodeId> out = ids;
+            std::sort(out.begin(), out.end(), [this](const NodeId& a, const NodeId& b) {
                 return nodes_[a].position.x < nodes_[b].position.x;
-                });
-        }
+            });
+            return out;
+        };
 
-        // 1. 构建主干路径（从最左侧开始，每层连接到下一层最近的节点）
-        NodeId current = layers_[0][0]; // 第0层最左节点
+        auto map_index = [&](int i, int n, int m) -> int {
+            if (m <= 1) return 0;
+            if (n <= 1) return m / 2;
+            const double t = (double)i / (double)(n - 1);
+            return clampi((int)std::lround(t * (double)(m - 1)), 0, m - 1);
+        };
+
+        // 1) 按“列”建立基础连接，并保证整体不交叉：
+        // 从左到右扫，保证本层生成的所有目标列索引是非递减的（包含分叉边），即可避免交叉线。
         for (int layer = 0; layer < total_layers_ - 1; ++layer) {
-            const auto& next_ids = layers_[layer + 1];
+            const std::vector<NodeId> curr_ids = sorted_by_x(layers_[layer]);
+            const std::vector<NodeId> next_ids = sorted_by_x(layers_[layer + 1]);
+            const int n = (int)curr_ids.size();
+            const int m = (int)next_ids.size();
+            if (n == 0 || m == 0) continue;
 
-            // 找到下一层中X坐标最接近当前节点的节点
-            NodeId closest = next_ids[0];
-            float min_dist = std::abs(nodes_[next_ids[0]].position.x - nodes_[current].position.x);
+            int last_target_max = 0;
+            for (int i = 0; i < n; ++i) {
+                const NodeId& from = curr_ids[i];
+                int base = map_index(i, n, m);
+                int j0 = clampi(base, last_target_max, m - 1);
+                add_edge(from, next_ids[j0]);
+                last_target_max = std::max(last_target_max, j0);
 
-            for (const auto& nid : next_ids) {
-                float dist = std::abs(nodes_[nid].position.x - nodes_[current].position.x);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    closest = nid;
-                }
-            }
-
-            // 添加连接
-            nodes_[current].next_nodes.push_back(closest);
-            nodes_[closest].prev_nodes.push_back(current);
-            current = closest;
-        }
-
-        // 2. 为每个节点添加额外连接（只连接相邻的1-2个节点）
-        for (int layer = 0; layer < total_layers_ - 1; ++layer) {
-            const auto& curr_ids = layers_[layer];
-            const auto& next_ids = layers_[layer + 1];
-
-            for (const auto& from_id : curr_ids) {
-                // 计算当前节点在下一层中的最佳连接目标（按X距离排序）
-                std::vector<std::pair<float, NodeId>> candidates;
-                for (const auto& to_id : next_ids) {
-                    // 避免重复连接
-                    bool already = false;
-                    for (const auto& existing : nodes_[from_id].next_nodes) {
-                        if (existing == to_id) { already = true; break; }
-                    }
-                    if (already) continue;
-
-                    float dist = std::abs(nodes_[to_id].position.x - nodes_[from_id].position.x);
-                    candidates.push_back({ dist, to_id });
-                }
-
-                // 按距离排序
-                std::sort(candidates.begin(), candidates.end());
-
-                // 只连接最近的1-2个，且距离不能超过阈值（如150像素）
-                const float MAX_DIST = 150.0f;
-                int max_connections = rand_int_fallback(run_rng_, 1, 2); // 随机1-2个
-
-                for (int i = 0; i < std::min(max_connections, (int)candidates.size()); ++i) {
-                    if (candidates[i].first > MAX_DIST) break; // 太远了，不连
-
-                    NodeId to_id = candidates[i].second;
-                    nodes_[from_id].next_nodes.push_back(to_id);
-                    nodes_[to_id].prev_nodes.push_back(from_id);
+                // 额外分叉：只允许“向右”增加 1 列，并且一旦加了，后续节点的目标列也必须不小于它
+                const int roll = rand_int_fallback(run_rng_, 0, 99);
+                if (roll < 35 && j0 + 1 < m) {
+                    add_edge(from, next_ids[j0 + 1]);
+                    last_target_max = std::max(last_target_max, j0 + 1);
                 }
             }
         }
 
-        // 3. 确保连通性（没有前驱的节点必须连接到至少一个前一层节点）
+        // 2) 兜底：确保每个节点（除起点）至少有 1 条入边
         for (int layer = 1; layer < total_layers_; ++layer) {
-            for (const auto& curr_id : layers_[layer]) {
-                if (nodes_[curr_id].prev_nodes.empty()) {
-                    // 找到前一层最近的节点
-                    const auto& prev_ids = layers_[layer - 1];
-                    NodeId nearest = prev_ids[0];
-                    float min_dist = std::abs(nodes_[prev_ids[0]].position.x - nodes_[curr_id].position.x);
+            const std::vector<NodeId> curr_ids = sorted_by_x(layers_[layer]);
+            const std::vector<NodeId> prev_ids = sorted_by_x(layers_[layer - 1]);
+            const int n = (int)prev_ids.size();
+            const int m = (int)curr_ids.size();
+            if (n == 0 || m == 0) continue;
 
-                    for (const auto& prev_id : prev_ids) {
-                        float dist = std::abs(nodes_[prev_id].position.x - nodes_[curr_id].position.x);
-                        if (dist < min_dist) {
-                            min_dist = dist;
-                            nearest = prev_id;
-                        }
-                    }
+            int last_from_min = 0;
+            for (int j = 0; j < m; ++j) {
+                const NodeId& to = curr_ids[j];
+                if (!nodes_[to].prev_nodes.empty()) continue;
 
-                    nodes_[nearest].next_nodes.push_back(curr_id);
-                    nodes_[curr_id].prev_nodes.push_back(nearest);
-                }
+                int base = map_index(j, m, n);
+                int i0 = clampi(base, last_from_min, n - 1);
+                add_edge(prev_ids[i0], to);
+                last_from_min = std::max(last_from_min, i0);
             }
         }
 
-        // 4. 确保能到达终点（没有后继的节点必须连接到下一层）
+        // 3) 兜底：确保每个节点（除 Boss）至少有 1 条出边
         for (int layer = 0; layer < total_layers_ - 1; ++layer) {
-            for (const auto& curr_id : layers_[layer]) {
-                if (nodes_[curr_id].next_nodes.empty()) {
-                    const auto& next_ids = layers_[layer + 1];
-                    NodeId nearest = next_ids[0];
-                    float min_dist = std::abs(nodes_[next_ids[0]].position.x - nodes_[curr_id].position.x);
+            const std::vector<NodeId> curr_ids = sorted_by_x(layers_[layer]);
+            const std::vector<NodeId> next_ids = sorted_by_x(layers_[layer + 1]);
+            const int n = (int)curr_ids.size();
+            const int m = (int)next_ids.size();
+            if (n == 0 || m == 0) continue;
 
-                    for (const auto& next_id : next_ids) {
-                        float dist = std::abs(nodes_[next_id].position.x - nodes_[curr_id].position.x);
-                        if (dist < min_dist) {
-                            min_dist = dist;
-                            nearest = next_id;
-                        }
-                    }
+            int last_target_min = 0;
+            for (int i = 0; i < n; ++i) {
+                const NodeId& from = curr_ids[i];
+                if (!nodes_[from].next_nodes.empty()) continue;
 
-                    nodes_[curr_id].next_nodes.push_back(nearest);
-                    nodes_[nearest].prev_nodes.push_back(curr_id);
-                }
+                int base = map_index(i, n, m);
+                int j0 = clampi(base, last_target_min, m - 1);
+                add_edge(from, next_ids[j0]);
+                last_target_min = std::max(last_target_min, j0);
             }
         }
     }
@@ -844,19 +833,19 @@ namespace MapEngine {
     // 替换 auto_layout_nodes 函数，增大节点间距
 
     void MapEngine::auto_layout_nodes() {
-        const float start_x = 200.0f;   // 左边界缩小，给更多空间
-        const float end_x = 1720.0f;    // 右边界扩大
+        const float start_x = 100.0f;   // 左边界再放开一点
+        const float end_x = 1820.0f;    // 右边界再放开一点
 
         // 固定每层之间的垂直间距（像素）
-        const float LAYER_SPACING = 120.0f;
+        const float LAYER_SPACING = 205.0f;
         // 【新增】Boss层额外间距（让Boss更高）
-        const float BOSS_EXTRA_SPACING = 100.0f;  // 额外增加100像素，总共220
+        const float BOSS_EXTRA_SPACING = 170.0f;  // 额外增加170像素
 
         // 第0层的起始Y坐标（底部附近）
         const float start_y = 980.0f;
 
         // 节点之间的最小水平间距（增大到250像素，更宽松）
-        const float MIN_HORIZONTAL_SPACING = 250.0f;
+        const float MIN_HORIZONTAL_SPACING = 380.0f;
 
         // 可用水平范围（扩大可用区域）
         const float AVAILABLE_WIDTH = end_x - start_x;  // 1520 像素
@@ -886,8 +875,8 @@ namespace MapEngine {
                 x_positions.push_back(x);
             }
             else if (count == 2) {
-                // 两个节点：对称分布，间距600像素（更宽松）
-                float spacing = 600.0f;
+                // 两个节点：对称分布，间距940像素（更宽松）
+                float spacing = 940.0f;
                 float center_x = (start_x + end_x) / 2.0f;
                 float x1 = center_x - spacing / 2.0f;
                 float x2 = center_x + spacing / 2.0f;
@@ -900,8 +889,8 @@ namespace MapEngine {
                 x_positions.push_back(x2);
             }
             else if (count == 3) {
-                // 三个节点：均匀分布，总宽度1000像素（更宽松）
-                float total_width = 1000.0f;
+                // 三个节点：均匀分布，总宽度1560像素（更宽松）
+                float total_width = 1560.0f;
                 float start_pos = (start_x + end_x - total_width) / 2.0f;
                 float spacing = total_width / (count - 1);  // 500像素间距
 
@@ -912,8 +901,8 @@ namespace MapEngine {
                 }
             }
             else if (count == 4) {
-                // 四个节点：均匀分布，总宽度1200像素
-                float total_width = 1200.0f;
+                // 四个节点：均匀分布，总宽度1700像素
+                float total_width = 1700.0f;
                 float start_pos = (start_x + end_x - total_width) / 2.0f;
                 float spacing = total_width / (count - 1);  // 400像素间距
 
@@ -943,11 +932,34 @@ namespace MapEngine {
             }
         }
 
+        // 让地图更“有感觉”：对节点做小幅随机位移（避免过于网格化）
+        // 约束：
+        // - 起点层与 Boss 层不抖动，保持清晰
+        // - 抖动幅度较小，后续的连接微调与最小间距约束仍能收敛
+        const float JITTER_X = 175.0f;
+        const float JITTER_Y = 48.0f;
+        for (int layer = 1; layer < total_layers_ - 1; ++layer) {
+            const auto& node_ids = layers_[layer];
+            int count = static_cast<int>(node_ids.size());
+            if (count == 0) continue;
+
+            // 单节点层也允许轻微抖动，但幅度更小，避免整条主干左右跳太厉害
+            const float jx = (count == 1) ? (JITTER_X * 0.45f) : JITTER_X;
+            const float jy = (count == 1) ? (JITTER_Y * 0.45f) : JITTER_Y;
+
+            for (const auto& id : node_ids) {
+                float dx = static_cast<float>(rand_int_fallback(run_rng_, -(int)jx, (int)jx));
+                float dy = static_cast<float>(rand_int_fallback(run_rng_, -(int)jy, (int)jy));
+                nodes_[id].position.x = std::max(start_x, std::min(end_x, nodes_[id].position.x + dx));
+                nodes_[id].position.y = nodes_[id].position.y + dy;
+            }
+        }
+
         // 微调：根据连接关系调整水平位置（降低权重，避免破坏间距）
         adjust_positions_by_connections();
 
         // 额外：强制确保同一层的节点之间满足最小间距（增大到220像素）
-        const float MIN_SPACING = 220.0f;
+        const float MIN_SPACING = 270.0f;
         for (int layer = 0; layer < total_layers_; ++layer) {
             const auto& node_ids = layers_[layer];
             int count = static_cast<int>(node_ids.size());

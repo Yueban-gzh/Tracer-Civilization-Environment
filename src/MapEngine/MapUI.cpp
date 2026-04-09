@@ -4,8 +4,27 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <cstdint>
+#include <algorithm>
+#include <filesystem>
 
 namespace MapEngine {
+
+    static std::string resolve_asset_path_fallback(const std::string& rel) {
+        namespace fs = std::filesystem;
+        fs::path p = fs::u8path(rel);
+        if (fs::exists(p)) return p.u8string();
+
+        // 常见：从 x64/Debug 启动，工作目录不在项目根
+        fs::path cur = fs::current_path();
+        for (int i = 0; i < 6; ++i) {
+            fs::path cand = cur / p;
+            if (fs::exists(cand)) return cand.u8string();
+            if (!cur.has_parent_path()) break;
+            cur = cur.parent_path();
+        }
+        return rel; // 让调用方走原始路径并输出警告
+    }
 
     MapUI::MapUI()
         : m_window(nullptr)
@@ -134,7 +153,8 @@ namespace MapEngine {
 
     bool MapUI::loadNodeTexture(NodeType type, const std::string& filePath) {
         sf::Texture texture;
-        if (!texture.loadFromFile(filePath)) {
+        const std::string resolved = resolve_asset_path_fallback(filePath);
+        if (!texture.loadFromFile(resolved)) {
             std::cerr << "警告：无法加载图片 " << filePath << std::endl;
             m_textureLoaded[type] = false;
             return false;
@@ -142,7 +162,7 @@ namespace MapEngine {
 
         m_nodeTextures[type] = texture;
         m_textureLoaded[type] = true;
-        std::cout << "成功加载图片: " << filePath << std::endl;
+        std::cout << "成功加载图片: " << resolved << std::endl;
         return true;
     }
 
@@ -177,13 +197,16 @@ namespace MapEngine {
         loadAllNodeTextures();
 
         // 【新增】加载已访问节点覆盖层图片
-        if (!m_visitedOverlayTexture.loadFromFile("assets/images/visited_overlay.png")) {
-            std::cerr << "警告：无法加载已访问节点覆盖层图片 assets/images/visited_overlay.png" << std::endl;
+        {
+            const std::string path = resolve_asset_path_fallback("assets/images/visited_overlay.png");
+            if (!m_visitedOverlayTexture.loadFromFile(path)) {
+                std::cerr << "警告：无法加载已访问节点覆盖层图片 assets/images/visited_overlay.png" << std::endl;
             m_visitedOverlayLoaded = false;
-        }
-        else {
-            m_visitedOverlayLoaded = true;
-            std::cout << "成功加载已访问节点覆盖层图片" << std::endl;
+            }
+            else {
+                m_visitedOverlayLoaded = true;
+                std::cout << "成功加载已访问节点覆盖层图片: " << path << std::endl;
+            }
         }
 
         return true;
@@ -274,19 +297,78 @@ namespace MapEngine {
 
         auto snapshot = m_mapEngine->get_map_snapshot();
 
+        const float thickness = 4.0f;
+        const float dashLen = 18.0f;
+        const float gapLen = 12.0f;
+
         for (const auto& edge : snapshot.all_edges) {
             auto fromNode = m_mapEngine->get_node_by_id(edge.from);
             auto toNode = m_mapEngine->get_node_by_id(edge.to);
 
-            sf::Vertex line[2];
-            // 第一个顶点：位置 + 颜色
-            line[0].position = sf::Vector2f(fromNode.position.x, fromNode.position.y);
-            line[0].color = colorEdge;
-            // 第二个顶点：位置 + 颜色
-            line[1].position = sf::Vector2f(toNode.position.x, toNode.position.y);
-            line[1].color = colorEdge;
+            const sf::Vector2f a(fromNode.position.x, fromNode.position.y);
+            const sf::Vector2f b(toNode.position.x, toNode.position.y);
 
-            m_window->draw(line, 2, sf::PrimitiveType::Lines);
+            // 轻微弧度：二次贝塞尔曲线 a -> c -> b
+            const sf::Vector2f d = b - a;
+            const float chord = std::sqrt(d.x * d.x + d.y * d.y);
+            if (chord <= 1.0f) continue;
+            const sf::Vector2f dir(d.x / chord, d.y / chord);
+            const sf::Vector2f perp(-dir.y, dir.x);
+
+            uint32_t h = 2166136261u;
+            for (char cch : edge.from) h = (h ^ (uint8_t)cch) * 16777619u;
+            for (char cch : edge.to) h = (h ^ (uint8_t)cch) * 16777619u;
+            const float sign = (h & 1u) ? 1.0f : -1.0f;
+            const float curve = sign * std::min(44.0f, chord * 0.12f);
+            const sf::Vector2f c = (a + b) * 0.5f + perp * curve;
+
+            auto bez = [&](float t) {
+                const float u = 1.0f - t;
+                return a * (u * u) + c * (2.0f * u * t) + b * (t * t);
+            };
+
+            // 采样成折线，再在折线上画粗虚线（避免棱角分明）
+            constexpr int N = 26;
+            std::vector<sf::Vector2f> pts;
+            pts.reserve(N + 1);
+            for (int i = 0; i <= N; ++i) {
+                float t = (float)i / (float)N;
+                pts.push_back(bez(t));
+            }
+
+            bool drawing = true;
+            float remain = dashLen;
+            for (int i = 0; i < (int)pts.size() - 1; ++i) {
+                sf::Vector2f p0 = pts[i];
+                sf::Vector2f p1 = pts[i + 1];
+                sf::Vector2f sd = p1 - p0;
+                float segLen = std::sqrt(sd.x * sd.x + sd.y * sd.y);
+                if (segLen <= 0.001f) continue;
+                sf::Vector2f sdir(sd.x / segLen, sd.y / segLen);
+                float angleDeg = std::atan2(sd.y, sd.x) * 180.0f / 3.14159265f;
+
+                float pos = 0.0f;
+                while (pos < segLen) {
+                    float step = std::min(remain, segLen - pos);
+                    if (step <= 0.001f) break;
+
+                    if (drawing) {
+                        sf::RectangleShape dash(sf::Vector2f(step, thickness));
+                        dash.setFillColor(colorEdge);
+                        dash.setOrigin(sf::Vector2f(0.0f, thickness * 0.5f));
+                        dash.setPosition(p0 + sdir * pos);
+                        dash.setRotation(sf::degrees(angleDeg));
+                        m_window->draw(dash);
+                    }
+
+                    pos += step;
+                    remain -= step;
+                    if (remain <= 0.001f) {
+                        drawing = !drawing;
+                        remain = drawing ? dashLen : gapLen;
+                    }
+                }
+            }
         }
     }
 
@@ -304,10 +386,29 @@ namespace MapEngine {
 
                 float scale;
                 float displayRadius = radius;
+                float extraScale = 1.0f;
+
+                // 可达节点：呼吸闪烁提示（只对“下一步可进入”的节点）
+                if (node.is_reachable && !node.is_current && !node.is_completed) {
+                    // 给每个节点一点点相位差，避免全部同步
+                    uint32_t h = 2166136261u;
+                    for (char c : node.id) h = (h ^ (uint8_t)c) * 16777619u;
+                    const float phase = (h % 1000) * 0.001f * 6.2831853f;
+                    const float pulse = 0.5f + 0.5f * std::sin(m_timeSec * 4.2f + phase);
+                    extraScale *= (1.0f + 0.26f * pulse);
+                }
+
+                // 悬停：插值放大（hoverBlend 0..1）
+                if (!m_hoveredNodeId.empty() && node.id == m_hoveredNodeId) {
+                    // smoothstep
+                    const float t = m_hoverBlend;
+                    const float s = t * t * (3.0f - 2.0f * t);
+                    extraScale *= (1.0f + 0.28f * s);
+                }
 
                 if (node.type == NodeType::Boss) {
-                    scale = (radius * 2 * 3.5f) / bounds.size.x;
-                    displayRadius = radius * 3.5f;
+                    scale = (radius * 2 * 7.0f) / bounds.size.x;
+                    displayRadius = radius * 7.0f;
                 }
                 else if (node.type == NodeType::Elite) {
                     scale = (radius * 2 * 1.8f) / bounds.size.x;
@@ -325,7 +426,7 @@ namespace MapEngine {
                     scale = (radius * 2) / bounds.size.x;
                 }
 
-                sprite.setScale(sf::Vector2f(scale, scale));
+                sprite.setScale(sf::Vector2f(scale * extraScale, scale * extraScale));
                 sf::FloatRect scaledBounds = sprite.getLocalBounds();
                 sprite.setOrigin(sf::Vector2f(scaledBounds.size.x / 2.0f, scaledBounds.size.y / 2.0f));
                 sprite.setPosition(sf::Vector2f(node.position.x, node.position.y));
@@ -337,8 +438,10 @@ namespace MapEngine {
                     sf::Sprite overlaySprite(m_visitedOverlayTexture);
                     sf::FloatRect bounds = overlaySprite.getLocalBounds();
 
-                    // 缩放覆盖层匹配节点视觉大小（可调整系数）
-                    float scale = (displayRadius * 3.5f) / bounds.size.x;
+                    // 缩放覆盖层匹配节点当前视觉大小（包含 extraScale）
+                    // 访问覆盖层做得更“夸张”一点：明显大于节点本体
+                    const float targetW = (displayRadius * extraScale) * 5.25f;
+                    float scale = targetW / std::max(1.0f, bounds.size.x);
                     overlaySprite.setScale(sf::Vector2f(scale, scale));
 
                     // 居中定位
@@ -348,19 +451,53 @@ namespace MapEngine {
                     overlaySprite.setPosition(sf::Vector2f(node.position.x, node.position.y));
 
                     // 可选：半透明效果（0-255，255为不透明）
-                    overlaySprite.setColor(sf::Color(255, 255, 255, 220));
+                    // 叠加层本身是“笔刷圆环”，为避免看起来像普通圆形描边，这里轻微提亮并加透明度
+                    overlaySprite.setColor(sf::Color(255, 255, 255, 235));
 
                     m_window->draw(overlaySprite);
                 }
 
                 if (node.is_current) {
-                    sf::CircleShape blackOutline(displayRadius + 3);
-                    blackOutline.setFillColor(sf::Color::Transparent);
-                    blackOutline.setOutlineThickness(3.0f);
-                    blackOutline.setOutlineColor(sf::Color::Black);
-                    blackOutline.setOrigin(sf::Vector2f(displayRadius + 3, displayRadius + 3));
-                    blackOutline.setPosition(sf::Vector2f(node.position.x, node.position.y));
-                    m_window->draw(blackOutline);
+                    const float r = displayRadius * extraScale;
+                    const float arrowW = std::max(18.0f, r * 0.75f);
+                    const float arrowH = std::max(16.0f, r * 0.65f);
+                    const sf::Vector2f base(node.position.x, node.position.y - r - 18.0f);
+
+                    sf::ConvexShape arrow(3);
+                    arrow.setPoint(0, sf::Vector2f(0.0f, 0.0f));
+                    arrow.setPoint(1, sf::Vector2f(arrowW, 0.0f));
+                    arrow.setPoint(2, sf::Vector2f(arrowW * 0.5f, arrowH));
+                    arrow.setOrigin(sf::Vector2f(arrowW * 0.5f, arrowH * 0.15f));
+                    arrow.setPosition(base);
+                    arrow.setFillColor(sf::Color(255, 220, 120, 240));
+                    arrow.setOutlineColor(sf::Color(30, 18, 12, 220));
+                    arrow.setOutlineThickness(2.0f);
+
+                    sf::ConvexShape shadow = arrow;
+                    shadow.setPosition(sf::Vector2f(base.x + 2.0f, base.y + 2.0f));
+                    shadow.setFillColor(sf::Color(0, 0, 0, 90));
+                    shadow.setOutlineThickness(0.0f);
+                    m_window->draw(shadow);
+                    m_window->draw(arrow);
+                }
+
+                // 可达节点额外提示圈（叠在最上层，颜色轻一点）
+                if (node.is_reachable && !node.is_current && !node.is_completed) {
+                    uint32_t h = 2166136261u;
+                    for (char c : node.id) h = (h ^ (uint8_t)c) * 16777619u;
+                    const float phase = (h % 1000) * 0.001f * 6.2831853f;
+                    const float pulse = 0.5f + 0.5f * std::sin(m_timeSec * 4.2f + phase);
+                    const int a = 90 + (int)std::lround(120.0f * pulse);
+
+                    const float ringR = (displayRadius * extraScale) + 26.0f;
+                    sf::CircleShape ring(ringR);
+                    ring.setFillColor(sf::Color::Transparent);
+                    ring.setOutlineThickness(5.0f);
+                    const int aClamped = std::max(0, std::min(255, a));
+                    ring.setOutlineColor(sf::Color(255, 235, 170, static_cast<std::uint8_t>(aClamped)));
+                    ring.setOrigin(sf::Vector2f(ringR, ringR));
+                    ring.setPosition(sf::Vector2f(node.position.x, node.position.y));
+                    m_window->draw(ring);
                 }
             }
             else {
@@ -381,23 +518,47 @@ namespace MapEngine {
                 circle.setFillColor(nodeColor);
                 circle.setOutlineThickness(2.0f);
 
-                if (node.is_current) {
-                    circle.setOutlineColor(sf::Color::Black);
-                }
-                else {
+                if (!node.is_current) {
                     circle.setOutlineColor(sf::Color(100, 100, 100));
                 }
 
                 m_window->draw(circle);
 
+                // 已访问节点覆盖贴图：即使没有加载节点图标，也叠一层 visited_overlay.png
+                if (m_visitedOverlayLoaded && node.is_visited && !node.is_current) {
+                    sf::Sprite overlaySprite(m_visitedOverlayTexture);
+                    sf::FloatRect bounds = overlaySprite.getLocalBounds();
+                    const float scale = (radius * 2.0f * 3.10f) / std::max(1.0f, bounds.size.x);
+                    overlaySprite.setScale(sf::Vector2f(scale, scale));
+                    sf::FloatRect sb = overlaySprite.getLocalBounds();
+                    overlaySprite.setOrigin(sf::Vector2f(sb.size.x / 2.0f, sb.size.y / 2.0f));
+                    overlaySprite.setPosition(sf::Vector2f(node.position.x, node.position.y));
+                    overlaySprite.setColor(sf::Color(255, 255, 255, 235));
+                    m_window->draw(overlaySprite);
+                }
+
                 if (node.is_current) {
-                    sf::CircleShape blackOutline(radius + 3);
-                    blackOutline.setFillColor(sf::Color::Transparent);
-                    blackOutline.setOutlineThickness(3.0f);
-                    blackOutline.setOutlineColor(sf::Color::Black);
-                    blackOutline.setOrigin(sf::Vector2f(radius + 3, radius + 3));
-                    blackOutline.setPosition(sf::Vector2f(node.position.x, node.position.y));
-                    m_window->draw(blackOutline);
+                    const float r = radius;
+                    const float arrowW = std::max(18.0f, r * 0.75f);
+                    const float arrowH = std::max(16.0f, r * 0.65f);
+                    const sf::Vector2f base(node.position.x, node.position.y - r - 18.0f);
+
+                    sf::ConvexShape arrow(3);
+                    arrow.setPoint(0, sf::Vector2f(0.0f, 0.0f));
+                    arrow.setPoint(1, sf::Vector2f(arrowW, 0.0f));
+                    arrow.setPoint(2, sf::Vector2f(arrowW * 0.5f, arrowH));
+                    arrow.setOrigin(sf::Vector2f(arrowW * 0.5f, arrowH * 0.15f));
+                    arrow.setPosition(base);
+                    arrow.setFillColor(sf::Color(255, 220, 120, 240));
+                    arrow.setOutlineColor(sf::Color(30, 18, 12, 220));
+                    arrow.setOutlineThickness(2.0f);
+
+                    sf::ConvexShape shadow = arrow;
+                    shadow.setPosition(sf::Vector2f(base.x + 2.0f, base.y + 2.0f));
+                    shadow.setFillColor(sf::Color(0, 0, 0, 90));
+                    shadow.setOutlineThickness(0.0f);
+                    m_window->draw(shadow);
+                    m_window->draw(arrow);
                 }
             }
 
@@ -448,10 +609,74 @@ namespace MapEngine {
             m_window->draw(*m_backgroundSprite);
         }
 
+        // ====== 动画时钟（用于悬停插值、可达闪烁等）======
+        const float nowSec = m_animClock.getElapsedTime().asSeconds();
+        float dt = nowSec - m_lastAnimSec;
+        if (dt < 0.0f) dt = 0.0f;
+        if (dt > 0.05f) dt = 0.05f; // 防止卡顿导致插值跳变
+        m_lastAnimSec = nowSec;
+        m_timeSec = nowSec;
+
         // 创建滚动视图
         sf::View scrollView = originalView;
         scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
         m_window->setView(scrollView);
+
+        // ====== 悬停检测：在滚动视图下把鼠标转世界坐标 ======
+        if (m_mapEngine) {
+            const sf::Vector2i mp = sf::Mouse::getPosition(*m_window);
+            const sf::Vector2f worldPos = m_window->mapPixelToCoords(mp);
+
+            std::string bestId;
+            float bestDist = 1e9f;
+
+            const auto snapshot = m_mapEngine->get_map_snapshot();
+            for (const auto& node : snapshot.all_nodes) {
+                float visualRadius = NODE_RADIUS;
+                if (node.type == NodeType::Boss) visualRadius = NODE_RADIUS * 7.0f;
+                else if (node.type == NodeType::Elite) visualRadius = NODE_RADIUS * 1.8f;
+                else if (node.type == NodeType::Enemy) visualRadius = NODE_RADIUS * 0.8f;
+                else if (node.type == NodeType::Event) visualRadius = NODE_RADIUS * 0.6f;
+
+                const float hoverRadius = visualRadius + 24.0f;
+                const float dx = worldPos.x - node.position.x;
+                const float dy = worldPos.y - node.position.y;
+                const float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist > hoverRadius) continue;
+
+                // 悬停动画：不可达节点也允许悬停（仅用于视觉反馈，不改变点击规则）
+                if (!m_allowAnyNodeClick) {
+                    if (node.is_completed) continue;
+                    if (node.is_current) continue;
+                }
+
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestId = node.id;
+                }
+            }
+
+            // 根据 hover 结果更新插值
+            const float k = 12.0f;
+            const float step = 1.0f - std::exp(-k * dt);
+
+            const bool hovering = !bestId.empty();
+            if (hovering) {
+                if (m_hoveredNodeId != bestId) {
+                    // 换目标时先从较低值开始，避免突兀
+                    m_hoveredNodeId = bestId;
+                    m_hoverBlend = std::min(m_hoverBlend, 0.35f);
+                }
+                m_hoverBlend = m_hoverBlend + (1.0f - m_hoverBlend) * step;
+            }
+            else {
+                m_hoverBlend = m_hoverBlend + (0.0f - m_hoverBlend) * step;
+                if (m_hoverBlend < 0.02f) {
+                    m_hoverBlend = 0.0f;
+                    m_hoveredNodeId.clear();
+                }
+            }
+        }
 
         // 绘制地图内容
         if (m_mapEngine) {
@@ -492,7 +717,7 @@ namespace MapEngine {
         for (const auto& node : snapshot.all_nodes) {
             // 计算视觉半径
             float visualRadius = NODE_RADIUS;
-            if (node.type == NodeType::Boss) visualRadius = NODE_RADIUS * 3.5f;
+            if (node.type == NodeType::Boss) visualRadius = NODE_RADIUS * 7.0f;
             else if (node.type == NodeType::Elite) visualRadius = NODE_RADIUS * 1.8f;
             else if (node.type == NodeType::Enemy) visualRadius = NODE_RADIUS * 0.8f;
             else if (node.type == NodeType::Event) visualRadius = NODE_RADIUS * 0.6f;

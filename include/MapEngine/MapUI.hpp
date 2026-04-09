@@ -65,8 +65,8 @@ namespace MapEngine {
         bool m_backgroundLoaded;
 
         // 节点半径
-        const float NODE_RADIUS = 45.0f;
-        const float SELECTED_RADIUS = 54.0f;
+        const float NODE_RADIUS = 36.0f;
+        const float SELECTED_RADIUS = 44.0f;
 
         // 颜色定义
         sf::Color colorEnemy;
@@ -97,6 +97,13 @@ namespace MapEngine {
         bool m_visitedOverlayLoaded = false;
         bool m_nodesClickable = true;
         bool m_allowAnyNodeClick = false;
+
+        // 动画/悬停状态
+        sf::Clock m_animClock;
+        float m_lastAnimSec = 0.0f;
+        float m_timeSec = 0.0f;
+        std::string m_hoveredNodeId;
+        float m_hoverBlend = 0.0f; // 0..1
     };
 
 }
