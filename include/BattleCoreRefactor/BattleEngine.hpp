@@ -157,12 +157,24 @@ public:
     int get_victory_gold() const;
     /** 战斗胜利后调用，随机获得 1 个遗物并加入玩家，返回获得的遗物 id（空串表示未获得） */
     RelicId grant_reward_relic();
+    /** 战斗胜利奖励：仅“生成候选遗物”（不修改玩家状态）；返回空表示无可用遗物。 */
+    RelicId roll_reward_relic();
+    /** 战斗胜利奖励：领取指定遗物（点击后才真正加入）；成功返回 true。 */
+    bool take_reward_relic(const RelicId& id);
     /** 丢弃指定遗物（移除第一个匹配项），并回滚其拾起时的效果；返回是否成功移除 */
     bool remove_relic(RelicId id);
     /** 往牌组加入一张牌（奖励/商店等），并触发陶瓷小鱼等遗物效果 */
     void add_card_to_master_deck(CardId id);
     /** 战斗胜利后调用，若药水栏未满则随机获得 1 瓶药水，返回获得的药水 id（空串表示未获得） */
     PotionId grant_reward_potion();
+    /** 战斗胜利奖励：仅“生成候选药水”（不修改玩家状态）；返回空表示无可用候选。 */
+    PotionId roll_reward_potion();
+    /**
+     * 战斗胜利奖励：领取指定药水（点击后才真正加入）。
+     * - replace_slot=-1：若有空槽则追加；若已满则失败
+     * - replace_slot>=0：替换该槽位的已有药水（丢弃旧药水），可用于“槽满也能拿新药水”
+     */
+    bool take_reward_potion(const PotionId& id, int replace_slot);
 
     /** target_monster_index: 需指定目标的药水（如毒药水）传入怪物下标；无需目标的传 -1 */
     bool use_potion(int slot_index, int target_monster_index = -1);

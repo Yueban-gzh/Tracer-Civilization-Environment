@@ -74,9 +74,19 @@ public:
     void set_reward_data(int gold, std::vector<std::string> card_ids,
                         std::vector<std::string> relic_ids = {},
                         std::vector<std::string> potion_ids = {});
+    /** 读档等场景：直接设置“已选卡/已跳过”，以显示「前进」按钮 */
+    void set_reward_card_picked(bool picked);
     bool is_reward_screen_active() const { return reward_screen_active_; }
     bool pollContinueToNextBattleRequest();
     bool pollRewardCardPick(int& outCardIndex);
+    /** 轮询：用户点击领取遗物奖励（返回遗物 id） */
+    bool pollRewardRelicTake(std::string& outRelicId);
+    /**
+     * 轮询：用户点击领取药水奖励
+     * - outReplaceSlot=-1：直接加入（有空槽才会触发）
+     * - outReplaceSlot>=0：替换该槽位的旧药水
+     */
+    bool pollRewardPotionTake(std::string& outPotionId, int& outReplaceSlot);
     /** 获取奖励卡牌列表中指定下标的卡牌 id（0~2），越界返回空串 */
     std::string get_reward_card_id_at(size_t index) const;
 
@@ -310,6 +320,21 @@ private:
     sf::FloatRect                 reward_continue_rect_;       // 继续按钮
     bool                          pending_continue_to_next_battle_ = false;
     int                           pending_reward_card_index_ = -2;  // -2 无，-1 跳过，0~2 选中的卡
+
+    // 遗物/药水奖励：点击领取（选项制）
+    std::vector<sf::FloatRect>    reward_relic_rects_;
+    std::vector<sf::FloatRect>    reward_potion_rects_;
+    std::string                   pending_reward_relic_id_{};
+    std::string                   pending_reward_potion_id_{};
+    int                           pending_reward_potion_replace_slot_ = -2; // -2=无，-1=追加，>=0 替换槽
+    bool                          reward_potion_replace_active_ = false;
+    std::vector<sf::FloatRect>    reward_potion_replace_slot_rects_;
+    sf::FloatRect                 reward_potion_replace_cancel_rect_{};
+    // 悬停插值（奖励界面遗物/药水）
+    sf::Clock                     reward_hover_clock_{};
+    std::vector<float>            hover_reward_card_;
+    std::vector<float>            hover_reward_relic_;
+    std::vector<float>            hover_reward_potion_;
 
     // 通用选牌弹窗（供效果牌交互复用）
     bool                          card_select_active_ = false;

@@ -1229,6 +1229,83 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
                 if (btn && btn->button == sf::Mouse::Button::Left) {
+                    // 槽满领取药水：弹窗中选择要丢弃的旧药水
+                    if (reward_potion_replace_active_) {
+                        if (reward_potion_replace_cancel_rect_.contains(mousePos)) {
+                            reward_potion_replace_active_ = false;
+                            reward_potion_replace_slot_rects_.clear();
+                            // 取消替换：不触发领取
+                            pending_reward_potion_id_.clear();
+                            pending_reward_potion_replace_slot_ = -2;
+                            return false;
+                        }
+                        for (size_t i = 0; i < reward_potion_replace_slot_rects_.size(); ++i) {
+                            if (reward_potion_replace_slot_rects_[i].contains(mousePos)) {
+                                // 用 i 槽的旧药水替换为 pending_reward_potion_id_
+                                if (!pending_reward_potion_id_.empty()) {
+                                    pending_reward_potion_replace_slot_ = static_cast<int>(i);
+                                }
+                                reward_potion_replace_active_ = false;
+                                reward_potion_replace_slot_rects_.clear();
+                                return false;
+                            }
+                        }
+                        return false;
+                    }
+
+                    // 遗物/药水：点击领取（选项制）——不依赖是否已选卡牌
+                    for (size_t i = 0; i < reward_relic_rects_.size() && i < reward_relic_ids_.size(); ++i) {
+                        if (reward_relic_rects_[i].contains(mousePos)) {
+                            pending_reward_relic_id_ = reward_relic_ids_[i];
+                            return false;
+                        }
+                    }
+                    for (size_t i = 0; i < reward_potion_rects_.size() && i < reward_potion_ids_.size(); ++i) {
+                        if (reward_potion_rects_[i].contains(mousePos)) {
+                            // 若槽满：进入替换选择模式（让玩家选丢弃哪瓶）
+                            if (lastSnapshot_) {
+                                const int slots = std::max(0, lastSnapshot_->potionSlotCount);
+                                const int have  = static_cast<int>(lastSnapshot_->potions.size());
+                                if (slots > 0 && have >= slots) {
+                                        // 槽满：先进入替换选择态，不要立刻触发领取（避免被主循环提前消费）
+                                        pending_reward_potion_id_ = reward_potion_ids_[i];
+                                        pending_reward_potion_replace_slot_ = -2; // 等待用户选槽位
+                                    reward_potion_replace_active_ = true;
+                                    reward_potion_replace_slot_rects_.clear();
+                                    const float W = static_cast<float>(width_);
+                                    const float H = static_cast<float>(height_);
+                                    const float boxW = 620.f;
+                                    const float boxH = 210.f;
+                                    const float boxX = (W - boxW) * 0.5f;
+                                    const float boxY = (H - boxH) * 0.5f;
+                                    const float icon = 56.f;
+                                    const float gap  = 16.f;
+                                    float startX = boxX + 56.f;
+                                    const float y = boxY + 86.f;
+                                    for (int s = 0; s < slots; ++s) {
+                                        reward_potion_replace_slot_rects_.push_back(
+                                            sf::FloatRect(sf::Vector2f(startX + s * (icon + gap), y),
+                                                          sf::Vector2f(icon, icon)));
+                                    }
+                                    reward_potion_replace_cancel_rect_ = sf::FloatRect(
+                                        sf::Vector2f(boxX + boxW - 160.f, boxY + boxH - 60.f),
+                                        sf::Vector2f(120.f, 40.f));
+                                }
+                                    // 有空槽：直接领取（追加）
+                                    else {
+                                        pending_reward_potion_id_ = reward_potion_ids_[i];
+                                        pending_reward_potion_replace_slot_ = -1;
+                                    }
+                            }
+                                else {
+                                    // 没有快照时退化为追加领取
+                                    pending_reward_potion_id_ = reward_potion_ids_[i];
+                                    pending_reward_potion_replace_slot_ = -1;
+                                }
+                            return false;
+                        }
+                    }
+
                     if (reward_card_picked_) {
                         if (reward_continue_rect_.contains(mousePos)) {
                             pending_continue_to_next_battle_ = true;
@@ -1458,6 +1535,14 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             reward_card_picked_ = false;
             pending_continue_to_next_battle_ = false;
             pending_reward_card_index_ = -2;
+            pending_reward_relic_id_.clear();
+            pending_reward_potion_id_.clear();
+            pending_reward_potion_replace_slot_ = -2;
+            reward_potion_replace_active_ = false;
+            reward_potion_replace_slot_rects_.clear();
+            hover_reward_card_.clear();
+            hover_reward_relic_.clear();
+            hover_reward_potion_.clear();
         }
     }
 
@@ -1468,6 +1553,9 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         reward_card_ids_ = std::move(card_ids);
         reward_relic_ids_ = std::move(relic_ids);
         reward_potion_ids_ = std::move(potion_ids);
+        // 布局矩形不要只在 set_reward_data 里算死：奖励面板会随窗口尺寸变化，
+        // 且 drawRewardScreen 内的 panelY/cardY 是动态的。
+        // 这里先清空，具体布局在 drawRewardScreen 里按同一套公式每帧刷新。
         reward_card_rects_.clear();
         constexpr float REWARD_CARD_W = 206.f;
         constexpr float REWARD_CARD_H = 280.f;
@@ -1475,21 +1563,25 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         const float totalCardsW = static_cast<float>(reward_card_ids_.size()) * REWARD_CARD_W
             + (reward_card_ids_.size() > 1 ? (reward_card_ids_.size() - 1) * CARD_GAP : 0.f);
         float cardStartX = (static_cast<float>(width_) - totalCardsW) * 0.5f;
-        const float cardY = (reward_relic_ids_.empty() && reward_potion_ids_.empty()) ? 320.f : 360.f;
-        for (size_t i = 0; i < reward_card_ids_.size(); ++i) {
-            const float cardX = cardStartX + i * (REWARD_CARD_W + CARD_GAP);
-            reward_card_rects_.emplace_back(sf::Vector2f(cardX, cardY), sf::Vector2f(REWARD_CARD_W, REWARD_CARD_H));
-        }
+        (void)cardStartX;
         constexpr float SKIP_BTN_W = 140.f;
         constexpr float SKIP_BTN_H = 50.f;
-        const float skipX = width_ * 0.5f - SKIP_BTN_W * 0.5f;
-        const float skipY = cardY + REWARD_CARD_H + 30.f;
-        reward_skip_rect_ = sf::FloatRect(sf::Vector2f(skipX, skipY), sf::Vector2f(SKIP_BTN_W, SKIP_BTN_H));
+        reward_skip_rect_ = sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(SKIP_BTN_W, SKIP_BTN_H));
         constexpr float CONTINUE_BTN_W = 200.f;
         constexpr float CONTINUE_BTN_H = 56.f;
-        reward_continue_rect_ = sf::FloatRect(
-            sf::Vector2f(width_ * 0.5f - CONTINUE_BTN_W * 0.5f, static_cast<float>(height_) - 120.f),
-            sf::Vector2f(CONTINUE_BTN_W, CONTINUE_BTN_H));
+        reward_continue_rect_ = sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(CONTINUE_BTN_W, CONTINUE_BTN_H));
+
+        // 遗物/药水选项点击区域也由 drawRewardScreen 统一刷新
+        reward_relic_rects_.clear();
+        reward_potion_rects_.clear();
+    }
+
+    void BattleUI::set_reward_card_picked(bool picked) {
+        reward_card_picked_ = picked;
+        if (!picked) {
+            pending_reward_card_index_ = -2;
+            pending_continue_to_next_battle_ = false;
+        }
     }
 
     bool BattleUI::pollContinueToNextBattleRequest() {
@@ -1502,6 +1594,25 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         if (pending_reward_card_index_ < -1) return false;
         outCardIndex = pending_reward_card_index_;
         pending_reward_card_index_ = -2;
+        return true;
+    }
+
+    bool BattleUI::pollRewardRelicTake(std::string& outRelicId) {
+        if (pending_reward_relic_id_.empty()) return false;
+        outRelicId = pending_reward_relic_id_;
+        pending_reward_relic_id_.clear();
+        return true;
+    }
+
+    bool BattleUI::pollRewardPotionTake(std::string& outPotionId, int& outReplaceSlot) {
+        // 若正在“槽满替换选择”中，不要把领取请求提前吐给主循环
+        if (reward_potion_replace_active_) return false;
+        if (pending_reward_potion_id_.empty()) return false;
+        outPotionId = pending_reward_potion_id_;
+        outReplaceSlot = pending_reward_potion_replace_slot_;
+        if (outReplaceSlot < -1) return false; // -2=等待选择槽位
+        pending_reward_potion_id_.clear();
+        pending_reward_potion_replace_slot_ = -2;
         return true;
     }
 
@@ -2498,38 +2609,90 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         overlay.setFillColor(sf::Color(0, 0, 0, 160));
         window.draw(overlay);
 
-        sf::Text title(fontForChinese(), sf::String(L"胜利！"), 56);
-        title.setFillColor(sf::Color(255, 220, 100));
+        // 悬停插值（遗物/药水奖励）
+        float dtHover = reward_hover_clock_.restart().asSeconds();
+        if (dtHover > 0.08f) dtHover = 0.08f;
+        if (dtHover < 0.f) dtHover = 0.f;
+
+        // 中央面板（奖励区）
+        const float W = static_cast<float>(width_);
+        const float H = static_cast<float>(height_);
+        const float panelW = std::min(980.f, W - 72.f);
+        const float panelH = std::min(720.f, overlayH - 32.f);
+        const float panelX = (W - panelW) * 0.5f;
+        const float panelY = OVERLAY_TOP + (overlayH - panelH) * 0.5f;
+        {
+            sf::RectangleShape shadow(sf::Vector2f(panelW, panelH));
+            shadow.setPosition(sf::Vector2f(panelX + 7.f, panelY + 9.f));
+            shadow.setFillColor(sf::Color(0, 0, 0, 95));
+            window.draw(shadow);
+        }
+        sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
+        panel.setPosition(sf::Vector2f(panelX, panelY));
+        panel.setFillColor(sf::Color(28, 26, 36, 246));
+        panel.setOutlineColor(sf::Color(205, 192, 150));
+        panel.setOutlineThickness(2.25f);
+        window.draw(panel);
+
+        sf::Text title(fontForChinese(), sf::String(L"胜利"), 56);
+        title.setFillColor(sf::Color(255, 225, 130));
         const sf::FloatRect tb = title.getLocalBounds();
-        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, 0.f));
-        title.setPosition(sf::Vector2f(width_ * 0.5f, 120.f));
+        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+        title.setPosition(sf::Vector2f(panelX + panelW * 0.5f, panelY + 66.f));
         window.draw(title);
 
-        float rewardRowY = 200.f;
+        float rewardRowY = panelY + 120.f;
         if (reward_gold_ > 0) {                             // 有金币奖励时显示（40% 概率）
             char buf[64];
             std::snprintf(buf, sizeof(buf), "+%d 金币", reward_gold_);
             sf::Text goldText(fontForChinese(), sf::String::fromUtf8(buf, buf + std::strlen(buf)), 32);
             goldText.setFillColor(sf::Color(255, 200, 80));
-            goldText.setPosition(sf::Vector2f(width_ * 0.5f - 60.f, rewardRowY));
+            const sf::FloatRect gb = goldText.getLocalBounds();
+            goldText.setOrigin(sf::Vector2f(gb.position.x + gb.size.x * 0.5f, gb.position.y + gb.size.y * 0.5f));
+            goldText.setPosition(sf::Vector2f(panelX + panelW * 0.5f, rewardRowY + 18.f));
             window.draw(goldText);
-            rewardRowY += 50.f;
+            rewardRowY += 54.f;
         }
 
         // 遗物与药水奖励（显示在金币下方，各 40% 概率，互不冲突）
-        rewardRowY = (reward_gold_ > 0) ? 250.f : 200.f;
+        rewardRowY = (reward_gold_ > 0) ? (panelY + 168.f) : (panelY + 120.f);
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
             constexpr float REWARD_ICON_SZ = 48.f;
             constexpr float REWARD_ICON_GAP = 12.f;
-            float x = width_ * 0.5f - (static_cast<float>(reward_relic_ids_.size() + reward_potion_ids_.size())
+            const float total = static_cast<float>(reward_relic_ids_.size() + reward_potion_ids_.size());
+            float x = panelX + panelW * 0.5f - (total
                 * (REWARD_ICON_SZ + REWARD_ICON_GAP) - REWARD_ICON_GAP) * 0.5f;
+
+            // 刷新点击矩形 + hover 容器
+            reward_relic_rects_.clear();
+            reward_potion_rects_.clear();
+            hover_reward_relic_.resize(reward_relic_ids_.size(), 0.f);
+            hover_reward_potion_.resize(reward_potion_ids_.size(), 0.f);
+
             for (const auto& rid : reward_relic_ids_) {
+                const size_t idx = reward_relic_rects_.size();
+                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY), sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                reward_relic_rects_.push_back(rect);
+                const bool over = rect.contains(mousePos_);
+                hover_reward_relic_[idx] = ui_hover_lerp(hover_reward_relic_[idx], over ? 1.f : 0.f, dtHover);
+                const float h01 = hover_reward_relic_[idx];
+                const float grow = 3.f * h01;
+
+                // 图标底板
+                {
+                    sf::RectangleShape back(sf::Vector2f(REWARD_ICON_SZ + 10.f + grow * 2.f, REWARD_ICON_SZ + 10.f + grow * 2.f));
+                    back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
+                    back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
+                    back.setOutlineColor(over ? sf::Color(230, 210, 150, 245) : sf::Color(160, 140, 110, 220));
+                    back.setOutlineThickness(over ? 2.25f : 1.5f);
+                    window.draw(back);
+                }
                 auto rit = relicTextures_.find(rid);
                 if (rit != relicTextures_.end()) {
                     sf::Sprite spr(rit->second);
-                    spr.setPosition(sf::Vector2f(x, rewardRowY));
+                    spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
                     float scale = REWARD_ICON_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
-                    spr.setScale(sf::Vector2f(scale, scale));
+                    spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
                     sf::RectangleShape icon(sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
@@ -2548,12 +2711,27 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                 x += REWARD_ICON_SZ + REWARD_ICON_GAP;
             }
             for (const auto& pid : reward_potion_ids_) {
+                const size_t idx = reward_potion_rects_.size();
+                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY), sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                reward_potion_rects_.push_back(rect);
+                const bool over = rect.contains(mousePos_);
+                hover_reward_potion_[idx] = ui_hover_lerp(hover_reward_potion_[idx], over ? 1.f : 0.f, dtHover);
+                const float h01 = hover_reward_potion_[idx];
+                const float grow = 3.f * h01;
+                {
+                    sf::RectangleShape back(sf::Vector2f(REWARD_ICON_SZ + 10.f + grow * 2.f, REWARD_ICON_SZ + 10.f + grow * 2.f));
+                    back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
+                    back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
+                    back.setOutlineColor(over ? sf::Color(190, 220, 255, 245) : sf::Color(110, 140, 180, 220));
+                    back.setOutlineThickness(over ? 2.25f : 1.5f);
+                    window.draw(back);
+                }
                 auto pit = potionTextures_.find(pid);
                 if (pit != potionTextures_.end()) {
                     sf::Sprite spr(pit->second);
-                    spr.setPosition(sf::Vector2f(x, rewardRowY));
+                    spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
                     float scale = REWARD_ICON_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
-                    spr.setScale(sf::Vector2f(scale, scale));
+                    spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
                     sf::RectangleShape icon(sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
@@ -2574,24 +2752,104 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             rewardRowY += REWARD_ICON_SZ + 28.f;
         }
 
-        const float cardY = (reward_relic_ids_.empty() && reward_potion_ids_.empty()) ? 320.f : 360.f;
+        // 奖励区整体下移：避免卡牌/提示与遗物/药水行发生重叠
+        const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
+        const float rewardDown = hasIcons ? 58.f : 26.f;
+        const float cardY = !hasIcons
+            ? (panelY + 210.f + rewardDown)
+            : (panelY + 250.f + rewardDown);
         const float totalCardsW = static_cast<float>(reward_card_ids_.size()) * REWARD_CARD_W
             + (reward_card_ids_.size() > 1 ? (reward_card_ids_.size() - 1) * CARD_GAP : 0.f);
         float cardStartX = (static_cast<float>(width_) - totalCardsW) * 0.5f;
 
+        // 刷新卡牌点击区域（修复“点击区域偏上”）
+        reward_card_rects_.clear();
+        for (size_t i = 0; i < reward_card_ids_.size(); ++i) {
+            const float cardX = cardStartX + static_cast<float>(i) * (REWARD_CARD_W + CARD_GAP);
+            reward_card_rects_.emplace_back(sf::Vector2f(cardX, cardY), sf::Vector2f(REWARD_CARD_W, REWARD_CARD_H));
+        }
+        // 刷新按钮点击区域（与 draw 一致）
+        // 按钮整体下移一些，避免与卡牌区过近
+        const float btnDown = 28.f;
+        reward_skip_rect_.position = sf::Vector2f(width_ * 0.5f - SKIP_BTN_W * 0.5f,
+                                                  cardY + REWARD_CARD_H + 26.f + btnDown);
+        reward_continue_rect_.position = sf::Vector2f(width_ * 0.5f - CONTINUE_BTN_W * 0.5f,
+                                                      reward_skip_rect_.position.y);
+
         if (!reward_card_picked_) {
+            // 三选一提示（更明显）
+            {
+                // 避免与遗物/药水行重叠：有图标时提示再下移一些
+                const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
+                // 提示条靠近卡牌区上沿，比“图标行”更靠下，避免重叠
+                const float hintY = cardY - (hasIcons ? 35.f : 50.f);
+                sf::RectangleShape bar(sf::Vector2f(420.f, 42.f));
+                bar.setPosition(sf::Vector2f(panelX + panelW * 0.5f - 210.f, hintY - 21.f));
+                bar.setFillColor(sf::Color(16, 16, 24, 190));
+                bar.setOutlineColor(sf::Color(230, 210, 150, 230));
+                bar.setOutlineThickness(2.f);
+                window.draw(bar);
+
+                sf::Text hint(fontForChinese(), sf::String(L"选择一张卡牌或跳过"), 22);
+                hint.setFillColor(sf::Color(245, 238, 220));
+                const sf::FloatRect hb = hint.getLocalBounds();
+                hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+                hint.setPosition(sf::Vector2f(panelX + panelW * 0.5f, hintY));
+                window.draw(hint);
+            }
+
+            // 悬停插值：卡牌平滑放大
+            hover_reward_card_.resize(reward_card_rects_.size(), 0.f);
+            for (size_t i = 0; i < reward_card_rects_.size(); ++i) {
+                const bool over = reward_card_rects_[i].contains(mousePos_);
+                hover_reward_card_[i] = ui_hover_lerp(hover_reward_card_[i], over ? 1.f : 0.f, dtHover);
+            }
+
             for (size_t i = 0; i < reward_card_ids_.size(); ++i) {
                 const float cx = cardStartX + REWARD_CARD_W * 0.5f + i * (REWARD_CARD_W + CARD_GAP);
                 const float cardX = cx - REWARD_CARD_W * 0.5f;
-                drawDetailedCardAt(window, reward_card_ids_[i], cardX, cardY, REWARD_CARD_W, REWARD_CARD_H,
-                                   sf::Color(180, 50, 45), 4.f);
+                const float h01 = (i < hover_reward_card_.size()) ? hover_reward_card_[i] : 0.f;
+                const bool hover = h01 > 0.001f;
+                const sf::Color outline = hover ? sf::Color(255, 230, 110) : sf::Color(180, 50, 45);
+                const float thick = hover ? (6.f + 2.f * h01) : 4.f;
+                const float scale = 1.f + 0.06f * h01;
+
+                sf::RenderStates st = sf::RenderStates::Default;
+                const float cy = cardY + REWARD_CARD_H * 0.5f;
+                st.transform.translate(sf::Vector2f(cx, cy));
+                st.transform.scale(sf::Vector2f(scale, scale));
+                st.transform.translate(sf::Vector2f(-cx, -cy));
+                // 悬停黄色框：更明显的反馈（不依赖卡面描边细节）
+                if (hover) {
+                    // 外层光晕
+                    {
+                        const float pad = 10.f;
+                        sf::RectangleShape glow(sf::Vector2f(REWARD_CARD_W + pad * 2.f, REWARD_CARD_H + pad * 2.f));
+                        glow.setPosition(sf::Vector2f(cardX - pad, cardY - pad));
+                        glow.setFillColor(sf::Color(255, 230, 110, 38));
+                        glow.setOutlineColor(sf::Color(255, 230, 110, 170));
+                        glow.setOutlineThickness(10.f);
+                        window.draw(glow, st);
+                    }
+                    // 内层高亮框
+                    {
+                        sf::RectangleShape frame(sf::Vector2f(REWARD_CARD_W, REWARD_CARD_H));
+                        frame.setPosition(sf::Vector2f(cardX, cardY));
+                        frame.setFillColor(sf::Color::Transparent);
+                        frame.setOutlineColor(sf::Color(255, 245, 170, 255));
+                        frame.setOutlineThickness(6.f);
+                        window.draw(frame, st);
+                    }
+                }
+                drawDetailedCardAt(window, reward_card_ids_[i], cardX, cardY, REWARD_CARD_W, REWARD_CARD_H, outline, thick, st);
             }
 
             sf::RectangleShape skipBtn(sf::Vector2f(SKIP_BTN_W, SKIP_BTN_H));
             skipBtn.setPosition(sf::Vector2f(reward_skip_rect_.position));
-            skipBtn.setFillColor(sf::Color(80, 75, 85));
-            skipBtn.setOutlineColor(sf::Color(140, 135, 145));
-            skipBtn.setOutlineThickness(2.f);
+            const bool skipHover = reward_skip_rect_.contains(mousePos_);
+            skipBtn.setFillColor(skipHover ? sf::Color(92, 86, 102) : sf::Color(72, 68, 82));
+            skipBtn.setOutlineColor(skipHover ? sf::Color(220, 205, 155) : sf::Color(150, 142, 128));
+            skipBtn.setOutlineThickness(skipHover ? 2.5f : 2.f);
             window.draw(skipBtn);
             sf::Text skipLabel(fontForChinese(), sf::String(L"跳过"), 24);
             skipLabel.setFillColor(sf::Color::White);
@@ -2602,16 +2860,142 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         } else {
             sf::RectangleShape contBtn(sf::Vector2f(CONTINUE_BTN_W, CONTINUE_BTN_H));
             contBtn.setPosition(sf::Vector2f(reward_continue_rect_.position));
-            contBtn.setFillColor(sf::Color(100, 140, 80));
-            contBtn.setOutlineColor(sf::Color(150, 200, 120));
-            contBtn.setOutlineThickness(2.f);
+            const bool contHover = reward_continue_rect_.contains(mousePos_);
+            contBtn.setFillColor(contHover ? sf::Color(76, 122, 92) : sf::Color(56, 92, 72));
+            contBtn.setOutlineColor(contHover ? sf::Color(190, 230, 170) : sf::Color(140, 180, 130));
+            contBtn.setOutlineThickness(contHover ? 2.5f : 2.f);
             window.draw(contBtn);
-            sf::Text contLabel(fontForChinese(), sf::String(L"继续"), 28);
+            sf::Text contLabel(fontForChinese(), sf::String(L"前进"), 28);
             contLabel.setFillColor(sf::Color::White);
             const sf::FloatRect clb = contLabel.getLocalBounds();
             contLabel.setOrigin(sf::Vector2f(clb.position.x + clb.size.x * 0.5f, clb.position.y + clb.size.y * 0.5f));
             contLabel.setPosition(sf::Vector2f(reward_continue_rect_.position.x + CONTINUE_BTN_W * 0.5f, reward_continue_rect_.position.y + CONTINUE_BTN_H * 0.5f));
             window.draw(contLabel);
+        }
+
+        // 悬停提示（遗物/药水）
+        if (!reward_potion_replace_active_) {
+            auto drawTip = [&](const std::wstring& text) {
+                if (text.empty()) return;
+                constexpr float paddingX = 12.f;
+                constexpr float paddingY = 10.f;
+                constexpr float maxW = 520.f;
+                const int fontSize = 20;
+                sf::Text tip(fontForChinese(), sf::String(text), fontSize);
+                tip.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect tbx = tip.getLocalBounds();
+                float boxW = std::min(tbx.size.x + paddingX * 2.f, maxW);
+                float boxH = tbx.size.y + paddingY * 2.f;
+
+                float boxLeft = mousePos_.x + 18.f;
+                float boxTop  = mousePos_.y + 10.f;
+                if (boxLeft + boxW > W) boxLeft = mousePos_.x - boxW - 18.f;
+                if (boxLeft < panelX + 8.f) boxLeft = panelX + 8.f;
+                if (boxTop + boxH > panelY + panelH - 8.f) boxTop = panelY + panelH - boxH - 8.f;
+                if (boxTop < panelY + 8.f) boxTop = panelY + 8.f;
+
+                sf::RectangleShape bg(sf::Vector2f(boxW, boxH));
+                bg.setPosition(sf::Vector2f(boxLeft, boxTop));
+                bg.setFillColor(sf::Color(40, 35, 45, 240));
+                bg.setOutlineColor(sf::Color(150, 140, 120));
+                bg.setOutlineThickness(1.f);
+                window.draw(bg);
+                tip.setPosition(sf::Vector2f(boxLeft + paddingX - tbx.position.x, boxTop + paddingY - tbx.position.y));
+                window.draw(tip);
+            };
+
+            for (size_t i = 0; i < reward_relic_rects_.size() && i < reward_relic_ids_.size(); ++i) {
+                if (!reward_relic_rects_[i].contains(mousePos_)) continue;
+                auto [name, desc] = get_relic_display_info(reward_relic_ids_[i]);
+                std::wstring t = name;
+                if (!desc.empty()) t += L"\n" + desc;
+                drawTip(t);
+                break;
+            }
+            for (size_t i = 0; i < reward_potion_rects_.size() && i < reward_potion_ids_.size(); ++i) {
+                if (!reward_potion_rects_[i].contains(mousePos_)) continue;
+                auto [name, desc] = get_potion_display_info(reward_potion_ids_[i]);
+                std::wstring t = name;
+                if (!desc.empty()) t += L"\n" + desc;
+                drawTip(t);
+                break;
+            }
+        }
+
+        // 槽满领取药水：选择要丢弃的旧药水（弹窗）
+        if (reward_potion_replace_active_ && lastSnapshot_) {
+            const float W = static_cast<float>(width_);
+            const float H = static_cast<float>(height_);
+            const float boxW = 620.f;
+            const float boxH = 210.f;
+            const float boxX = (W - boxW) * 0.5f;
+            const float boxY = (H - boxH) * 0.5f;
+
+            sf::RectangleShape shadow(sf::Vector2f(boxW, boxH));
+            shadow.setPosition(sf::Vector2f(boxX + 6.f, boxY + 8.f));
+            shadow.setFillColor(sf::Color(0, 0, 0, 95));
+            window.draw(shadow);
+
+            sf::RectangleShape box(sf::Vector2f(boxW, boxH));
+            box.setPosition(sf::Vector2f(boxX, boxY));
+            box.setFillColor(sf::Color(28, 26, 36, 248));
+            box.setOutlineColor(sf::Color(205, 192, 150));
+            box.setOutlineThickness(2.25f);
+            window.draw(box);
+
+            sf::Text t(fontForChinese(), sf::String(L"药水槽已满：选择要丢弃的药水"), 24);
+            t.setFillColor(sf::Color(235, 230, 220));
+            const sf::FloatRect tb2 = t.getLocalBounds();
+            t.setOrigin(sf::Vector2f(tb2.position.x + tb2.size.x * 0.5f, tb2.position.y + tb2.size.y * 0.5f));
+            t.setPosition(sf::Vector2f(boxX + boxW * 0.5f, boxY + 40.f));
+            window.draw(t);
+
+            // 当前药水槽
+            for (size_t i = 0; i < reward_potion_replace_slot_rects_.size()
+                 && i < lastSnapshot_->potions.size(); ++i) {
+                const sf::FloatRect r = reward_potion_replace_slot_rects_[i];
+                const bool hover = r.contains(mousePos_);
+                sf::RectangleShape back(sf::Vector2f(r.size.x, r.size.y));
+                back.setPosition(r.position);
+                back.setFillColor(hover ? sf::Color(62, 58, 78) : sf::Color(40, 38, 52));
+                back.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(150, 142, 128));
+                back.setOutlineThickness(hover ? 2.5f : 2.f);
+                window.draw(back);
+
+                const std::string pid = lastSnapshot_->potions[i];
+                auto pit = potionTextures_.find(pid);
+                if (pit != potionTextures_.end()) {
+                    sf::Sprite spr(pit->second);
+                    spr.setPosition(r.position);
+                    float scale = r.size.x / std::max(1.f, static_cast<float>(pit->second.getSize().x));
+                    spr.setScale(sf::Vector2f(scale, scale));
+                    window.draw(spr);
+                } else {
+                    sf::RectangleShape icon(sf::Vector2f(r.size.x, r.size.y));
+                    icon.setPosition(r.position);
+                    icon.setFillColor(sf::Color(80, 100, 140));
+                    window.draw(icon);
+                }
+            }
+
+            // 取消
+            {
+                const bool hv = reward_potion_replace_cancel_rect_.contains(mousePos_);
+                sf::RectangleShape b(reward_potion_replace_cancel_rect_.size);
+                b.setPosition(reward_potion_replace_cancel_rect_.position);
+                b.setFillColor(hv ? sf::Color(92, 86, 102) : sf::Color(72, 68, 82));
+                b.setOutlineColor(hv ? sf::Color(220, 205, 155) : sf::Color(150, 142, 128));
+                b.setOutlineThickness(hv ? 2.5f : 2.f);
+                window.draw(b);
+                sf::Text lbl(fontForChinese(), sf::String(L"取消"), 22);
+                lbl.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect lb = lbl.getLocalBounds();
+                lbl.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                lbl.setPosition(sf::Vector2f(
+                    reward_potion_replace_cancel_rect_.position.x + reward_potion_replace_cancel_rect_.size.x * 0.5f,
+                    reward_potion_replace_cancel_rect_.position.y + reward_potion_replace_cancel_rect_.size.y * 0.5f));
+                window.draw(lbl);
+            }
         }
     }
 

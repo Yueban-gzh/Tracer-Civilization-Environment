@@ -353,6 +353,32 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
      return id;
  }
 
+RelicId BattleEngine::roll_reward_relic() {
+    static const std::vector<RelicId> relic_pool = {
+        "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle", "clockwork_boots",
+        "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull", "snake_skull", "strawberry",
+        "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum", "pen_nib", "toy_ornithopter",
+        "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
+    };
+    const auto& owned = state_.player.relics;
+    std::vector<RelicId> available;
+    for (const auto& id : relic_pool) {
+        if (std::find(owned.begin(), owned.end(), id) == owned.end())
+            available.push_back(id);
+    }
+    if (available.empty()) return {};
+    return available[run_rng_->uniform_size(0, available.size() - 1)];
+}
+
+bool BattleEngine::take_reward_relic(const RelicId& id) {
+    if (id.empty()) return false;
+    auto& owned = state_.player.relics;
+    if (std::find(owned.begin(), owned.end(), id) != owned.end()) return false;
+    owned.push_back(id);
+    apply_relic_pickup_effect(state_.player, id);
+    return true;
+}
+
  bool BattleEngine::remove_relic(RelicId id) {                         // 丢弃遗物并回滚其拾起效果
      auto& relics = state_.player.relics;
      auto it = std::find(relics.begin(), relics.end(), id);
@@ -385,6 +411,41 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
      state_.player.potions.push_back(id);
      return id;
  }
+
+PotionId BattleEngine::roll_reward_potion() {
+    static const std::vector<PotionId> potion_pool = {
+        "strength_potion", "block_potion", "energy_potion", "poison_potion", "weak_potion", "fear_potion"
+    };
+    if (potion_pool.empty()) return {};
+    const auto& owned = state_.player.potions;
+    std::vector<PotionId> available;
+    for (const auto& id : potion_pool) {
+        if (std::find(owned.begin(), owned.end(), id) == owned.end())
+            available.push_back(id);
+    }
+    if (available.empty()) return {};
+    return available[run_rng_->uniform_size(0, available.size() - 1)];
+}
+
+bool BattleEngine::take_reward_potion(const PotionId& id, int replace_slot) {
+    if (id.empty()) return false;
+
+    auto& potions = state_.player.potions;
+    const int slots = std::max(0, state_.player.potionSlotCount);
+    if (slots <= 0) return false;
+
+    // 允许替换：槽满时 replace_slot 指定要丢弃的旧药水
+    if (replace_slot >= 0) {
+        if (replace_slot >= static_cast<int>(potions.size())) return false;
+        potions[static_cast<size_t>(replace_slot)] = id;
+        return true;
+    }
+
+    // 追加：必须有空槽
+    if (static_cast<int>(potions.size()) >= slots) return false;
+    potions.push_back(id);
+    return true;
+}
 
  std::vector<CardId> BattleEngine::get_reward_cards(int count) {        // 获取奖励卡牌（随机从牌池取）
      static const std::vector<CardId> reward_pool = {                    // 奖励卡池：所有已注册效果的卡牌

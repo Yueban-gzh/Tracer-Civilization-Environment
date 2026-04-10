@@ -719,6 +719,9 @@ void GameFlowController::run() {
                     runBattleScene(node.type);
                 }
                 break;
+            case LastSceneKind::BattleReward:
+                runBattleRewardOnlyScene();
+                break;
             case LastSceneKind::Event:
                 // 读档后重新进入事件界面（带完整交互），而不是直接结算事件
                 runEventScene(node.content_id);
@@ -892,6 +895,11 @@ bool GameFlowController::tryMoveToNode(const std::string& nodeId) {
         }
     }
 
+    // 自动保存：进入节点前（仍停留在地图当前节点）
+    // 注意：必须在 set_current_node 之前保存，避免存档记录为“已进入新房间”。
+    lastSceneForSave_ = LastSceneKind::Map;
+    (void)saveRun();
+
     mapEngine_.set_current_node(nodeId);
     mapEngine_.set_node_visited(nodeId);
     mapEngine_.update_reachable_nodes();
@@ -1030,6 +1038,11 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
 
     bool runningBattleScene = true;
     bool reward_phase_started = false;
+    int reward_gold = 0;
+    std::vector<std::string> reward_card_strs;
+    std::vector<std::string> reward_relic_offers;
+    std::vector<std::string> reward_potion_offers;
+    bool reward_card_picked_for_save = false;
     struct PendingCardSelectPlay {
         bool active = false;
         int playHandIndex = -1;
@@ -1107,12 +1120,31 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                     // 返回游戏：不做额外逻辑
                 } else if (pauseChoice >= 41 && pauseChoice <= 43) {
                     const int slot = pauseChoice - 40;
-                    lastSceneForSave_ = LastSceneKind::Battle;
+                    // 若在战斗胜利奖励界面存档：读档应回到奖励界面，不重新战斗
+                    if (ui.is_reward_screen_active()) {
+                        lastSceneForSave_ = LastSceneKind::BattleReward;
+                        savedBattleRewardGold_ = reward_gold;
+                        savedBattleRewardCardPicked_ = reward_card_picked_for_save;
+                        savedBattleRewardCards_ = reward_card_strs;
+                        savedBattleRewardRelicOffers_ = reward_relic_offers;
+                        savedBattleRewardPotionOffers_ = reward_potion_offers;
+                    } else {
+                        lastSceneForSave_ = LastSceneKind::Battle;
+                    }
                     const std::string path = "saves/slot_" + std::to_string(slot) + ".json";
                     (void)saveRun(path);
                 } else if (pauseChoice == 2) {
                     // 保存并退出：写入存档并关闭窗口
-                    lastSceneForSave_ = LastSceneKind::Battle;
+                    if (ui.is_reward_screen_active()) {
+                        lastSceneForSave_ = LastSceneKind::BattleReward;
+                        savedBattleRewardGold_ = reward_gold;
+                        savedBattleRewardCardPicked_ = reward_card_picked_for_save;
+                        savedBattleRewardCards_ = reward_card_strs;
+                        savedBattleRewardRelicOffers_ = reward_relic_offers;
+                        savedBattleRewardPotionOffers_ = reward_potion_offers;
+                    } else {
+                        lastSceneForSave_ = LastSceneKind::Battle;
+                    }
                     saveRun();
                     exitToStartRequested_ = true;  // 请求回到开始界面
                     return false;
@@ -1304,28 +1336,72 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             if (!battleEngine_.is_victory()) {
                 runningBattleScene = false;
             } else {
+                // 奖励阶段：选项制（点击才获得）
                 if (!reward_phase_started) {
                     reward_phase_started = true;
-                    const int gold_reward = battleEngine_.get_victory_gold();
-                    battleEngine_.grant_victory_gold();
+                    reward_gold = battleEngine_.get_victory_gold();
+                    battleEngine_.grant_victory_gold(); // 金币直接发放
+
                     std::vector<CardId> reward_cards = battleEngine_.get_reward_cards(3);
-                    std::vector<std::string> reward_card_strs;
+                    reward_card_strs.clear();
                     reward_card_strs.reserve(reward_cards.size());
                     for (const CardId& c : reward_cards) reward_card_strs.push_back(c);
-                    std::vector<std::string> relic_ids;
-                    std::vector<std::string> potion_ids;
-                    const RelicId r = battleEngine_.grant_reward_relic();
-                    if (!r.empty()) relic_ids.push_back(r);
-                    const PotionId p = battleEngine_.grant_reward_potion();
-                    if (!p.empty()) potion_ids.push_back(p);
-                    ui.set_reward_data(gold_reward, std::move(reward_card_strs), std::move(relic_ids), std::move(potion_ids));
+
+                    reward_relic_offers.clear();
+                    reward_potion_offers.clear();
+                    // 遗物/药水按掉落概率“生成候选”，点击才真正领取
+                    if (runRng_.uniform_int(0, 99) < 40) {
+                        const RelicId r = battleEngine_.roll_reward_relic();
+                        if (!r.empty()) reward_relic_offers.push_back(r);
+                    }
+                    if (runRng_.uniform_int(0, 99) < 40) {
+                        const PotionId p = battleEngine_.roll_reward_potion();
+                        if (!p.empty()) reward_potion_offers.push_back(p);
+                    }
+
+                    ui.set_reward_data(reward_gold, std::vector<std::string>(reward_card_strs),
+                                       std::vector<std::string>(reward_relic_offers),
+                                       std::vector<std::string>(reward_potion_offers));
                     ui.set_reward_screen_active(true);
+
+                    // 自动保存：战斗胜利进入奖励界面（读档无需重打战斗）
+                    lastSceneForSave_ = LastSceneKind::BattleReward;
+                    savedBattleRewardGold_ = reward_gold;
+                    savedBattleRewardCardPicked_ = reward_card_picked_for_save;
+                    savedBattleRewardCards_ = reward_card_strs;
+                    savedBattleRewardRelicOffers_ = reward_relic_offers;
+                    savedBattleRewardPotionOffers_ = reward_potion_offers;
+                    (void)saveRun();
                 }
                 int reward_pick = -2;
                 if (ui.pollRewardCardPick(reward_pick)) {
                     if (reward_pick >= 0) {
                         const std::string cid = ui.get_reward_card_id_at(static_cast<size_t>(reward_pick));
                         if (!cid.empty()) battleEngine_.add_card_to_master_deck(cid);
+                    }
+                    reward_card_picked_for_save = true;
+                }
+                {
+                    std::string rid;
+                    if (ui.pollRewardRelicTake(rid)) {
+                        if (battleEngine_.take_reward_relic(rid)) {
+                            reward_relic_offers.erase(std::remove(reward_relic_offers.begin(), reward_relic_offers.end(), rid),
+                                                      reward_relic_offers.end());
+                            ui.set_reward_data(reward_gold, std::vector<std::string>(reward_card_strs),
+                                               std::vector<std::string>(reward_relic_offers),
+                                               std::vector<std::string>(reward_potion_offers));
+                        }
+                    }
+                    std::string pid;
+                    int replaceSlot = -2;
+                    if (ui.pollRewardPotionTake(pid, replaceSlot)) {
+                        if (replaceSlot >= -1 && battleEngine_.take_reward_potion(pid, replaceSlot)) {
+                            reward_potion_offers.erase(std::remove(reward_potion_offers.begin(), reward_potion_offers.end(), pid),
+                                                       reward_potion_offers.end());
+                            ui.set_reward_data(reward_gold, std::vector<std::string>(reward_card_strs),
+                                               std::vector<std::string>(reward_relic_offers),
+                                               std::vector<std::string>(reward_potion_offers));
+                        }
                     }
                 }
                 if (ui.pollContinueToNextBattleRequest()) {
@@ -1382,6 +1458,114 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     // 退出到开始界面（main 会重新调用 runStartScreen）
     exitToStartRequested_ = true;
     return false;
+}
+
+bool GameFlowController::runBattleRewardOnlyScene() {
+    // 读档恢复：不重新战斗，只显示胜利奖励界面并允许继续领取
+    battleEngine_.start_battle({}, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
+
+    BattleUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
+    if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadFont("assets/fonts/default.ttf")) {
+            ui.loadFont("data/font.ttf");
+        }
+    }
+    if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
+            if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
+                ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+            }
+        }
+    }
+    preload_battle_ui_assets(ui, playerState_.character);
+    ui.set_hide_top_right_map_button(false);
+    if (map_browse_overlay_active_)
+        close_map_browse_overlay(&ui);
+
+    // 恢复奖励数据
+    ui.set_reward_data(savedBattleRewardGold_,
+                       std::vector<std::string>(savedBattleRewardCards_),
+                       std::vector<std::string>(savedBattleRewardRelicOffers_),
+                       std::vector<std::string>(savedBattleRewardPotionOffers_));
+    ui.set_reward_screen_active(true);
+    ui.set_reward_card_picked(savedBattleRewardCardPicked_);
+
+    bool running = true;
+    while (window_.isOpen() && running) {
+        applyPendingVideoAndHudResize(kGameUiContext);
+        const sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+        ui.setMousePosition(mousePos);
+
+        while (const std::optional ev = window_.pollEvent()) {
+            if (ev->is<sf::Event::Closed>()) {
+                window_.close();
+                return false;
+            }
+            if (const auto* key = ev->getIf<sf::Event::KeyPressed>()) {
+                if (key->scancode == sf::Keyboard::Scancode::Escape) {
+                    // 不允许直接用 Esc 跳过奖励（避免误触），保持与界面按钮一致
+                }
+            }
+            (void)ui.handleEvent(*ev, mousePos);
+            poll_map_browse_toggle(&ui);
+        }
+
+        int reward_pick = -2;
+        if (ui.pollRewardCardPick(reward_pick)) {
+            if (reward_pick >= 0) {
+                const std::string cid = ui.get_reward_card_id_at(static_cast<size_t>(reward_pick));
+                if (!cid.empty()) battleEngine_.add_card_to_master_deck(cid);
+            }
+            savedBattleRewardCardPicked_ = true;
+            ui.set_reward_card_picked(true);
+        }
+        {
+            std::string rid;
+            if (ui.pollRewardRelicTake(rid)) {
+                if (battleEngine_.take_reward_relic(rid)) {
+                    auto& v = savedBattleRewardRelicOffers_;
+                    v.erase(std::remove(v.begin(), v.end(), rid), v.end());
+                    ui.set_reward_data(savedBattleRewardGold_,
+                                       std::vector<std::string>(savedBattleRewardCards_),
+                                       std::vector<std::string>(savedBattleRewardRelicOffers_),
+                                       std::vector<std::string>(savedBattleRewardPotionOffers_));
+                    ui.set_reward_card_picked(savedBattleRewardCardPicked_);
+                }
+            }
+            std::string pid;
+            int replaceSlot = -2;
+            if (ui.pollRewardPotionTake(pid, replaceSlot)) {
+                if (replaceSlot >= -1 && battleEngine_.take_reward_potion(pid, replaceSlot)) {
+                    auto& v = savedBattleRewardPotionOffers_;
+                    v.erase(std::remove(v.begin(), v.end(), pid), v.end());
+                    ui.set_reward_data(savedBattleRewardGold_,
+                                       std::vector<std::string>(savedBattleRewardCards_),
+                                       std::vector<std::string>(savedBattleRewardRelicOffers_),
+                                       std::vector<std::string>(savedBattleRewardPotionOffers_));
+                    ui.set_reward_card_picked(savedBattleRewardCardPicked_);
+                }
+            }
+        }
+        if (ui.pollContinueToNextBattleRequest()) {
+            ui.set_reward_screen_active(false);
+            running = false;
+        }
+
+        BattleState state = battleEngine_.get_battle_state();
+        BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem_);
+        SnapshotBattleUIDataProvider adapter(&snapshot);
+        ui.set_top_bar_map_floor(mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
+        window_.clear(sf::Color(28, 26, 32));
+        ui.draw(window_, adapter);
+        window_.display();
+        battleEngine_.tick_damage_displays();
+    }
+
+    // 同步玩家状态
+    playerState_ = battleEngine_.get_battle_state().player;
+    // 读档后的奖励界面结束后回到地图（不需要重战）
+    lastSceneForSave_ = LastSceneKind::Map;
+    return true;
 }
 
 void GameFlowController::resolveEvent(const std::string& contentId) {

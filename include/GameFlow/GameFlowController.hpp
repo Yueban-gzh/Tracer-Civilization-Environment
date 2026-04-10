@@ -31,6 +31,7 @@ public:
     enum class LastSceneKind {
         Map,
         Battle,
+        BattleReward,
         Event,
         Shop,
         Rest,
@@ -61,6 +62,7 @@ private:
     void captureCheckpointForCurrentNode();  // 固定存档点：进入节点瞬间的 Run 状态
 
     bool runBattleScene(NodeType nodeType);
+    bool runBattleRewardOnlyScene(); // 读档：从战斗胜利奖励界面继续（不重新战斗）
     void resolveEvent(const std::string& contentId);
     bool runEventScene(const std::string& contentId);
     bool runShopScene();
@@ -118,6 +120,13 @@ private:
     LastSceneKind lastSceneForSave_         = LastSceneKind::Map;
     LastSceneKind sceneAfterLoad_           = LastSceneKind::Map;
     bool          hasPendingSceneAfterLoad_ = false;
+
+    // 读档/存档：战斗胜利奖励界面（选项制）状态
+    int                      savedBattleRewardGold_ = 0;
+    bool                     savedBattleRewardCardPicked_ = false;
+    std::vector<std::string> savedBattleRewardCards_;
+    std::vector<std::string> savedBattleRewardRelicOffers_;
+    std::vector<std::string> savedBattleRewardPotionOffers_;
 
     // 从暂停菜单“保存并退出”返回开始界面，而不是直接关游戏
     bool exitToStartRequested_ = false;

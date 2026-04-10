@@ -103,12 +103,16 @@ bool GameFlowController::saveRun(const std::string& path) const {
         }
 
         // --- 固定检查点（进入节点瞬间） ---
-        // 规则：无论在宝箱/事件/战斗等界面何时触发保存，都只写进入该节点瞬间的状态。
-        // 这样房间内的 RNG 消耗不会写入存档，从而避免通过 SL 刷宝箱内容/事件结果。
-        const uint64_t rng_state = checkpointValid_ ? checkpointRunRngState_ : runRng_.get_state();
-        const int current_layer = checkpointValid_ ? checkpointCurrentLayer_ : mapEngine_.get_current_layer();
-        const std::string current_node_id = checkpointValid_ ? checkpointCurrentNodeId_ : "";
-        const PlayerBattleState& p = checkpointValid_ ? checkpointPlayerState_ : playerState_;
+        // 默认规则：无论在宝箱/事件/战斗等界面何时触发保存，都只写进入该节点瞬间的状态，
+        // 避免通过 SL 刷宝箱内容/事件结果（房间内 RNG 消耗不写入存档）。
+        //
+        // 例外：若在“战斗胜利奖励界面”存档，则需要能读档回到奖励界面而不重新战斗，
+        // 因此此时必须写入当前实时状态（含牌组/药水等变更与奖励候选）。
+        const bool useCheckpoint = checkpointValid_ && lastSceneForSave_ != LastSceneKind::BattleReward;
+        const uint64_t rng_state = useCheckpoint ? checkpointRunRngState_ : runRng_.get_state();
+        const int current_layer = useCheckpoint ? checkpointCurrentLayer_ : mapEngine_.get_current_layer();
+        const std::string current_node_id = useCheckpoint ? checkpointCurrentNodeId_ : "";
+        const PlayerBattleState& p = useCheckpoint ? checkpointPlayerState_ : playerState_;
 
         const MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
 
@@ -180,9 +184,9 @@ bool GameFlowController::saveRun(const std::string& path) const {
         }
         out << "],\n";
 
-        // master deck（永久牌组）：同样使用检查点，避免房间内修改导致存档漂移
+        // master deck（永久牌组）
         out << "    \"master_deck\": [";
-        if (checkpointValid_) {
+        if (useCheckpoint) {
             for (size_t i = 0; i < checkpointMasterDeck_.size(); ++i) {
                 if (i > 0) out << ", ";
                 out << "\"" << checkpointMasterDeck_[i] << "\"";
@@ -201,6 +205,7 @@ bool GameFlowController::saveRun(const std::string& path) const {
         const char* sceneStr = "map";
         switch (lastSceneForSave_) {
         case LastSceneKind::Battle:   sceneStr = "battle";   break;
+        case LastSceneKind::BattleReward: sceneStr = "battle_reward"; break;
         case LastSceneKind::Event:    sceneStr = "event";    break;
         case LastSceneKind::Shop:     sceneStr = "shop";     break;
         case LastSceneKind::Rest:     sceneStr = "rest";     break;
@@ -208,6 +213,32 @@ bool GameFlowController::saveRun(const std::string& path) const {
         case LastSceneKind::Map:
         default:                      sceneStr = "map";      break;
         }
+        // 战斗胜利奖励界面：保存奖励候选与进度（点击才获得）
+        if (lastSceneForSave_ == LastSceneKind::BattleReward) {
+            out << "  \"battle_reward\": {\n";
+            out << "    \"gold\": " << savedBattleRewardGold_ << ",\n";
+            out << "    \"card_picked\": " << (savedBattleRewardCardPicked_ ? "true" : "false") << ",\n";
+            out << "    \"cards\": [";
+            for (size_t i = 0; i < savedBattleRewardCards_.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << "\"" << json_escape(savedBattleRewardCards_[i]) << "\"";
+            }
+            out << "],\n";
+            out << "    \"relic_offers\": [";
+            for (size_t i = 0; i < savedBattleRewardRelicOffers_.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << "\"" << json_escape(savedBattleRewardRelicOffers_[i]) << "\"";
+            }
+            out << "],\n";
+            out << "    \"potion_offers\": [";
+            for (size_t i = 0; i < savedBattleRewardPotionOffers_.size(); ++i) {
+                if (i > 0) out << ", ";
+                out << "\"" << json_escape(savedBattleRewardPotionOffers_[i]) << "\"";
+            }
+            out << "]\n";
+            out << "  },\n";
+        }
+
         out << "  \"last_scene\": \"" << sceneStr << "\"\n";
 
         out << "}\n";
@@ -374,11 +405,34 @@ bool GameFlowController::loadRun(const std::string& path) {
         }
         sceneAfterLoad_ = LastSceneKind::Map;
         if (lastSceneStr == "battle")      sceneAfterLoad_ = LastSceneKind::Battle;
+        else if (lastSceneStr == "battle_reward") sceneAfterLoad_ = LastSceneKind::BattleReward;
         else if (lastSceneStr == "event")  sceneAfterLoad_ = LastSceneKind::Event;
         else if (lastSceneStr == "shop")   sceneAfterLoad_ = LastSceneKind::Shop;
         else if (lastSceneStr == "rest")   sceneAfterLoad_ = LastSceneKind::Rest;
         else if (lastSceneStr == "treasure") sceneAfterLoad_ = LastSceneKind::Treasure;
         hasPendingSceneAfterLoad_ = (sceneAfterLoad_ != LastSceneKind::Map);
+
+        // 战斗胜利奖励界面：读取奖励候选与进度
+        savedBattleRewardGold_ = 0;
+        savedBattleRewardCardPicked_ = false;
+        savedBattleRewardCards_.clear();
+        savedBattleRewardRelicOffers_.clear();
+        savedBattleRewardPotionOffers_.clear();
+        if (sceneAfterLoad_ == LastSceneKind::BattleReward) {
+            if (const auto* br = root.get_key("battle_reward"); br && br->is_object()) {
+                if (const auto* g = br->get_key("gold"); g && g->is_int()) savedBattleRewardGold_ = g->i;
+                if (const auto* cp = br->get_key("card_picked"); cp && cp->is_bool()) savedBattleRewardCardPicked_ = cp->b;
+                if (const auto* arr = br->get_key("cards"); arr && arr->is_array()) {
+                    for (const auto& e : arr->arr) if (e.is_string()) savedBattleRewardCards_.push_back(e.s);
+                }
+                if (const auto* arr = br->get_key("relic_offers"); arr && arr->is_array()) {
+                    for (const auto& e : arr->arr) if (e.is_string()) savedBattleRewardRelicOffers_.push_back(e.s);
+                }
+                if (const auto* arr = br->get_key("potion_offers"); arr && arr->is_array()) {
+                    for (const auto& e : arr->arr) if (e.is_string()) savedBattleRewardPotionOffers_.push_back(e.s);
+                }
+            }
+        }
 
         // --- 重置全局 HUD 的临时 UI 状态，避免一进界面就处于“暂停/牌组已打开”的状态 ---
         hudBattleUi_.set_deck_view_active(false);
