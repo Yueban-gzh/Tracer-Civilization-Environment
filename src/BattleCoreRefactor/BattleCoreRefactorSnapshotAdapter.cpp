@@ -31,10 +31,13 @@
  
      if (card_system) {                                  // 若传入卡牌系统，则填充手牌与牌堆信息
          s.hand            = card_system->get_hand();    // 手牌
-         s.drawPileSize    = card_system->get_deck_size();   // 抽牌堆张数
-         s.discardPileSize = card_system->get_discard_size(); // 弃牌堆张数
-         s.exhaustPileSize = card_system->get_exhaust_size(); // 消耗堆张数
-     }
+        s.drawPileSize    = card_system->get_deck_size();   // 抽牌堆张数
+        s.discardPileSize = card_system->get_discard_size(); // 弃牌堆张数
+        s.exhaustPileSize = card_system->get_exhaust_size(); // 消耗堆张数
+        s.discardPileCardIds.clear();
+        s.discardPileCardIds.reserve(card_system->get_discard_pile().size());
+        for (const auto& c : card_system->get_discard_pile()) s.discardPileCardIds.push_back(c.id);
+    }
  
      s.monsters.clear();                                 // 清空怪物列表
      s.monsterStatuses.clear();                          // 清空怪物状态列表

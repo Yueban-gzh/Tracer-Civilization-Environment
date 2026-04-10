@@ -389,6 +389,10 @@ bool GameFlowController::loadRun(const std::string& path) {
 
         gameOver_ = false;
         statusText_ = "继续旅程。";
+
+        musicManager_.scanAssets();
+        if (sceneAfterLoad_ != LastSceneKind::Battle) musicManager_.playMapMusic();
+
         return true;
     } catch (...) {
         return false;

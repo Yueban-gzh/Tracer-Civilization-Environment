@@ -18,6 +18,7 @@
 #include "Cheat/CheatPanel.hpp"
 #include "DataLayer/DataLayer.hpp"
 #include "Common/ImagePath.hpp"
+#include "Common/UserSettings.hpp"
 #include "Effects/CardEffects.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
@@ -27,6 +28,13 @@
 namespace tce {
 
 namespace {
+
+const sf::ContextSettings kGameUiContext = [] {
+    sf::ContextSettings c;
+    c.antiAliasingLevel = 2u;
+    return c;
+}();
+
 // 旧存档或旧 id 与资源文件名不一致时，用右侧文件名再试一次加载纹理（仍按逻辑 id 缓存）
 const std::unordered_map<std::string, std::string> kMonsterImageFileAliases = {
     {"1.2_liejianshush", "1.2_liejianshusheng"},
@@ -459,6 +467,13 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
     , hudBattleUi_(static_cast<unsigned>(window.getSize().x),
                    static_cast<unsigned>(window.getSize().y)) {}
 
+void GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings& ctx) {
+    if (!UserSettings::instance().consumeVideoApplyPending()) return;
+    UserSettings::instance().applyVideoModeToWindow(window_, ctx);
+    const auto sz = window_.getSize();
+    hudBattleUi_.set_window_size(sz.x, sz.y);
+}
+
 namespace {
 
 std::vector<CardId> repeat_cards(const CardId& id, int count) {
@@ -553,6 +568,9 @@ bool GameFlowController::initialize(CharacterClass cc) {
     statusText_ = "选择第一个节点开始爬塔。";
     // 初始检查点：即使还未进入节点，也允许写入稳定基线存档。
     captureCheckpointForCurrentNode();
+
+    musicManager_.scanAssets();
+    musicManager_.playMapMusic();
     return true;
 }
 
@@ -722,6 +740,7 @@ void GameFlowController::run() {
     }
 
     while (window_.isOpen()) {
+        applyPendingVideoAndHudResize(kGameUiContext);
         hudBattleUi_.set_hide_top_right_map_button(true);
         if (map_browse_overlay_active_)
             close_map_browse_overlay(nullptr);
@@ -924,6 +943,13 @@ void GameFlowController::resolveNode(const MapEngine::MapNode& node) {
 }
 
 bool GameFlowController::runBattleScene(NodeType nodeType) {
+    struct BattleMusicScope {
+        MusicManager& mm;
+        explicit BattleMusicScope(MusicManager& m) : mm(m) { m.playRandomBattleMusic(); }
+        ~BattleMusicScope() { mm.playMapMusic(); }
+    };
+    const BattleMusicScope battleMusicScope(musicManager_);
+
     const int mapPage = mapConfigManager_.getCurrentIndex();
     std::vector<MonsterId> monsters = dataLayer_.roll_monsters_for_battle(mapPage, nodeType, runRng_);
 
@@ -1014,6 +1040,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         std::vector<InstanceId> selectedInstanceIds;
     } pendingSelectPlay;
     while (window_.isOpen() && runningBattleScene) {
+        applyPendingVideoAndHudResize(kGameUiContext);
+        ui.set_window_size(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
                 window_.close();
@@ -1647,6 +1675,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         if (options.empty()) return -1;
         ui.setEventDataFromUtf8(title, desc, options, "", optionEffects, optionCardIds);
         while (window_.isOpen()) {
+            this->applyPendingVideoAndHudResize(kGameUiContext);
             while (const std::optional ev = window_.pollEvent()) {
                 if (ev->is<sf::Event::Closed>()) {
                     window_.close();
@@ -1677,6 +1706,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
     };
 
     while (window_.isOpen() && inScene) {
+        applyPendingVideoAndHudResize(kGameUiContext);
         const EventEngine::Event* current = eventEngine_.get_current_event();
         if (current && !showingResult && current != lastDisplayedEvent) {
             ui.setEventDataFromEvent(current);
@@ -2173,6 +2203,7 @@ bool GameFlowController::runTreasureScene() {
         close_map_browse_overlay(nullptr);
 
     while (window_.isOpen() && inScene) {
+        applyPendingVideoAndHudResize(kGameUiContext);
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
                 window_.close();
@@ -2367,6 +2398,7 @@ bool GameFlowController::runShopScene() {
         close_map_browse_overlay(nullptr);
 
     while (window_.isOpen() && inScene) {
+        applyPendingVideoAndHudResize(kGameUiContext);
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
                 window_.close();
@@ -2629,6 +2661,7 @@ bool GameFlowController::runRestScene() {
         close_map_browse_overlay(nullptr);
 
     while (window_.isOpen() && inScene) {
+        applyPendingVideoAndHudResize(kGameUiContext);
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
                 window_.close();

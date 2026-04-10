@@ -31,6 +31,8 @@ struct BattleStateSnapshot {
     int                      drawPileSize   = 0;
     int                      discardPileSize = 0;
     int                      exhaustPileSize = 0;
+    /** 弃牌堆内卡牌 id 顺序（与 CardSystem::get_discard_pile 一致，用于洗牌飞牌等表现） */
+    std::vector<CardId>      discardPileCardIds;
     std::vector<MonsterInBattle> monsters;
     std::vector<std::vector<StatusInstance>> monsterStatuses;
     int                      turnNumber     = 0;

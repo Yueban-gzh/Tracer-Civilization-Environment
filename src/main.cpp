@@ -8,41 +8,19 @@
 #include <iostream>
 
 #include "Common/ImagePath.hpp"
+#include "Common/UserSettings.hpp"
 #include "GameFlow/GameFlowController.hpp"
 
 int main() {
     try {
         tce::setup_asset_working_directory();
-        constexpr unsigned kDesignW = 1920u;
-        constexpr unsigned kDesignH = 1080u;
-        const sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
-        const unsigned dw = desktop.size.x > 0u ? static_cast<unsigned>(desktop.size.x) : kDesignW;
-        const unsigned dh = desktop.size.y > 0u ? static_cast<unsigned>(desktop.size.y) : kDesignH;
-        const bool desktopIs1080p = (dw == kDesignW && dh == kDesignH);
+        tce::UserSettings::instance().load();
 
         sf::ContextSettings ctx;
         ctx.antiAliasingLevel = 2u;
 
         sf::RenderWindow window;
-        if (desktopIs1080p) {
-            window.create(
-                sf::VideoMode({ kDesignW, kDesignH }),
-                "Tracer Civilization",
-                sf::State::Fullscreen,
-                ctx);
-        } else {
-            unsigned winW = kDesignW;
-            unsigned winH = kDesignH;
-            if (dw < winW) winW = dw;
-            if (dh < winH) winH = dh;
-            window.create(
-                sf::VideoMode({ winW, winH }),
-                "Tracer Civilization",
-                sf::Style::Close | sf::Style::Titlebar,
-                sf::State::Windowed,
-                ctx);
-        }
-        window.setFramerateLimit(60);
+        tce::UserSettings::instance().applyVideoModeToWindow(window, ctx);
 
         tce::GameFlowController game(window);
         if (!game.initialize()) {

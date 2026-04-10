@@ -7,6 +7,12 @@
     <ClCompile Include="src\Common\ImagePath.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\Common\MusicManager.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Common\UserSettings.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\UI\CardVisual.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -121,6 +127,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\CardSystem\CardSystem.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Common\MusicManager.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Common\UserSettings.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\Common\Types.hpp">

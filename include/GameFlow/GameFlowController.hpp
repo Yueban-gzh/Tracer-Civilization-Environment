@@ -2,6 +2,10 @@
 
 #include <SFML/Graphics.hpp>
 #include <cstdint>
+
+namespace sf {
+struct ContextSettings;
+}
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -10,6 +14,7 @@
 #include "BattleCoreRefactor/BattleEngine.hpp"
 #include "BattleEngine/BattleUI.hpp"
 #include "CardSystem/CardSystem.hpp"
+#include "Common/MusicManager.hpp"
 #include "Common/RunRng.hpp"
 #include "DataLayer/DataLayer.h"
 #include "EventEngine/EventEngine.hpp"
@@ -47,6 +52,9 @@ public:
     uint64_t get_run_rng_state() const { return runRng_.get_state(); }
     void     set_run_rng_state(uint64_t s) { runRng_.set_state(s); }
 
+    /** 若用户在设置中申请了分辨率变更，则重建窗口并同步 HUD 尺寸（每帧或每轮循环开头调用） */
+    void applyPendingVideoAndHudResize(const sf::ContextSettings& ctx);
+
 private:
     bool tryMoveToNode(const std::string& nodeId);
     void resolveNode(const MapEngine::MapNode& node);
@@ -82,6 +90,7 @@ private:
     // 地图 / 事件界面共用的战斗顶栏 + 遗物栏 UI
     BattleUI hudBattleUi_;
 
+    MusicManager           musicManager_{};
     RunRng                 runRng_;
     DataLayer::DataLayerImpl dataLayer_;
     CardSystem cardSystem_;

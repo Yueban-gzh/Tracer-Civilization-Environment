@@ -156,6 +156,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Common\ImagePath.cpp" />
+    <ClCompile Include="src\Common\MusicManager.cpp" />
+    <ClCompile Include="src\Common\UserSettings.cpp" />
     <ClCompile Include="src\UI\CardVisual.cpp" />
     <ClCompile Include="src\DataLayer\JsonParser.cpp" />
     <ClCompile Include="src\DataLayer\DataLayer.cpp" />
@@ -207,6 +209,8 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClInclude Include="include\BattleCoreRefactor\BattleCoreRefactorSnapshotAdapter.hpp" />
     <ClInclude Include="include\CardSystem\CardSystem.hpp" />
     <ClInclude Include="include\CardSystem\DeckViewCollection.hpp" />
+    <ClInclude Include="include\Common\MusicManager.hpp" />
+    <ClInclude Include="include\Common\UserSettings.hpp" />
     <ClInclude Include="include\Common\Types.hpp" />
     <ClInclude Include="include\UI\CardVisual.hpp" />
     <ClInclude Include="include\DataLayer\DataLayer.h" />

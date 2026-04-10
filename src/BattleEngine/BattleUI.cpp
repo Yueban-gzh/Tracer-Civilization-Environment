@@ -7,6 +7,7 @@
 #include "CardSystem/CardSystem.hpp"               // CardInstance（本场减费展示）
 #include "BattleCoreRefactor/PotionEffects.hpp"    // 药水需目标判断
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
+#include "Common/UserSettings.hpp"
 #include <SFML/Graphics.hpp>                       // 图形绘制
 #include <algorithm>                               // std::min/max 等
 #include <array>
@@ -474,6 +475,20 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             sf::Vector2f(END_TURN_W * uiScaleX_, END_TURN_H * uiScaleY_));
     }
 
+    void BattleUI::set_window_size(unsigned width, unsigned height) {
+        width_  = width;
+        height_ = height;
+        uiScaleX_ = static_cast<float>(width_) / kDesignWidth;
+        uiScaleY_ = static_cast<float>(height_) / kDesignHeight;
+        const float btnCenterX = static_cast<float>(width_) - END_TURN_CENTER_X_BR * uiScaleX_;
+        const float btnCenterY = static_cast<float>(height_) - END_TURN_CENTER_Y_BR * uiScaleY_;
+        const float btnX = btnCenterX - (END_TURN_W * uiScaleX_) * 0.5f;
+        const float btnY = btnCenterY - (END_TURN_H * uiScaleY_) * 0.5f;
+        endTurnButton_ = sf::FloatRect(
+            sf::Vector2f(btnX, btnY),
+            sf::Vector2f(END_TURN_W * uiScaleX_, END_TURN_H * uiScaleY_));
+    }
+
     void BattleUI::set_top_bar_map_floor(int current_layer_index, int total_layers) {
         top_bar_map_layer_ = current_layer_index;
         top_bar_map_total_ = total_layers > 0 ? total_layers : 0;
@@ -903,11 +918,42 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                             pending_pause_menu_choice_ = 3;   // 进入设置页面
                             settings_panel_active_ = true;
                             pause_save_slot_panel_active_ = false;
+                            settings_video_preset_preview_ = UserSettings::instance().videoPreset();
                             return false;
                         }
                     } else {
+                        const float panelW = 760.f;
+                        const float panelH = 520.f;
+                        const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
+                        const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+                        layout_pause_settings_controls_(panelX, panelY, panelW, panelH);
+                        if (settingsVolDownRect_.contains(mousePos)) {
+                            UserSettings::instance().setMasterVolume(UserSettings::instance().masterVolume() - 5.f);
+                            return false;
+                        }
+                        if (settingsVolUpRect_.contains(mousePos)) {
+                            UserSettings::instance().setMasterVolume(UserSettings::instance().masterVolume() + 5.f);
+                            return false;
+                        }
+                        if (settingsResPrevRect_.contains(mousePos)) {
+                            settings_video_preset_preview_ =
+                                (settings_video_preset_preview_ - 1 + UserSettings::kVideoModeCount) %
+                                UserSettings::kVideoModeCount;
+                            return false;
+                        }
+                        if (settingsResNextRect_.contains(mousePos)) {
+                            settings_video_preset_preview_ =
+                                (settings_video_preset_preview_ + 1) % UserSettings::kVideoModeCount;
+                            return false;
+                        }
+                        if (settingsApplyVideoRect_.contains(mousePos)) {
+                            UserSettings::instance().setVideoPreset(settings_video_preset_preview_);
+                            UserSettings::instance().markVideoApplyPending();
+                            UserSettings::instance().save();
+                            return false;
+                        }
                         if (settingsBackRect_.contains(mousePos)) {
-                            settings_panel_active_ = false;    // 返回到一级暂停菜单
+                            settings_panel_active_ = false; // 返回到一级暂停菜单
                             return false;
                         }
                     }
@@ -1324,6 +1370,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         deck_view_active_ = active;
         if (active) {
             pile_anim_snapshot_ready_ = false;
+            prev_discard_ids_for_anim_.clear();
             pile_card_flights_.clear();
             pile_draw_anim_hiding_.clear();
             pending_select_ui_pile_fly_remaining_ = 0;
@@ -1344,6 +1391,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             deck_view_hover_index_ = -1;
             deck_view_hover_blend_ = 0.f;
             pile_anim_snapshot_ready_ = false;
+            prev_discard_ids_for_anim_.clear();
             pending_select_ui_pile_fly_remaining_ = 0;
             return;
         }
@@ -1402,6 +1450,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
     void BattleUI::set_reward_screen_active(bool active) {
         reward_screen_active_ = active;
         pile_anim_snapshot_ready_ = false;
+        prev_discard_ids_for_anim_.clear();
         pile_card_flights_.clear();
         pile_draw_anim_hiding_.clear();
         pending_select_ui_pile_fly_remaining_ = 0;
@@ -1679,6 +1728,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             prev_draw_sz_for_anim_ = s.drawPileSize;
             prev_discard_sz_for_anim_ = s.discardPileSize;
             prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
+            prev_discard_ids_for_anim_ = s.discardPileCardIds;
             pile_anim_snapshot_ready_ = true;
             return;
         }
@@ -1728,7 +1778,13 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             const float shuffleLead = 0.42f;
             for (int i = 0; i < nAnim && pile_card_flights_.size() < kMaxNewAnims + 8; ++i) {
                 PileCardFlightAnim a;
-                a.card_id = "strike"; // 快照不含弃牌堆具体卡面，先用通用占位牌面做飞牌表现
+                a.card_id = "strike";
+                const auto& pd = prev_discard_ids_for_anim_;
+                if (!pd.empty()) {
+                    const size_t k = pd.size();
+                    // 弃牌堆为 push_back 顺序，视觉上常把后入者视作靠近顶牌，从尾部向里取不同 id
+                    a.card_id = pd[k - 1 - (static_cast<size_t>(i) % k)];
+                }
                 a.start = discardC;
                 a.end = drawC;
                 a.kind = PileCardFlightAnim::DiscardToDraw;
@@ -1809,6 +1865,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         prev_draw_sz_for_anim_ = s.drawPileSize;
         prev_discard_sz_for_anim_ = s.discardPileSize;
         prev_exhaust_sz_for_anim_ = s.exhaustPileSize;
+        prev_discard_ids_for_anim_ = s.discardPileCardIds;
     }
 
     void BattleUI::draw_pile_card_anims_(sf::RenderWindow& window) {
@@ -1838,7 +1895,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             sf::Color outline(210, 190, 120);
             if (a.kind == PileCardFlightAnim::HandToDiscard) outline = sf::Color(130, 130, 220);
             else if (a.kind == PileCardFlightAnim::HandToExhaust) outline = sf::Color(150, 150, 150);
-            else if (a.kind == PileCardFlightAnim::DiscardToDraw) outline = sf::Color(225, 210, 150);
+            // DiscardToDraw 与 DrawToHand 共用默认描边，卡面 id 已与真实弃牌一致
 
             // 缩放：整体更小，且飞行过程略“放大到位”，让运动更自然
             float scale = 0.74f;
@@ -1976,6 +2033,27 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         drawDeckViewStandalone_(window, s);
     }
 
+    void BattleUI::layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH) {
+        const float cx = panelX + panelW * 0.5f;
+        float       y  = panelY + 96.f;
+        const float rowH = 44.f;
+        settingsVolDownRect_ = sf::FloatRect(sf::Vector2f(cx - 210.f, y), sf::Vector2f(52.f, rowH));
+        settingsVolUpRect_   = sf::FloatRect(sf::Vector2f(cx + 158.f, y), sf::Vector2f(52.f, rowH));
+        y += 72.f;
+        // 与音量按钮对齐：同列、同宽，避免视觉跳动
+        settingsResPrevRect_ = sf::FloatRect(sf::Vector2f(cx - 210.f, y), sf::Vector2f(52.f, rowH));
+        settingsResNextRect_ = sf::FloatRect(sf::Vector2f(cx + 158.f, y), sf::Vector2f(52.f, rowH));
+        y += 76.f;
+        const float appW = 300.f;
+        const float appH = 48.f;
+        settingsApplyVideoRect_ = sf::FloatRect(sf::Vector2f(cx - appW * 0.5f, y), sf::Vector2f(appW, appH));
+        const float btnW = 240.f;
+        const float btnH = 56.f;
+        const float bx   = panelX + (panelW - btnW) * 0.5f;
+        const float by   = panelY + panelH - btnH - 36.f;
+        settingsBackRect_ = sf::FloatRect(sf::Vector2f(bx, by), sf::Vector2f(btnW, btnH));
+    }
+
     void BattleUI::drawPauseMenuOverlay(sf::RenderWindow& window) {
         const float viewTop    = TOP_BAR_BG_H;
         const float viewHeight = static_cast<float>(height_) - viewTop;
@@ -1985,7 +2063,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         window.draw(dimBg);
 
         const float panelW = 760.f;
-        float panelH = settings_panel_active_ ? 470.f : 420.f;
+        float panelH = settings_panel_active_ ? 520.f : 420.f;
         if (!settings_panel_active_ && pause_save_slot_panel_active_) panelH += 86.f;
         const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
         const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
@@ -2071,24 +2149,97 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                 }
             }
         } else {
-            const float btnW = 240.f;
-            const float btnH = 56.f;
-            const float x = panelX + (panelW - btnW) * 0.5f;
-            const float y = panelY + panelH - btnH - 40.f;
-            settingsBackRect_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(btnW, btnH));
+            layout_pause_settings_controls_(panelX, panelY, panelW, panelH);
+
+            auto drawSmallBtn = [&](const sf::FloatRect& r, const std::wstring& label) {
+                const bool hover = r.contains(mousePos_);
+                sf::RectangleShape b(r.size);
+                b.setPosition(r.position);
+                b.setFillColor(hover ? sf::Color(86, 80, 104) : sf::Color(62, 58, 78));
+                b.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
+                b.setOutlineThickness(hover ? 2.5f : 2.f);
+                window.draw(b);
+                sf::Text tx(fontForChinese(), sf::String(label), 22);
+                tx.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect lb = tx.getLocalBounds();
+                tx.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                tx.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f));
+                window.draw(tx);
+            };
+
+            sf::Text labVol(fontForChinese(), sf::String(L"主音量"), 24);
+            labVol.setFillColor(sf::Color(210, 205, 195));
+            labVol.setPosition(sf::Vector2f(panelX + 48.f, panelY + 100.f));
+            window.draw(labVol);
+
+            drawSmallBtn(settingsVolDownRect_, L"－");
+            drawSmallBtn(settingsVolUpRect_, L"＋");
+            {
+                const int v = static_cast<int>(UserSettings::instance().masterVolume() + 0.5f);
+                sf::Text tv(fontForChinese(), sf::String(std::to_wstring(v) + L" %"), 24);
+                tv.setFillColor(sf::Color(245, 235, 220));
+                const sf::FloatRect lb = tv.getLocalBounds();
+                tv.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                const float cx = panelX + panelW * 0.5f;
+                const float cy = settingsVolDownRect_.position.y + settingsVolDownRect_.size.y * 0.5f;
+                tv.setPosition(sf::Vector2f(cx, cy));
+                window.draw(tv);
+            }
+
+            sf::Text labRes(fontForChinese(), sf::String(L"分辨率"), 24);
+            labRes.setFillColor(sf::Color(210, 205, 195));
+            labRes.setPosition(sf::Vector2f(panelX + 48.f, settingsResPrevRect_.position.y + 4.f));
+            window.draw(labRes);
+
+            // 用 ASCII 箭头，避免字体缺字导致的方块/乱码
+            drawSmallBtn(settingsResPrevRect_, L"<");
+            drawSmallBtn(settingsResNextRect_, L">");
+            {
+                const std::wstring label =
+                    UserSettings::instance().videoPresetLabelForIndex(settings_video_preset_preview_);
+                sf::Text tr(fontForChinese(), sf::String(label), 22);
+                tr.setFillColor(sf::Color(245, 235, 220));
+                const sf::FloatRect lb = tr.getLocalBounds();
+                tr.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                tr.setPosition(sf::Vector2f(panelX + panelW * 0.5f,
+                                            settingsResPrevRect_.position.y + settingsResPrevRect_.size.y * 0.5f));
+                window.draw(tr);
+            }
+
+            {
+                const bool hover = settingsApplyVideoRect_.contains(mousePos_);
+                sf::RectangleShape ab(settingsApplyVideoRect_.size);
+                ab.setPosition(settingsApplyVideoRect_.position);
+                ab.setFillColor(hover ? sf::Color(72, 110, 86) : sf::Color(52, 82, 64));
+                ab.setOutlineColor(hover ? sf::Color(190, 230, 170) : sf::Color(140, 180, 130));
+                ab.setOutlineThickness(hover ? 2.5f : 2.f);
+                window.draw(ab);
+                sf::Text ta(fontForChinese(), sf::String(L"应用分辨率"), 24);
+                ta.setFillColor(sf::Color(235, 245, 230));
+                const sf::FloatRect lb = ta.getLocalBounds();
+                ta.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                ta.setPosition(sf::Vector2f(settingsApplyVideoRect_.position.x + settingsApplyVideoRect_.size.x * 0.5f,
+                                            settingsApplyVideoRect_.position.y + settingsApplyVideoRect_.size.y * 0.5f));
+                window.draw(ta);
+            }
+
+            const float bx = settingsBackRect_.position.x;
+            const float by = settingsBackRect_.position.y;
+            const float btnW = settingsBackRect_.size.x;
+            const float btnH = settingsBackRect_.size.y;
             sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
-            btn.setPosition(sf::Vector2f(x, y));
-            const bool hover = settingsBackRect_.contains(mousePos_);
-            btn.setFillColor(hover ? sf::Color(86, 80, 104) : sf::Color(62, 58, 78));
-            btn.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
-            btn.setOutlineThickness(hover ? 2.5f : 2.f);
+            btn.setPosition(sf::Vector2f(bx, by));
+            const bool hoverBack = settingsBackRect_.contains(mousePos_);
+            btn.setFillColor(hoverBack ? sf::Color(86, 80, 104) : sf::Color(62, 58, 78));
+            btn.setOutlineColor(hoverBack ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
+            btn.setOutlineThickness(hoverBack ? 2.5f : 2.f);
             window.draw(btn);
 
             sf::Text t(fontForChinese(), sf::String(L"返回"), 26);
             t.setFillColor(sf::Color(235, 230, 220));
             const sf::FloatRect lb = t.getLocalBounds();
             t.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
-            t.setPosition(sf::Vector2f(x + btnW * 0.5f, y + btnH * 0.5f));
+            t.setPosition(sf::Vector2f(bx + btnW * 0.5f, by + btnH * 0.5f));
             window.draw(t);
         }
     }

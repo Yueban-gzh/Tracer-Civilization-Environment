@@ -19,6 +19,7 @@ namespace tce {
 class BattleUI {
 public:
     BattleUI(unsigned width, unsigned height);  // 构造：传入窗口宽高
+    void set_window_size(unsigned width, unsigned height);
 
     bool loadFont(const std::string& path);     // 加载主字体（英文/数字）
     /** 加载中文字体（用于显示中文，若未加载则用主字体可能显示为方框） */
@@ -111,6 +112,7 @@ public:
 
 private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
+    void layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH);
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
     void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌、「查看升级」与左右翻牌箭头命中矩形
@@ -165,6 +167,8 @@ private:
     int                                 prev_draw_sz_for_anim_ = 0;
     int                                 prev_discard_sz_for_anim_ = 0;
     int                                 prev_exhaust_sz_for_anim_ = 0;
+    /** 上一帧快照中的弃牌堆 id 顺序，用于「弃牌洗回抽牌堆」飞牌卡面（与真实弃牌一致） */
+    std::vector<CardId>                 prev_discard_ids_for_anim_;
     bool                                pile_anim_snapshot_ready_ = false;
     int                                 pending_select_ui_pile_fly_remaining_ = 0;
     bool                                pending_select_ui_force_center_fly_ = false;
@@ -256,6 +260,13 @@ private:
     sf::FloatRect pauseSaveQuitRect_;        // 暂停菜单：保存并退出按钮区域
     sf::FloatRect pauseSettingsRect_;        // 暂停菜单：设置按钮区域
     sf::FloatRect settingsBackRect_;         // 设置页面：返回按钮区域
+    sf::FloatRect settingsVolDownRect_{};
+    sf::FloatRect settingsVolUpRect_{};
+    sf::FloatRect settingsResPrevRect_{};
+    sf::FloatRect settingsResNextRect_{};
+    sf::FloatRect settingsApplyVideoRect_{};
+    /** 进入设置页时的分辨率预览下标（与 UserSettings 解耦直到点「应用」） */
+    int           settings_video_preset_preview_ = 0;
     bool          pause_save_slot_panel_active_ = false;  // 暂停菜单：是否展开三槽存档选择
     std::array<sf::FloatRect, 3> pauseSaveSlotRects_{};   // 暂停菜单：槽位按钮区域
     // 背景图（置于最底层）：多张按战斗序号索引，无图时用 clear 色
