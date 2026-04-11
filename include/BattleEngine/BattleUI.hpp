@@ -38,6 +38,8 @@ public:
     bool loadBackgroundForBattle(int index, const std::string& path);
     /** 加载意图图标：key 为 Attack/Block/Strategy/Unknown，path 如 assets/intention/Attack.png */
     bool loadIntentionTexture(const std::string& key, const std::string& path);
+    /** 预加载战斗状态图标：status_id 与逻辑层 StatusInstance::id 一致，path 须含扩展名 */
+    bool loadStatusEffectTexture(const std::string& status_id, const std::string& path);
     /** 切换当前战斗背景：0/1/2 对应三张地图配置的先秦/汉唐/宋明（由 GameFlow 按当前地图索引设定） */
     void setBattleBackground(int index);
 
@@ -138,6 +140,8 @@ private:
                             const CardInstance* handInst = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
+    /** 手牌扇形在 drawBottomBar 中后画，会盖住血条下效果栏；本函数在底栏/飞牌之后补画状态图标 */
+    void flushPendingBattleStatusIcons_(sf::RenderWindow& window);
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
     void show_center_tip(std::wstring text, float seconds);  // 内部：设置中央提示（供 showTip 调用）
     void draw_center_tip(sf::RenderWindow& window);          // 内部：绘制中央提示
@@ -284,6 +288,22 @@ private:
     int                     currentBackgroundIndex_ = 0;
     // 意图图标（Attack/Block/Strategy/Unknown），无图时用灰色圆球占位
     std::unordered_map<std::string, sf::Texture> intentionTextures_;
+    // 效果栏图标（玩家/怪物状态）；默认按 id 懒加载 assets/status/Icon *.png
+    std::unordered_map<std::string, sf::Texture> statusEffectTextures_;
+    std::unordered_set<std::string>            statusEffectMissing_;
+
+    /** 按状态 id 解析并加载贴图；失败则记入 statusEffectMissing_，避免每帧重试 */
+    const sf::Texture* textureForStatusEffect_(const std::string& id);
+
+    struct PendingBattleStatusIcon {
+        float              x = 0.f;
+        float              y = 0.f;
+        float              iconSz = 30.f;
+        int                stacks = 0;
+        std::string        id;
+        bool               monsterPalette = false;
+    };
+    std::vector<PendingBattleStatusIcon> pendingBattleStatusIcons_;
 
     // 牌组界面
     bool                          deck_view_active_ = false;   // 牌组界面是否打开

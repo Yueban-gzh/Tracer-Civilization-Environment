@@ -7,17 +7,21 @@
 #include "CardSystem/CardSystem.hpp"               // CardInstance（本场减费展示）
 #include "BattleCoreRefactor/PotionEffects.hpp"    // 药水需目标判断
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
+#include "Common/ImagePath.hpp"
 #include "Common/UserSettings.hpp"
 #include <SFML/Graphics.hpp>                       // 图形绘制
 #include <algorithm>                               // std::min/max 等
 #include <array>
 #include <map>                                     // std::map（按目标统计伤害序号，用于错位）
 #include <cmath>                                   // std::sqrt/floor
+#include <cctype>                                  // std::toupper
 #include <cstdio>                                  // std::snprintf
+#include <filesystem>                              // u8path：含空格/中文的状态图标路径
 #include <cstdint>                                 // std::uint8_t
 #include <cstring>                                 // std::strlen
 #include <iostream>                                // 选牌调试输出（控制台）
 #include <string>                                  // std::string
+#include <unordered_map>
 #include <unordered_set>                           // 抽/弃牌动画 diff
 #include <vector>                                  // 牌面圆角轮廓点
 
@@ -37,6 +41,130 @@ inline std::uint8_t ui_hover_lighten_byte(std::uint8_t v, float hover01, int max
 } // namespace
 
 namespace tce {
+
+/** SFML::loadFromFile(string) 在 MSVC 上易与系统编码不一致；含空格/中文路径用 u8path。 */
+static bool load_sf_texture_utf8(sf::Texture& tex, const std::string& utf8Path) {
+    if (utf8Path.empty())
+        return false;
+    namespace fs = std::filesystem;
+    const fs::path p = fs::u8path(utf8Path);
+    if (tex.loadFromFile(p))
+        return true;
+    if (p.is_absolute())
+        return false;
+    std::error_code ec;
+    const fs::path cwd = fs::current_path(ec);
+    if (ec)
+        return false;
+    return tex.loadFromFile(cwd / p);
+}
+
+/** 仅处理 ASCII A–Z，用于匹配磁盘上的 Icon 文件名（与 wiki 主名一致）。 */
+static std::string ascii_lower_ascii(std::string s) {
+    for (char& c : s) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc >= 'A' && uc <= 'Z')
+            c = static_cast<char>(uc - 'A' + 'a');
+    }
+    return s;
+}
+
+/** 扫描 assets/status，用绝对 path 建立主名(小写)→路径（含 Icon *.png 扫出的主名键，作次要回退）。 */
+static std::unordered_map<std::string, std::filesystem::path> g_statusWikiLowerToAbsPath;
+static bool                                                 g_statusIconDirIndexed = false;
+
+static void merge_one_status_icon_file(const std::filesystem::path& fp) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_regular_file(fp, ec) || ec)
+        return;
+    std::string fname = fp.filename().u8string();
+    const std::string lower = ascii_lower_ascii(fname);
+    if (lower.size() < 5u || lower.compare(lower.size() - 4u, 4u, ".png") != 0)
+        return;
+    const fs::path absP = fs::absolute(fp, ec);
+    if (ec || absP.empty())
+        return;
+    std::string key;
+    if (lower.size() >= 9u && lower.compare(0u, 5u, "icon ") == 0) {
+        const std::string titlePart = fname.substr(5u, fname.size() - 5u - 4u);
+        key = ascii_lower_ascii(titlePart);
+    } else {
+        key = ascii_lower_ascii(fname.substr(0u, fname.size() - 4u));
+    }
+    if (g_statusWikiLowerToAbsPath.find(key) == g_statusWikiLowerToAbsPath.end())
+        g_statusWikiLowerToAbsPath[std::move(key)] = absP;
+}
+
+static void scan_status_dir_merge(const std::filesystem::path& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec))
+        return;
+    for (const auto& ent : fs::directory_iterator(dir, ec)) {
+        if (ec)
+            break;
+        merge_one_status_icon_file(ent.path());
+    }
+}
+
+static void ensure_status_effect_icon_dir_index() {
+    if (g_statusIconDirIndexed)
+        return;
+    g_statusIconDirIndexed = true;
+    namespace fs = std::filesystem;
+    std::vector<fs::path> roots;
+    append_status_effect_icon_scan_roots(roots);
+    for (const fs::path& d : roots)
+        scan_status_dir_merge(d);
+}
+
+static bool battle_ui_status_show_stack_number(const std::string& id) {
+    return id != "barricade" && id != "blasphemy";
+}
+
+/** 不在效果栏占位：内部计数、*_history、自燃伤害拆分数等（与怪物侧跳过 *_history 一致）。 */
+static bool battle_ui_status_hide_from_icon_row(const std::string& id) {
+    if (id.size() >= 8u && id.compare(id.size() - 8u, 8u, "_history") == 0)
+        return true;
+    return id == "discarded_this_turn" || id == "attacks_played_this_turn" || id == "combust_damage";
+}
+
+static bool battle_ui_status_positive_stack_color(const std::string& id) {
+    return id == "strength"
+        || id == "dexterity"
+        || id == "metallicize"
+        || id == "flex"
+        || id == "ritual"
+        || id == "multi_armor"
+        || id == "barricade"
+        || id == "accuracy"
+        || id == "panache"
+        || id == "artifact"
+        || id == "poison_cloud"
+        || id == "double_damage"
+        || id == "double_tap"
+        || id == "demon_form"
+        || id == "heat_sink"
+        || id == "hello"
+        || id == "unstoppable"
+        || id == "establishment"
+        || id == "equilibrium"
+        || id == "free_attack"
+        || id == "wraith_form"
+        || id == "buffer"
+        || id == "draw_up"
+        || id == "energy_up"
+        || id == "block_up"
+        || id == "vigor"
+        || id == "combust"
+        || id == "rupture"
+        || id == "flight"
+        || id == "indestructible"
+        || id == "curiosity"
+        || id == "anger"
+        || id == "curl_up";
+}
 
 namespace {
 
@@ -308,6 +436,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         constexpr float END_TURN_CENTER_Y_BR = 210.f;  // 以右下为 (0,0) 时按钮中心 y
         constexpr float HP_BAR_W = 230.f;            // 血条最大长度（固定，与生命上限无关）
         constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
+        constexpr float BATTLE_STATUS_ICON_SZ = 40.f; // 血条下状态效果图标边长（玩家/怪物共用）
+        constexpr unsigned BATTLE_STATUS_STACK_FONT_SZ = 22u; // 状态层数角标字号
         constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
         constexpr float MODEL_PLACEHOLDER_W = 380.f;      // 玩家/怪物模型占位（1:1）
         constexpr float MODEL_PLACEHOLDER_H = 380.f;
@@ -633,6 +763,50 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         if (!tex.loadFromFile(path)) return false;
         intentionTextures_[key] = std::move(tex);
         return true;
+    }
+
+    bool BattleUI::loadStatusEffectTexture(const std::string& status_id, const std::string& path) {
+        sf::Texture tex;
+        if (!load_sf_texture_utf8(tex, path)) return false;
+        tex.setSmooth(true);
+        statusEffectTextures_[status_id] = std::move(tex);
+        statusEffectMissing_.erase(status_id);
+        return true;
+    }
+
+    const sf::Texture* BattleUI::textureForStatusEffect_(const std::string& id) {
+        const auto cached = statusEffectTextures_.find(id);
+        if (cached != statusEffectTextures_.end())
+            return &cached->second;
+        if (statusEffectMissing_.count(id))
+            return nullptr;
+        if (id.empty()) {
+            statusEffectMissing_.insert(id);
+            return nullptr;
+        }
+        ensure_status_effect_icon_dir_index();
+
+        sf::Texture tex;
+        bool loaded = false;
+        // 1) 主路径：assets/status/<id>.png（与引擎状态 id 一致，无 Icon 前缀）
+        {
+            const std::string flatBase = std::string("assets/status/") + id;
+            if (const std::string pFlat = resolve_image_path(flatBase); !pFlat.empty())
+                loaded = load_sf_texture_utf8(tex, pFlat);
+        }
+        // 2) 目录扫描索引（例如盘上仅有旧 Icon 图时，键可能为 wiki 主名小写而非 id）
+        if (!loaded) {
+            const auto it = g_statusWikiLowerToAbsPath.find(id);
+            if (it != g_statusWikiLowerToAbsPath.end())
+                loaded = tex.loadFromFile(it->second);
+        }
+        if (!loaded) {
+            statusEffectMissing_.insert(id);
+            return nullptr;
+        }
+        tex.setSmooth(true);
+        const auto ins = statusEffectTextures_.emplace(id, std::move(tex));
+        return &ins.first->second;
     }
 
     void BattleUI::setMousePosition(sf::Vector2f pos) {
@@ -2027,6 +2201,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         lastSnapshot_      = &snapshotForEvents_;
         if (!fontLoaded_) return;                   // 字体未加载则不绘制（避免崩溃）
 
+        pendingBattleStatusIcons_.clear();          // 由 drawBattleCenter 收集，底栏之后再 flush（避免手牌盖住）
+
         const bool bottomHudInteractive = !deck_view_active_ && !pause_menu_active_ && !settings_panel_active_
             && !map_overlay_blocks_world_input_ && !card_select_active_ && !reward_screen_active_;
         const bool potionSlotsInteractive = !deck_view_active_ && !pause_menu_active_ && !settings_panel_active_
@@ -2072,6 +2248,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             drawBattleCenter(window, s);             // 底层仍画战场（模糊背景感）
             drawBottomBar(window, s);
             draw_pile_card_anims_(window);
+            flushPendingBattleStatusIcons_(window);
             drawTopRight(window, s);
             drawRewardScreen(window);
             draw_center_tip(window);
@@ -2082,6 +2259,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             drawBattleCenter(window, s);
             drawBottomBar(window, s);
             draw_pile_card_anims_(window);
+            flushPendingBattleStatusIcons_(window);
             drawTopRight(window, s);
             drawCardSelectScreen(window);
             draw_center_tip(window);
@@ -2096,6 +2274,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
 
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
         draw_pile_card_anims_(window);
+        flushPendingBattleStatusIcons_(window);     // 效果图标在手牌之上
         drawTopRight(window, s, true);              // 右上角：地图/牌组/设置按钮、回合数（战斗界面显示回合数）
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
 
@@ -3595,89 +3774,36 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         hpText.setOrigin(sf::Vector2f(hpBounds.position.x + hpBounds.size.x * 0.5f, hpBounds.position.y + hpBounds.size.y * 0.5f));
         hpText.setPosition(sf::Vector2f(barX + HP_BAR_W * 0.5f, barY + HP_BAR_H * 0.5f));
         window.draw(hpText);
-        const float statusIconSz = 30.f;       // 状态图标尺寸
-        const unsigned statusFontSize = 20u;   // 下标字号
+        const float statusIconSz = BATTLE_STATUS_ICON_SZ;
         const float statusGapX = statusIconSz + 14.f;  // 横向间距
         const float statusGapY = statusIconSz + 8.f;   // 纵向间距
         const float stBaseX = barX;
         const float stBaseY = barY + HP_BAR_H + 6.f;
         int hoveredPlayerStatus = -1;
-        auto is_positive_status_ui = [](const std::string& id) {  // 正面效果：正绿负红
-            return id == "strength"
-                || id == "dexterity"
-                || id == "metallicize"
-                || id == "flex"
-                || id == "ritual"
-                || id == "multi_armor"
-                || id == "barricade"
-                || id == "accuracy"
-                || id == "panache"
-                || id == "artifact"
-                || id == "poison_cloud"
-                || id == "double_damage"
-                || id == "double_tap"
-                || id == "demon_form"
-                || id == "heat_sink"
-                || id == "hello"
-                || id == "unstoppable"
-                || id == "establishment"
-                || id == "equilibrium"
-                || id == "free_attack"
-                || id == "wraith_form"
-                || id == "buffer"
-                || id == "draw_up"
-                || id == "energy_up"
-                || id == "block_up"
-                || id == "vigor"
-                || id == "combust"
-                || id == "rupture"
-                || id == "flight"
-                || id == "indestructible"
-                || id == "curiosity"
-                || id == "anger"
-                || id == "curl_up";
-            };
-        auto has_stack_number_ui = [](const std::string& id) {  // 是否显示层数下标
-            return id != "barricade" && id != "blasphemy";  // 壁垒、渎神标记等不显示层数下标
-            };
-
+        int playerStatusDisplayIdx = 0;
         for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
-            const size_t col = i % 8u;
-            const size_t row = i / 8u;
+            const auto& st = s.playerStatuses[i];
+            if (battle_ui_status_hide_from_icon_row(st.id))
+                continue;
+            const size_t col = static_cast<size_t>(playerStatusDisplayIdx) % 8u;
+            const size_t row = static_cast<size_t>(playerStatusDisplayIdx) / 8u;
             const float stX = stBaseX + static_cast<float>(col) * statusGapX;
             const float stY = stBaseY + static_cast<float>(row) * statusGapY;
-            const auto& st = s.playerStatuses[i];
-            sf::RectangleShape icon(sf::Vector2f(statusIconSz, statusIconSz));
-            icon.setPosition(sf::Vector2f(stX, stY));
-            icon.setFillColor(sf::Color(90, 85, 100));
-            icon.setOutlineColor(sf::Color(180, 170, 150));
-            icon.setOutlineThickness(1.f);
-            window.draw(icon);
-            if (has_stack_number_ui(st.id)) {
-                std::snprintf(buf, sizeof(buf), "%d", st.stacks);
-                sf::Text stText(font_, buf, statusFontSize);
-                // 正面效果：正值为绿色，负值为红色；负面效果下标始终白色
-                if (is_positive_status_ui(st.id)) {
-                    if (st.stacks >= 0)
-                        stText.setFillColor(sf::Color(120, 230, 120));
-                    else
-                        stText.setFillColor(sf::Color(230, 120, 120));
-                }
-                else {
-                    stText.setFillColor(sf::Color::White);
-                }
-                const sf::FloatRect textBounds = stText.getLocalBounds();
-                stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
-                stText.setPosition(sf::Vector2f(stX + statusIconSz, stY + statusIconSz));
-                window.draw(stText);
-            }
+            PendingBattleStatusIcon pbd;
+            pbd.x = stX;
+            pbd.y = stY;
+            pbd.iconSz = statusIconSz;
+            pbd.stacks = st.stacks;
+            pbd.id = st.id;
+            pbd.monsterPalette = false;
+            pendingBattleStatusIcons_.push_back(std::move(pbd));
 
-            // 悬停检测：记录第一个被悬停的图标下标
             if (hoveredPlayerStatus < 0 &&
                 mousePos_.x >= stX && mousePos_.x <= stX + statusIconSz &&
                 mousePos_.y >= stY && mousePos_.y <= stY + statusIconSz) {
-                hoveredPlayerStatus = static_cast<int>(i);
+                hoveredPlayerStatus = playerStatusDisplayIdx;
             }
+            ++playerStatusDisplayIdx;
         }
 
         // ---------- 怪物区：1~3 只怪横向排列，意图在模型上方 -> 模型 -> 血条在下方 ----------
@@ -3960,8 +4086,7 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             window.draw(mhpText);
 
             // 怪物状态图标：沿用玩家状态样式，每行最多 8 个，超过换行
-            const float statusIconSz = 30.f;
-            const unsigned statusFontSize = 20u;
+            const float statusIconSz = BATTLE_STATUS_ICON_SZ;
             const float statusGapX = statusIconSz + 14.f;
             const float statusGapY = statusIconSz + 8.f;
             const float mstBaseX = mBarX;
@@ -3971,35 +4096,20 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
                 int displayIdx = 0;
                 for (size_t si = 0; si < mStatuses.size(); ++si) {
                     const auto& st = mStatuses[si];
-                    if (st.id.size() >= 8 && st.id.compare(st.id.size() - 8, 8, "_history") == 0) continue;  // 内部追踪，不显示
+                    if (battle_ui_status_hide_from_icon_row(st.id))
+                        continue;
                     const size_t col = static_cast<size_t>(displayIdx) % 8u;
                     const size_t row = static_cast<size_t>(displayIdx) / 8u;
                     const float mstX = mstBaseX + static_cast<float>(col) * statusGapX;
                     const float mstY = mstBaseY + static_cast<float>(row) * statusGapY;
-                    sf::RectangleShape icon(sf::Vector2f(statusIconSz, statusIconSz));
-                    icon.setPosition(sf::Vector2f(mstX, mstY));
-                    icon.setFillColor(sf::Color(85, 75, 95));
-                    icon.setOutlineColor(sf::Color(190, 180, 160));
-                    icon.setOutlineThickness(1.f);
-                    window.draw(icon);
-                    if (has_stack_number_ui(st.id)) {
-                        std::snprintf(buf, sizeof(buf), "%d", st.stacks);
-                        sf::Text stText(font_, buf, statusFontSize);
-                        // 怪物状态下标颜色规则同玩家
-                        if (is_positive_status_ui(st.id)) {
-                            if (st.stacks >= 0)
-                                stText.setFillColor(sf::Color(120, 230, 120));
-                            else
-                                stText.setFillColor(sf::Color(230, 120, 120));
-                        }
-                        else {
-                            stText.setFillColor(sf::Color::White);
-                        }
-                        const sf::FloatRect textBounds = stText.getLocalBounds();
-                        stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
-                        stText.setPosition(sf::Vector2f(mstX + statusIconSz, mstY + statusIconSz));
-                        window.draw(stText);
-                    }
+                    PendingBattleStatusIcon mbd;
+                    mbd.x = mstX;
+                    mbd.y = mstY;
+                    mbd.iconSz = statusIconSz;
+                    mbd.stacks = st.stacks;
+                    mbd.id = st.id;
+                    mbd.monsterPalette = true;
+                    pendingBattleStatusIcons_.push_back(std::move(mbd));
 
                     // 悬停检测
                     if (hoveredMonsterStatus < 0 &&
@@ -4256,6 +4366,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             float maxBoxWidth = 0.f;
             for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
                 const auto& st = s.playerStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
                 std::wstring desc = makeStatusTooltipText(st);
                 sf::Text tip(fontForChinese(), sf::String(desc), 20);
                 const sf::FloatRect tb = tip.getLocalBounds();
@@ -4268,6 +4380,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             // 再按统一宽度逐个绘制
             for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
                 const auto& st = s.playerStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
                 std::wstring desc = makeStatusTooltipText(st);
                 sf::Text tip(fontForChinese(), sf::String(desc), 20);
                 tip.setFillColor(sf::Color(235, 230, 220));
@@ -4298,6 +4412,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             float maxBoxWidth = 0.f;
             for (size_t i = 0; i < mStatuses.size(); ++i) {
                 const auto& st = mStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
                 std::wstring desc = makeStatusTooltipText(st);
                 sf::Text tip(fontForChinese(), sf::String(desc), 20);
                 const sf::FloatRect tb = tip.getLocalBounds();
@@ -4310,6 +4426,8 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
             // 再按统一宽度逐个绘制
             for (size_t i = 0; i < mStatuses.size(); ++i) {
                 const auto& st = mStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
                 std::wstring desc = makeStatusTooltipText(st);
                 sf::Text tip(fontForChinese(), sf::String(desc), 20);
                 tip.setFillColor(sf::Color(235, 230, 220));
@@ -4366,6 +4484,52 @@ std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::strin
         }
     }
 }
+
+    void BattleUI::flushPendingBattleStatusIcons_(sf::RenderWindow& window) {
+        if (pendingBattleStatusIcons_.empty() || !fontLoaded_)
+            return;
+        char buf[32];
+        for (const PendingBattleStatusIcon& p : pendingBattleStatusIcons_) {
+            const sf::Texture* const ptex = textureForStatusEffect_(p.id);
+            if (ptex) {
+                sf::Sprite sp(*ptex);
+                const sf::Vector2u ts = ptex->getSize();
+                const float sx = ts.x ? (p.iconSz / static_cast<float>(ts.x)) : 1.f;
+                const float sy = ts.y ? (p.iconSz / static_cast<float>(ts.y)) : 1.f;
+                sp.setScale(sf::Vector2f(sx, sy));
+                sp.setPosition(sf::Vector2f(p.x, p.y));
+                window.draw(sp);
+            } else {
+                sf::RectangleShape icon(sf::Vector2f(p.iconSz, p.iconSz));
+                icon.setPosition(sf::Vector2f(p.x, p.y));
+                if (p.monsterPalette) {
+                    icon.setFillColor(sf::Color(85, 75, 95));
+                    icon.setOutlineColor(sf::Color(190, 180, 160));
+                } else {
+                    icon.setFillColor(sf::Color(90, 85, 100));
+                    icon.setOutlineColor(sf::Color(180, 170, 150));
+                }
+                icon.setOutlineThickness(1.f);
+                window.draw(icon);
+            }
+            if (battle_ui_status_show_stack_number(p.id)) {
+                std::snprintf(buf, sizeof(buf), "%d", p.stacks);
+                sf::Text stText(font_, buf, BATTLE_STATUS_STACK_FONT_SZ);
+                if (battle_ui_status_positive_stack_color(p.id)) {
+                    if (p.stacks >= 0)
+                        stText.setFillColor(sf::Color(120, 230, 120));
+                    else
+                        stText.setFillColor(sf::Color(230, 120, 120));
+                } else {
+                    stText.setFillColor(sf::Color::White);
+                }
+                const sf::FloatRect textBounds = stText.getLocalBounds();
+                stText.setOrigin(sf::Vector2f(textBounds.size.x, textBounds.size.y));
+                stText.setPosition(sf::Vector2f(p.x + p.iconSz, p.y + p.iconSz));
+                window.draw(stText);
+            }
+        }
+    }
 
     // 底栏布局：抽牌堆左下 | 能量圆其右上方 | 手牌扇形居中 | 结束回合 | 弃牌堆右下 | 消耗堆在弃牌上方
     void BattleUI::drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s) {

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
+#include <vector>
 
 namespace tce {
 
@@ -18,5 +20,11 @@ bool file_exists_utf8(const std::string& p);
  * 依次尝试 .png / .jpg / .jpeg / .jfif（及常见大写），并在多种 cwd、exe 相对路径下查找。
  */
 std::string resolve_image_path(const std::string& base_no_ext);
+
+/**
+ * 追加待扫描的 assets/status 目录（当前工作目录与 exe 目录及若干上级），
+ * 与 resolve_image_path 的搜寻范围一致，避免仅依赖 cwd 时索引为空。
+ */
+void append_status_effect_icon_scan_roots(std::vector<std::filesystem::path>& out);
 
 } // namespace tce

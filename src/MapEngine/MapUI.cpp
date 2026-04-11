@@ -260,8 +260,9 @@ namespace MapEngine {
                 m_maxOffset = visibleHeight - mapHeight + 50.0f;
             }
 
-            // 初始偏移为0，显示底部（第0层）
-            m_viewOffset = -300.0f;
+            // 初始视口：略增大 m_viewOffset（相对原 -300 向 0 靠拢），地图在屏幕上会稍往下
+            constexpr float kMapInitialViewOffset = -240.0f;
+            m_viewOffset = kMapInitialViewOffset;
 
             std::cout << "=== 地图滚动范围 ===" << std::endl;
             std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
