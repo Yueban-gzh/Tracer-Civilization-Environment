@@ -263,6 +263,8 @@ private:
     int                     currentBackgroundIndex_ = 0;
     // 意图图标（Attack/Block/Strategy/Unknown），无图时用灰色圆球占位
     std::unordered_map<std::string, sf::Texture> intentionTextures_;
+    // 卡牌立绘缓存（card_id -> texture），无图时不显示立绘
+    std::unordered_map<std::string, sf::Texture> cardArtTextures_;
 
     // 牌组界面
     bool                          deck_view_active_ = false;   // 牌组界面是否打开
