@@ -124,6 +124,12 @@ public:
     /** 轮询一次暂停菜单选项：1=返回游戏 2=保存并退出 3=设置页面（进入二级设置界面） */
     bool pollPauseMenuSelection(int& outChoice);
 
+    /** 手牌大预览时牌侧名词解释：词条标题 + 说明（去重，按描述中出现顺序） */
+    struct CardGlossaryEntry {
+        std::wstring title;
+        std::wstring body;
+    };
+
 private:
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH);
@@ -141,7 +147,8 @@ private:
                             const sf::Color& outlineColor, float outlineThickness = 8.f,
                             const sf::RenderStates& states = sf::RenderStates::Default,
                             const BattleStateSnapshot* handSnap = nullptr,
-                            const CardInstance* handInst = nullptr);
+                            const CardInstance* handInst = nullptr,
+                            std::vector<CardGlossaryEntry>* card_glossary_out = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     /** 绘制 drawBattleCenter 期间入队的状态效果图标（应在手牌/飞牌之前调用，使手牌盖住图标） */
@@ -150,6 +157,9 @@ private:
     void show_center_tip(std::wstring text, float seconds);  // 内部：设置中央提示（供 showTip 调用）
     void draw_center_tip(sf::RenderWindow& window);          // 内部：绘制中央提示
     void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/药水悬停提示
+    /** 大预览手牌时：在牌侧（不压牌面）绘制名词解释小框，框随文案收紧 */
+    void draw_card_glossary_beside_preview_(sf::RenderWindow& window, const sf::FloatRect& cardScreenAabb,
+                                            const std::vector<CardGlossaryEntry>& entries);
     bool can_pay_selected_card_cost() const;   // 当前选中的牌能量是否足够
 
     /** 根据当前选中的候选下标，计算仍在手牌扇区展示的牌（手牌下标顺序）及每张的中心/角度 */
@@ -194,6 +204,14 @@ private:
     sf::Clock                           ui_hover_anim_clock_{};
     /** 怪物意图图标上下浮动（drawBattleCenter 内用 sin(time) 偏移） */
     sf::Clock                           intent_float_clock_{};
+    /** 本帧大预览手牌：牌面屏幕 AABB + 描述中出现的名词解释（去重） */
+    std::vector<CardGlossaryEntry>      hand_preview_glossary_entries_;
+    sf::FloatRect                       hand_preview_glossary_card_screen_{};
+    bool                                hand_preview_glossary_active_ = false;
+    /** 牌组/卡牌总览：悬停放大或详情大图时，与手牌大预览同款的描述关键词 + 侧栏词条 */
+    std::vector<CardGlossaryEntry>      deck_view_glossary_entries_;
+    sf::FloatRect                       deck_view_glossary_card_screen_{};
+    bool                                deck_view_glossary_active_ = false;
     float                               hover_draw_pile_    = 0.f;
     float                               hover_discard_pile_ = 0.f;
     float                               hover_exhaust_pile_ = 0.f;

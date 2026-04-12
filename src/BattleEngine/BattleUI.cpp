@@ -511,6 +511,362 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 target.draw(t, states);
             }
         }
+
+        struct CardDescGlossaryEntry {
+            sf::String key;
+            std::wstring title;
+            std::wstring body;
+        };
+
+        inline const std::vector<CardDescGlossaryEntry>& card_desc_glossary_sorted() {
+            static const std::vector<CardDescGlossaryEntry> kTable = [] {
+                std::vector<CardDescGlossaryEntry> v;
+                auto add = [&](const char* utf8, const wchar_t* title, const wchar_t* body) {
+                    const char* end = utf8 + std::strlen(utf8);
+                    v.push_back({sf::String::fromUtf8(utf8, end), title, body});
+                };
+                add(u8"护体罡气", L"护体罡气", L"持续到下回合开始前，抵挡将要受到的伤害。");
+                add(u8"弃牌堆", L"弃牌堆", L"已打出或弃掉的牌进入此处；洗牌后可能回到抽牌流程。");
+                add(u8"参悟堆", L"参悟堆", L"与抽牌相关的牌堆；部分效果会将弃牌堆洗入此处再抽取。");
+                add(u8"人工制品", L"人工制品", L"抵消下一次受到的负面效果（层数各算一次）。");
+                add(u8"无实体", L"无实体", L"免疫若干次受到的伤害（按层数消耗）。");
+                add(u8"破绽", L"破绽", L"受到的攻击伤害提高；层数在敌人回合结束时减少。");
+                add(u8"涣散", L"涣散", L"造成的攻击伤害降低；层数在敌人回合结束时减少。");
+                add(u8"蛊毒", L"蛊毒", L"回合结束时受到层数伤害，随后层数减少。");
+                add(u8"内伤", L"内伤", L"状态/诅咒类效果中使用的伤害或惩罚标记。");
+                add(u8"焚毁", L"焚毁", L"将牌移入消耗堆，本场战斗通常不再回到抽牌堆。");
+                add(u8"虚无", L"虚无", L"在手牌中于回合结束时被消耗；否则会进入消耗堆。");
+                add(u8"参悟", L"参悟", L"从抽牌堆抽取若干张牌加入手牌（与部分「不能再抽」效果分别结算）。");
+                add(u8"折损", L"折损", L"直接失去生命，通常无视护体罡气。");
+                add(u8"气血", L"气血", L"当前生命；最大气血为生命上限。");
+                add(u8"武学", L"武学", L"敌人的攻击类意图；与「受到武学」等描述对应。");
+                add(u8"灼伤", L"灼伤", L"状态牌：在回合结束时造成伤害。");
+                add(u8"劲力", L"劲力", L"提高攻击牌造成的伤害。");
+                add(u8"灵动", L"灵动", L"提高每回合获得的护体罡气。");
+                add(u8"真气", L"真气", L"即能量，用于打出卡牌。");
+                add(u8"脆弱", L"脆弱", L"受到的伤害增加。");
+                add(u8"易伤", L"易伤", L"受到的攻击伤害增加。");
+                add(u8"格挡", L"格挡", L"与护体罡气同义：抵挡将受到的伤害，下回合开始前失效。");
+                add(u8"斩杀", L"斩杀", L"指本次伤害使目标生命值降至 0 或以下。");
+                add(u8"手牌", L"手牌", L"当前可打出的牌；回合结束未打出的牌通常进入弃牌堆。");
+                add(u8"抽牌", L"抽牌", L"从抽牌堆顶将牌加入手牌。");
+                add(u8"抽牌堆", L"抽牌堆", L"尚未加入手牌的牌所在牌堆；抽牌从此处取牌。");
+                add(u8"能力牌", L"能力牌", L"打出时生效的一类牌，与武学牌等区分。");
+                add(u8"武学牌", L"武学牌", L"以武学方式结算的攻击类牌。");
+                add(u8"保留", L"保留", L"回合结束时仍可留在手牌的特性；与部分减耗效果联动。");
+                add(u8"攻击伤害", L"攻击伤害", L"由攻击类武学或效果造成的伤害。");
+                std::sort(v.begin(), v.end(), [](const CardDescGlossaryEntry& a, const CardDescGlossaryEntry& b) {
+                    return a.key.getSize() > b.key.getSize();
+                });
+                return v;
+            }();
+            return kTable;
+        }
+
+        inline const CardDescGlossaryEntry* card_desc_match_keyword_at(const sf::String& full, std::size_t pos,
+                                                                       const std::vector<CardDescGlossaryEntry>& tab) {
+            for (const auto& e : tab) {
+                const std::size_t n = e.key.getSize();
+                if (pos + n > full.getSize()) continue;
+                bool ok = true;
+                for (std::size_t k = 0; k < n; ++k) {
+                    if (full[pos + k] != e.key[k]) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok) return &e;
+            }
+            return nullptr;
+        }
+
+        inline bool card_desc_any_keyword_starts_at(const sf::String& full, std::size_t pos,
+                                                    const std::vector<CardDescGlossaryEntry>& tab) {
+            return card_desc_match_keyword_at(full, pos, tab) != nullptr;
+        }
+
+        /** 供牌面描述关键词金色：关键词整块；普通段整块不切分（与早期实现一致） */
+        struct CardDescLayoutAtom {
+            sf::String s;
+            bool kw{};
+            bool lineBreak{};
+            std::wstring title;
+            std::wstring body;
+        };
+
+        inline void card_desc_build_layout_atoms_from_text(const sf::String& text,
+                                                           std::vector<CardDescLayoutAtom>& atoms) {
+            atoms.clear();
+            atoms.reserve(text.getSize());
+            const auto& glossary = card_desc_glossary_sorted();
+            std::size_t i = 0;
+            const std::size_t n = text.getSize();
+            while (i < n) {
+                const CardDescGlossaryEntry* hit = card_desc_match_keyword_at(text, i, glossary);
+                if (hit) {
+                    atoms.push_back({hit->key, true, false, hit->title, hit->body});
+                    i += hit->key.getSize();
+                    continue;
+                }
+                std::size_t j = i + 1;
+                while (j < n && !card_desc_any_keyword_starts_at(text, j, glossary)) ++j;
+                sf::String chunk;
+                for (std::size_t k = i; k < j; ++k) {
+                    const char32_t ch = text[k];
+                    if (ch == U'\r') continue;
+                    if (ch == U'\n') {
+                        if (!chunk.isEmpty()) {
+                            atoms.push_back({chunk, false, false, {}, {}});
+                            chunk.clear();
+                        }
+                        atoms.push_back({sf::String(), false, true, {}, {}});
+                        continue;
+                    }
+                    chunk += ch;
+                }
+                if (!chunk.isEmpty())
+                    atoms.push_back({chunk, false, false, {}, {}});
+                i = j;
+            }
+        }
+
+        /** 换行测量（不限制行数），用于牌侧说明框按内容收紧宽高 */
+        inline void measure_wrapped_lines_unlimited(const sf::Font& font, const sf::String& text, unsigned int charSize,
+                                                    float maxWidth, float& outMaxLineW, int& outLineCount) {
+            outMaxLineW = 0.f;
+            outLineCount = 0;
+            if (text.isEmpty() || maxWidth <= 1.f) return;
+
+            sf::Text measure(font, sf::String(L""), charSize);
+            std::vector<sf::String> lines;
+            sf::String current;
+            auto flush_line = [&]() {
+                lines.push_back(current);
+                current.clear();
+            };
+            for (std::size_t i = 0; i < text.getSize(); ++i) {
+                const char32_t ch = text[i];
+                if (ch == U'\r') continue;
+                if (ch == U'\n') {
+                    flush_line();
+                    continue;
+                }
+                sf::String candidate = current;
+                candidate += ch;
+                measure.setString(candidate);
+                const float w = measure.getLocalBounds().size.x;
+                if (!current.isEmpty() && w > maxWidth) {
+                    flush_line();
+                    current += ch;
+                } else {
+                    current = std::move(candidate);
+                }
+            }
+            if (!current.isEmpty()) lines.push_back(current);
+            outLineCount = static_cast<int>(lines.size());
+            for (const auto& l : lines) {
+                measure.setString(l);
+                outMaxLineW = std::max(outMaxLineW, measure.getLocalBounds().size.x);
+            }
+        }
+
+        /** 关键词金色 + 按出现顺序收集去重词条（供牌侧说明） */
+        inline void draw_wrapped_card_description_with_keywords(
+            sf::RenderTarget& target,
+            const sf::Font& font,
+            const sf::String& text,
+            unsigned int charSize,
+            sf::Vector2f pos,
+            float maxWidth,
+            float maxHeight,
+            sf::Color plainColor,
+            sf::Color keywordColor,
+            const sf::RenderStates& states,
+            std::vector<BattleUI::CardGlossaryEntry>* glossaryOut) {
+            if (maxWidth <= 1.f || maxHeight <= 1.f || text.isEmpty()) return;
+
+            std::unordered_set<std::wstring> glossarySeen;
+            std::vector<CardDescLayoutAtom> atoms;
+            card_desc_build_layout_atoms_from_text(text, atoms);
+
+            sf::Text measure(font, sf::String(L""), charSize);
+            measure.setFillColor(plainColor);
+            // 金色关键词与两侧普通字块略留空，避免贴太紧
+            const float kwSidePad = std::max(2.5f, static_cast<float>(charSize) * 0.09f);
+            std::vector<float> atomW;
+            atomW.reserve(atoms.size());
+            for (const auto& a : atoms) {
+                if (a.lineBreak) {
+                    atomW.push_back(0.f);
+                    continue;
+                }
+                measure.setString(a.s);
+                float w = measure.getLocalBounds().size.x;
+                if (a.kw) w += kwSidePad * 2.f;
+                atomW.push_back(w);
+            }
+
+            const float lineH = font.getLineSpacing(charSize);
+            const int maxLines = static_cast<int>(std::floor(maxHeight / lineH));
+            if (maxLines <= 0) return;
+
+            std::vector<std::vector<std::size_t>> lines;
+            lines.reserve(static_cast<std::size_t>(maxLines));
+            std::vector<std::size_t> cur;
+            float curW = 0.f;
+
+            auto push_line = [&]() {
+                lines.push_back(std::move(cur));
+                cur.clear();
+                curW = 0.f;
+            };
+
+            std::size_t atomIdx = 0;
+            while (atomIdx < atoms.size()) {
+                if (atoms[atomIdx].lineBreak) {
+                    if (static_cast<int>(lines.size()) >= maxLines) break;
+                    push_line();
+                    ++atomIdx;
+                    continue;
+                }
+                const float w = atomW[atomIdx];
+                if (curW + w > maxWidth && curW > 0.5f) {
+                    if (static_cast<int>(lines.size()) >= maxLines) break;
+                    push_line();
+                }
+                if (static_cast<int>(lines.size()) >= maxLines) break;
+                if (curW + w > maxWidth && curW <= 0.5f) {
+                    cur.push_back(atomIdx);
+                    curW += w;
+                    ++atomIdx;
+                    if (static_cast<int>(lines.size()) < maxLines) push_line();
+                    else break;
+                    continue;
+                }
+                cur.push_back(atomIdx);
+                curW += w;
+                ++atomIdx;
+            }
+            if (!cur.empty() && static_cast<int>(lines.size()) < maxLines) push_line();
+
+            const bool truncated = atomIdx < atoms.size();
+            if (truncated && !lines.empty()) {
+                atoms.push_back({sf::String(L"…"), false, false, {}, {}});
+                measure.setString(atoms.back().s);
+                const float ew = measure.getLocalBounds().size.x;
+                atomW.push_back(ew);
+                const std::size_t ellIdx = atoms.size() - 1;
+                std::vector<std::size_t>& last = lines.back();
+                float lineW = 0.f;
+                for (std::size_t id : last) lineW += atomW[id];
+                while (!last.empty() && lineW - atomW[last.back()] + ew > maxWidth) {
+                    lineW -= atomW[last.back()];
+                    last.pop_back();
+                }
+                last.push_back(ellIdx);
+            }
+
+            float y = pos.y;
+            for (const auto& line : lines) {
+                float x = pos.x;
+                for (std::size_t li : line) {
+                    const CardDescLayoutAtom& a = atoms[li];
+                    sf::Text t(font, a.s, charSize);
+                    t.setFillColor(a.kw ? keywordColor : plainColor);
+                    const float drawX = x + (a.kw ? kwSidePad : 0.f);
+                    t.setPosition(sf::Vector2f(drawX, y));
+                    target.draw(t, states);
+                    if (glossaryOut && a.kw && glossarySeen.insert(a.title).second)
+                        glossaryOut->push_back({a.title, a.body});
+                    x += atomW[li];
+                }
+                y += lineH;
+            }
+        }
+
+        /** 牌侧名词解释（与牌面分离）；在匿名命名空间内以便使用 build_round_rect / draw_wrapped_text */
+        inline void draw_card_glossary_beside_preview_impl(
+            sf::RenderWindow& window,
+            const sf::FloatRect& cardBb,
+            const std::vector<BattleUI::CardGlossaryEntry>& entries,
+            const sf::Font& cn,
+            unsigned winW,
+            unsigned winH) {
+            if (entries.empty()) return;
+            constexpr unsigned kTitlePt = 20;
+            constexpr unsigned kBodyPt = 18;
+            constexpr float kPadX = 10.f;
+            constexpr float kPadY = 8.f;
+            constexpr float kTitleBodyGap = 5.f;
+            constexpr float kPanelGap = 7.f;
+            constexpr float kFromCard = 10.f;
+            const float margin = 6.f;
+            // 侧栏宽度固定：与窗口略挂钩但上下限夹紧，短句不会把框压窄
+            constexpr float kFixedInnerW = 258.f;
+            const float innerW =
+                std::clamp(kFixedInnerW, 120.f, std::max(120.f, static_cast<float>(winW) * 0.22f));
+            const float pw = innerW + kPadX * 2.f;
+
+            struct PanelSz {
+                float h;
+                float titleBlockH;
+                float bodyBlockH;
+            };
+            std::vector<PanelSz> sizes;
+            sizes.reserve(entries.size());
+            const float bodyLineH = cn.getLineSpacing(kBodyPt);
+            const float titleLineH = cn.getLineSpacing(kTitlePt);
+
+            for (const auto& e : entries) {
+                float titleLineMaxW = 0.f;
+                int titleLines = 0;
+                measure_wrapped_lines_unlimited(cn, sf::String(e.title), kTitlePt, innerW, titleLineMaxW, titleLines);
+                float bodyLineMaxW = 0.f;
+                int bodyLines = 0;
+                measure_wrapped_lines_unlimited(cn, sf::String(e.body), kBodyPt, innerW, bodyLineMaxW, bodyLines);
+                const float titleBlockH = static_cast<float>(std::max(0, titleLines)) * titleLineH;
+                const float bodyBlockH = static_cast<float>(std::max(0, bodyLines)) * bodyLineH;
+                const float ph = kPadY + titleBlockH + kTitleBodyGap + bodyBlockH + kPadY;
+                sizes.push_back({ph, titleBlockH, bodyBlockH});
+            }
+
+            float stackH = 0.f;
+            for (std::size_t i = 0; i < sizes.size(); ++i) {
+                stackH += sizes[i].h;
+                if (i + 1 < sizes.size()) stackH += kPanelGap;
+            }
+
+            float startY = cardBb.position.y;
+            if (startY + stackH > static_cast<float>(winH) - margin)
+                startY = std::max(margin, static_cast<float>(winH) - margin - stackH);
+
+            float panelX = cardBb.position.x + cardBb.size.x + kFromCard;
+            if (panelX + pw > static_cast<float>(winW) - margin)
+                panelX = cardBb.position.x - kFromCard - pw;
+            if (panelX < margin) panelX = margin;
+
+            std::vector<sf::Vector2f> rr;
+            float y = startY;
+            for (std::size_t ei = 0; ei < entries.size(); ++ei) {
+                const PanelSz& sz = sizes[ei];
+                const float bx = panelX;
+                const float by = y;
+                build_round_rect_poly(rr, bx, by, pw, sz.h, 7.f, 3);
+                draw_convex_poly(window, rr, sf::Color(28, 26, 32, 238), sf::Color(168, 163, 152), 1.1f,
+                                 sf::RenderStates::Default);
+
+                const float titleMaxH = sz.titleBlockH + titleLineH * 0.5f;
+                draw_wrapped_text(window, cn, sf::String(entries[ei].title), kTitlePt,
+                                  sf::Vector2f(bx + kPadX, by + kPadY), innerW, titleMaxH,
+                                  sf::Color(235, 205, 115), sf::RenderStates::Default);
+
+                const float bodyTop = by + kPadY + sz.titleBlockH + kTitleBodyGap;
+                draw_wrapped_text(window, cn, sf::String(entries[ei].body), kBodyPt,
+                                  sf::Vector2f(bx + kPadX, bodyTop), innerW, sz.bodyBlockH + bodyLineH * 0.5f,
+                                  sf::Color(235, 235, 240), sf::RenderStates::Default);
+                y += sz.h + kPanelGap;
+            }
+        }
     }
 
     BattleUI::BattleUI(unsigned width, unsigned height) : width_(width), height_(height) {
@@ -1131,6 +1487,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             deck_view_scroll_y_             = 0.f;
                             deck_view_detail_active_        = false;
                             deck_view_detail_show_upgraded_ = false;
+                            deck_view_glossary_entries_.clear();
+                            deck_view_glossary_active_ = false;
                             return false;
                         }
                     }
@@ -1139,6 +1497,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         deck_view_scroll_y_             = 0.f;
                         deck_view_detail_active_        = false;
                         deck_view_detail_show_upgraded_ = false;
+                        deck_view_glossary_entries_.clear();
+                        deck_view_glossary_active_ = false;
                         return false;
                     }
                     constexpr float DECK_CARD_W = 206.f;
@@ -1486,6 +1846,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         deck_view_cards_ = std::move(cards);
         deck_view_detail_active_        = false;
         deck_view_detail_show_upgraded_ = false;
+        deck_view_glossary_entries_.clear();
+        deck_view_glossary_active_ = false;
     }
 
     void BattleUI::deck_view_grid_layout_(float& outContentTop, float& outFirstRowCenterY, float& outViewTop) const {
@@ -1523,6 +1885,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             deck_view_detail_inst_           = CardInstance{};
             deck_view_hover_index_ = -1;
             deck_view_hover_blend_ = 0.f;
+            deck_view_glossary_entries_.clear();
+            deck_view_glossary_active_ = false;
             pile_anim_snapshot_ready_ = false;
             prev_discard_ids_for_anim_.clear();
             pending_select_ui_pile_fly_remaining_ = 0;
@@ -3006,7 +3370,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                       const sf::Color& outlineColor, float outlineThickness,
                                       const sf::RenderStates& states,
                                       const BattleStateSnapshot* handSnap,
-                                      const CardInstance* handInst) {
+                                      const CardInstance* handInst,
+                                      std::vector<CardGlossaryEntry>* card_glossary_out) {
         auto base_art_key = [](const std::string& id) -> std::string {
             // 目标：让 strike/strike+/strike_green/strike_green+ 都映射到 "strike"
             std::string k = id;
@@ -3428,12 +3793,20 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float descMaxW = iw - 22.f * s;
         const float descMaxH = std::max(8.f, (iy + ih) - descY - 10.f * s);
         const unsigned descPt = static_cast<unsigned>(std::max(11.f, std::round(23.f * s)));
-        draw_wrapped_text(window, fontForChinese(), descStr, descPt,
-                          sf::Vector2f(descX, descY), descMaxW, descMaxH,
-                          curseCard ? sf::Color(240, 240, 245)
-                                   : colorlessCard ? sf::Color(236, 236, 236)
-                                   : greenCharacterCard ? sf::Color(232, 238, 232)
-                                                       : sf::Color(218, 212, 204), states);
+        const sf::Color descPlain = curseCard ? sf::Color(240, 240, 245)
+            : colorlessCard ? sf::Color(236, 236, 236)
+            : greenCharacterCard ? sf::Color(232, 238, 232)
+                                 : sf::Color(218, 212, 204);
+        constexpr sf::Color kDescKeywordGold(235, 205, 115);
+        if (card_glossary_out) {
+            card_glossary_out->clear();
+            draw_wrapped_card_description_with_keywords(window, fontForChinese(), descStr, descPt,
+                                                        sf::Vector2f(descX, descY), descMaxW, descMaxH,
+                                                        descPlain, kDescKeywordGold, states, card_glossary_out);
+        } else {
+            draw_wrapped_text(window, fontForChinese(), descStr, descPt,
+                              sf::Vector2f(descX, descY), descMaxW, descMaxH, descPlain, states);
+        }
 
         const bool handCostPath = (handSnap != nullptr && handInst != nullptr);
         const bool showCostCircle = cd && cd->cost != -2;
@@ -3678,6 +4051,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     // 牌组界面：顶栏与遗物栏不变，中间为牌堆网格（一行最多 5 张），可滚轮滚动；返回按钮左下角距底 200
     void BattleUI::drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        deck_view_glossary_active_ = false;
         // 半透明遮罩：覆盖顶栏下方整个区域，让下层内容变暗
         {
             const float viewTop    = TOP_BAR_BG_H;
@@ -3753,7 +4127,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 // 悬停时仅做插值放大/加粗，描边颜色保持与原来一致（避免出现金边）
                 outline = sf::Color(180, 50, 45);
             }
-            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh);
+            std::vector<CardGlossaryEntry>* gv = nullptr;
+            if (!deck_view_detail_active_ && deck_view_hover_index_ == static_cast<int>(i)) {
+                gv = &deck_view_glossary_entries_;
+                deck_view_glossary_card_screen_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(w, h));
+                deck_view_glossary_active_ = true;
+            }
+            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh, sf::RenderStates::Default,
+                               nullptr, nullptr, gv);
         }
 
         const float returnW = 180.f, returnH = 50.f;
@@ -3784,7 +4165,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 deck_view_detail_resolve_display_id(deck_view_detail_inst_, deck_view_detail_show_upgraded_);
             const sf::FloatRect& cr = deck_view_detail_card_rect_;
             drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
-                             sf::Color(205, 75, 58), 11.f);
+                             sf::Color(205, 75, 58), 11.f, sf::RenderStates::Default, nullptr, nullptr,
+                             &deck_view_glossary_entries_);
+            deck_view_glossary_card_screen_ = cr;
+            deck_view_glossary_active_ = true;
             const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
             const bool alreadyUp =
                 !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';
@@ -3811,9 +4195,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             upLabel.setPosition(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
             window.draw(upLabel);
         }
+        if (deck_view_glossary_active_ && !deck_view_glossary_entries_.empty())
+            draw_card_glossary_beside_preview_(window, deck_view_glossary_card_screen_, deck_view_glossary_entries_);
     }
 
     void BattleUI::drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        deck_view_glossary_active_ = false;
         // 与 drawDeckView 基本一致，但不依赖顶栏/遗物栏（用于开始界面等）。
         // 注意：外部界面（如卡牌总览）通常已经自行 clear 了暗底色，这里不再叠加遮罩，避免压暗顶部按钮。
 
@@ -3878,7 +4265,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 y = cardY - (h - DECK_CARD_H) * 0.5f - 18.f * pb;
                 outlineTh = 8.f + 3.f * pb;
             }
-            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh);
+            std::vector<CardGlossaryEntry>* gv = nullptr;
+            if (!deck_view_detail_active_ && deck_view_hover_index_ == static_cast<int>(i)) {
+                gv = &deck_view_glossary_entries_;
+                deck_view_glossary_card_screen_ = sf::FloatRect(sf::Vector2f(x, y), sf::Vector2f(w, h));
+                deck_view_glossary_active_ = true;
+            }
+            drawDetailedCardAt(window, inst.id, x, y, w, h, outline, outlineTh, sf::RenderStates::Default,
+                               nullptr, nullptr, gv);
         }
 
         const float returnW = 180.f, returnH = 50.f;
@@ -3909,7 +4303,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 deck_view_detail_resolve_display_id(deck_view_detail_inst_, deck_view_detail_show_upgraded_);
             const sf::FloatRect& cr = deck_view_detail_card_rect_;
             drawDetailedCardAt(window, disp, cr.position.x, cr.position.y, cr.size.x, cr.size.y,
-                             sf::Color(205, 75, 58), 11.f);
+                             sf::Color(205, 75, 58), 11.f, sf::RenderStates::Default, nullptr, nullptr,
+                             &deck_view_glossary_entries_);
+            deck_view_glossary_card_screen_ = cr;
+            deck_view_glossary_active_ = true;
             const sf::FloatRect& br = deck_view_detail_upgrade_btn_rect_;
             const bool alreadyUp =
                 !deck_view_detail_inst_.id.empty() && deck_view_detail_inst_.id.back() == '+';
@@ -3936,6 +4333,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             upLabel.setPosition(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
             window.draw(upLabel);
         }
+        if (deck_view_glossary_active_ && !deck_view_glossary_entries_.empty())
+            draw_card_glossary_beside_preview_(window, deck_view_glossary_card_screen_, deck_view_glossary_entries_);
     }
 
     // 战场中央：玩家区(背景+模型+血条在下+增益减益)、怪物区(背景+意图在上+模型+血条在下)
@@ -4440,8 +4839,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
-        // 玩家/怪物状态悬停提示：玩家放在模型右侧，怪物放在模型左侧；悬停任一图标时显示该单位所有状态的提示框
-        auto makeStatusTooltipText = [&](const StatusInstance& st) {  // 根据状态 id 生成两行提示文本（名字+描述）
+        // 玩家/怪物状态悬停提示：玩家放在模型右侧，怪物放在模型左侧；悬停任一图标时显示该单位所有状态的提示框（文案与卡牌名词一致）
+        auto makeStatusTooltipText = [&](const StatusInstance& st) {
             const std::string& id = st.id;
             int n = st.stacks;
 
@@ -4449,24 +4848,24 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             std::wstring line2;
 
             if (id == "strength") {
-                name = L"力量";
+                name = L"劲力";
                 line2 = L"攻击伤害提升 " + std::to_wstring(n);
             }
             else if (id == "vulnerable") {
-                name = L"易伤";
-                line2 = L"从攻击受到的伤害增加 50%，持续时间" + std::to_wstring(st.duration) + L"回合";
+                name = L"破绽";
+                line2 = L"从武学受到的伤害增加 50%，持续时间" + std::to_wstring(st.duration) + L"回合";
             }
             else if (id == "weak") {
-                name = L"虚弱";
-                line2 = L"攻击造成的伤害降低 25%，持续时间" + std::to_wstring(st.duration) + L"回合";
+                name = L"涣散";
+                line2 = L"武学造成的伤害降低 25%，持续时间" + std::to_wstring(st.duration) + L"回合";
             }
             else if (id == "dexterity") {
-                name = L"敏捷";
-                line2 = L"从卡牌获得的格挡提升 " + std::to_wstring(n);
+                name = L"灵动";
+                line2 = L"从卡牌获得的护体罡气提升 " + std::to_wstring(n);
             }
             else if (id == "frail") {
                 name = L"脆弱";
-                line2 = L"在" + std::to_wstring(st.duration) + L"回合内,从卡牌中获得的格挡减少 25%";
+                line2 = L"在" + std::to_wstring(st.duration) + L"回合内，从卡牌中获得的护体罡气减少 25%";
             }
             else if (id == "blasphemy") {
                 name = L"渎神";
@@ -4474,19 +4873,19 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "entangle") {
                 name = L"缠绕";
-                line2 = L"本回合无法打出攻击牌；在你的回合结束时，受到 " + std::to_wstring(n) + L" 点伤害（受格挡影响）";
+                line2 = L"本回合无法打出武学牌；在你的回合结束时，受到 " + std::to_wstring(n) + L" 点伤害（受护体罡气影响）";
             }
             else if (id == "shackles") {
                 name = L"镣铐";
-                line2 = L"在其回合结束时，回复 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"在其回合结束时，回复 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "flex") {
                 name = L"活动肌肉";
-                line2 = L"在你的回合结束时，失去" + std::to_wstring(n) + L"点力量";
+                line2 = L"在你的回合结束时，失去 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "dexterity_down") {
-                name = L"敏捷下降";
-                line2 = L"在你的回合结束时，失去 " + std::to_wstring(n) + L" 点敏捷（可减至负数）";
+                name = L"灵动下降";
+                line2 = L"在你的回合结束时，失去 " + std::to_wstring(n) + L" 点灵动（可减至负数）";
             }
             else if (id == "draw_reduction") {
                 name = L"抽牌减少";
@@ -4497,30 +4896,30 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 line2 = L"本回合内无法从抽牌堆抽牌；持续 " + std::to_wstring(st.duration) + L" 回合";
             }
             else if (id == "cannot_block") {
-                name = L"无法格挡";
+                name = L"罡气断绝";
                 line2 = (st.duration < 0)
-                    ? L"你无法从卡牌中获得格挡（本场战斗）"
-                    : L"你无法从卡牌中获得格挡，持续 " + std::to_wstring(st.duration) + L" 回合";
+                    ? L"你无法从卡牌中获得护体罡气（本场战斗）"
+                    : L"你无法从卡牌中获得护体罡气，持续 " + std::to_wstring(st.duration) + L" 回合";
             }
             else if (id == "draw_up") {
                 name = L"抽牌增加";
                 line2 = L"下回合多抽 " + std::to_wstring(n) + L" 张牌";
             }
             else if (id == "energy_up") {
-                name = L"能量提升";
-                line2 = L"下回合额外获得 " + std::to_wstring(n) + L" 点能量";
+                name = L"真气充盈";
+                line2 = L"下回合额外获得 " + std::to_wstring(n) + L" 点真气";
             }
             else if (id == "block_up") {
-                name = L"下回合格挡";
-                line2 = L"在你的下回合开始时，获得 " + std::to_wstring(n) + L" 点格挡";
+                name = L"下回合护体罡气";
+                line2 = L"在你的下回合开始时，获得 " + std::to_wstring(n) + L" 点护体罡气";
             }
             else if (id == "vigor") {
                 name = L"活力";
-                line2 = L"你的下一次攻击造成 " + std::to_wstring(n) + L" 点额外伤害";
+                line2 = L"你的下一次武学造成 " + std::to_wstring(n) + L" 点额外伤害";
             }
             else if (id == "poison") {
-                name = L"中毒";
-                line2 = L"在回合开始时，受到 " + std::to_wstring(n) + L" 点伤害，然后中毒层数减少 1";
+                name = L"蛊毒";
+                line2 = L"在回合开始时，受到 " + std::to_wstring(n) + L" 点伤害，然后蛊毒层数减少 1";
             }
             else if (id == "death_rhythm") {
                 name = L"死亡律动";
@@ -4528,15 +4927,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "curiosity") {
                 name = L"好奇";
-                line2 = L"你每打出一张能力牌，该敌人获得 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"你每打出一张能力牌，该敌人获得 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "anger") {
                 name = L"生气";
-                line2 = L"每当受到攻击伤害，获得 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"每当受到武学伤害，获得 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "curl_up") {
                 name = L"蜷身";
-                line2 = L"当受到攻击伤害时，获得 " + std::to_wstring(n) + L" 点格挡；每场战斗仅触发一次";
+                line2 = L"当受到武学伤害时，获得 " + std::to_wstring(n) + L" 点护体罡气；每场战斗仅触发一次";
             }
             else if (id == "vanish") {
                 name = L"消逝";
@@ -4544,23 +4943,23 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "metallicize") {
                 name = L"金属化";
-                line2 = L"在你的回合结束时，获得 " + std::to_wstring(n) + L" 点格挡";
+                line2 = L"在你的回合结束时，获得 " + std::to_wstring(n) + L" 点护体罡气";
             }
             else if (id == "poison_cloud") {
                 name = L"毒雾";
-                line2 = L"在你的回合开始时，给予所有敌人 " + std::to_wstring(n) + L" 层中毒";
+                line2 = L"在你的回合开始时，给予所有敌人 " + std::to_wstring(n) + L" 层蛊毒";
             }
             else if (id == "double_damage") {
                 name = L"双倍伤害";
-                line2 = L"攻击造成的伤害翻倍；剩余 " + std::to_wstring(n) + L" 回合";
+                line2 = L"武学造成的伤害翻倍；剩余 " + std::to_wstring(n) + L" 回合";
             }
             else if (id == "double_tap") {
                 name = L"双发";
-                line2 = L"本回合再打出的下 " + std::to_wstring(n) + L" 张攻击牌会打出两次";
+                line2 = L"本回合再打出的下 " + std::to_wstring(n) + L" 张武学牌会打出两次";
             }
             else if (id == "demon_form") {
                 name = L"恶魔形态";
-                line2 = L"在你的回合开始时，获得 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"在你的回合开始时，获得 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "heat_sink") {
                 name = L"散热";
@@ -4572,7 +4971,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "unstoppable") {
                 name = L"势不可挡";
-                line2 = L"每当你获得格挡时，对一名随机敌人造成 " + std::to_wstring(n) + L" 点伤害";
+                line2 = L"每当你获得护体罡气时，对一名随机敌人造成 " + std::to_wstring(n) + L" 点伤害";
             }
             else if (id == "establishment") {
                 name = L"确立基础";
@@ -4583,20 +4982,20 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 line2 = L"接下来 " + std::to_wstring(n) + L" 个你的回合结束时，手牌保留在手中（虚无牌仍会消耗）";
             }
             else if (id == "free_attack") {
-                name = L"免费攻击";
-                line2 = L"再打出的下 " + std::to_wstring(n) + L" 张攻击牌耗能为 0";
+                name = L"免费武学";
+                line2 = L"再打出的下 " + std::to_wstring(n) + L" 张武学牌耗能为 0";
             }
             else if (id == "ritual") {
                 name = L"仪式";
-                line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点劲力";
             }
             else if (id == "multi_armor") {
                 name = L"多层护甲";
-                line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点格挡；\n该单位受到攻击伤害而失去生命时，层数减少 1";
+                line2 = L"在其回合结束时，获得 " + std::to_wstring(n) + L" 点护体罡气；\n该单位受到武学伤害而失去气血时，层数减少 1";
             }
             else if (id == "barricade") {
                 name = L"壁垒";
-                line2 = L"格挡不会在其回合开始时消失";
+                line2 = L"护体罡气不会在其回合开始时消失";
             }
             else if (id == "accuracy") {
                 name = L"精准";
@@ -4616,11 +5015,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "flight") {
                 name = L"飞行";
-                line2 = L"从攻击受到的伤害减半；在本玩家回合内累计受到 " + std::to_wstring(n) + L" 次攻击伤害后失去该状态";
+                line2 = L"从武学受到的伤害减半；在本玩家回合内累计受到 " + std::to_wstring(n) + L" 次武学伤害后失去该状态";
             }
             else if (id == "indestructible") {
                 name = L"坚不可摧";
-                line2 = L"从本次玩家回合开始，累计最多再失去 " + std::to_wstring(n) + L" 点生命（仅统计实际扣血，格挡吸收不计入上限）";
+                line2 = L"从本次玩家回合开始，累计最多再失去 " + std::to_wstring(n) + L" 点气血（仅统计实际扣血，护体罡气吸收不计入上限）";
             }
             else if (id == "artifact") {
                 name = L"人工制品";
@@ -4628,15 +5027,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
             else if (id == "fasting") {
                 name = L"斋戒";
-                line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点能量";
+                line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点真气";
             }
             else if (id == "wraith_form") {
                 name = L"幽魂形态";
-                line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点敏捷";
+                line2 = L"在你的回合开始时，失去 " + std::to_wstring(n) + L" 点灵动";
             }
             else if (id == "buffer") {
                 name = L"缓冲";
-                line2 = L"阻止下 " + std::to_wstring(n) + L" 次你受到的生命值损伤";
+                line2 = L"阻止下 " + std::to_wstring(n) + L" 次你受到的气血损伤";
             }
             else if (id == "combust") {
                 name = L"自燃";
@@ -4651,17 +5050,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     }
                 }
                 if (x <= 0) {
-                    // 若尚未有 combust_damage，则描述中仅展示生命损失部分
-                    line2 = L"在你的回合结束时，失去 " + std::to_wstring(y) + L" 点生命";
+                    // 若尚未有 combust_damage，则描述中仅展示气血损失部分
+                    line2 = L"在你的回合结束时，失去 " + std::to_wstring(y) + L" 点气血";
                 }
                 else {
                     line2 = L"在你的回合结束时，失去 " + std::to_wstring(y)
-                        + L" 点生命，并对所有敌人造成 " + std::to_wstring(x) + L" 点伤害";
+                        + L" 点气血，并对所有敌人造成 " + std::to_wstring(x) + L" 点伤害";
                 }
             }
             else if (id == "rupture") {
                 name = L"撕裂";
-                line2 = L"当你从一张牌中失去生命时，获得 " + std::to_wstring(n) + L" 点力量";
+                line2 = L"当你从一张牌中失去气血时，获得 " + std::to_wstring(n) + L" 点劲力";
             }
             else {
                 name = sf::String(id).toWideString();
@@ -4671,6 +5070,22 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             return name + L"\n" + line2;
             };
 
+        constexpr sf::Color kStatusTooltipPlain(235, 230, 220);
+        constexpr sf::Color kStatusTooltipTitleGold(235, 205, 115);
+        constexpr unsigned kStatusTooltipCharPt = 20;
+        constexpr float kStatusTooltipTitleBodyGap = 4.f;
+
+        auto split_status_tooltip_desc = [](const std::wstring& desc, sf::String& outTitle, sf::String& outBody) {
+            const std::size_t br = desc.find(L'\n');
+            if (br == std::wstring::npos) {
+                outTitle = sf::String(desc);
+                outBody = sf::String();
+                return;
+            }
+            outTitle = sf::String(desc.substr(0, br));
+            outBody = (br + 1 < desc.size()) ? sf::String(desc.substr(br + 1)) : sf::String();
+        };
+
         if (hoveredPlayerStatus >= 0 && !s.playerStatuses.empty()) {  // 悬停玩家状态图标时
             const float paddingX = 10.f;
             const float paddingY = 6.f;
@@ -4678,39 +5093,68 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float boxLeft = playerCenterX + MODEL_PLACEHOLDER_W * 0.5f + 16.f;  // 玩家模型右侧
             float boxTop = modelTop + 8.f;
 
-            // 先计算统一的高度和最大宽度（所有状态框一致）
-            float boxHeight = -1.f;
-            float maxBoxWidth = 0.f;
-            for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
-                const auto& st = s.playerStatuses[i];
-                if (battle_ui_status_hide_from_icon_row(st.id))
-                    continue;
-                std::wstring desc = makeStatusTooltipText(st);
-                sf::Text tip(fontForChinese(), sf::String(desc), 20);
-                const sf::FloatRect tb = tip.getLocalBounds();
-                if (boxHeight < 0.f)
-                    boxHeight = tb.size.y + paddingY * 2.f;
-                float w = tb.size.x + paddingX * 2.f;
-                if (w > maxBoxWidth) maxBoxWidth = w;
-            }
+            const sf::Font& cn = fontForChinese();
+            const float innerW =
+                std::clamp(static_cast<float>(width_) * 0.26f, 220.f, 380.f);
+            const float lineH = cn.getLineSpacing(kStatusTooltipCharPt);
 
-            // 再按统一宽度逐个绘制
+            int maxBodyLines = 0;
+            float maxPixelLineW = 0.f;
             for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
                 const auto& st = s.playerStatuses[i];
                 if (battle_ui_status_hide_from_icon_row(st.id))
                     continue;
                 std::wstring desc = makeStatusTooltipText(st);
-                sf::Text tip(fontForChinese(), sf::String(desc), 20);
-                tip.setFillColor(sf::Color(235, 230, 220));
-                const sf::FloatRect tb = tip.getLocalBounds();
+                sf::String titleStr;
+                sf::String bodyStr;
+                split_status_tooltip_desc(desc, titleStr, bodyStr);
+                sf::Text titleMeasure(cn, titleStr, kStatusTooltipCharPt);
+                const float titleW = titleMeasure.getLocalBounds().size.x;
+                float bodyMaxLineW = 0.f;
+                int bodyLines = 0;
+                if (!bodyStr.isEmpty()) {
+                    measure_wrapped_lines_unlimited(cn, bodyStr, kStatusTooltipCharPt, innerW, bodyMaxLineW,
+                                                    bodyLines);
+                }
+                maxBodyLines = std::max(maxBodyLines, bodyLines);
+                maxPixelLineW = std::max(maxPixelLineW, std::max(titleW, bodyMaxLineW));
+            }
+            const float maxBoxWidth = std::max(48.f, maxPixelLineW + paddingX * 2.f);
+            const float titleBodyGapCol = (maxBodyLines > 0) ? kStatusTooltipTitleBodyGap : 0.f;
+            const float boxHeight = paddingY + lineH + titleBodyGapCol +
+                                    static_cast<float>(std::max(0, maxBodyLines)) * lineH + paddingY;
+            const float bodyInnerH =
+                static_cast<float>(std::max(1, maxBodyLines)) * lineH + lineH * 0.35f;
+
+            for (size_t i = 0; i < s.playerStatuses.size(); ++i) {
+                const auto& st = s.playerStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
+                std::wstring desc = makeStatusTooltipText(st);
+                sf::String titleStr;
+                sf::String bodyStr;
+                split_status_tooltip_desc(desc, titleStr, bodyStr);
                 sf::RectangleShape bg(sf::Vector2f(maxBoxWidth, boxHeight));
                 bg.setPosition(sf::Vector2f(boxLeft, boxTop));
                 bg.setFillColor(sf::Color(40, 35, 45, 230));
                 bg.setOutlineColor(sf::Color(150, 140, 120));
                 bg.setOutlineThickness(1.f);
                 window.draw(bg);
-                tip.setPosition(sf::Vector2f(boxLeft + paddingX - tb.position.x, boxTop + paddingY - tb.position.y));
-                window.draw(tip);
+                const float textLeft = boxLeft + paddingX;
+                float y = boxTop + paddingY;
+                if (!titleStr.isEmpty()) {
+                    sf::Text titleT(cn, titleStr, kStatusTooltipCharPt);
+                    titleT.setFillColor(kStatusTooltipTitleGold);
+                    const sf::FloatRect tb = titleT.getLocalBounds();
+                    titleT.setPosition(sf::Vector2f(textLeft - tb.position.x, y - tb.position.y));
+                    window.draw(titleT);
+                }
+                y += lineH;
+                if (!bodyStr.isEmpty()) {
+                    y += kStatusTooltipTitleBodyGap;
+                    draw_wrapped_text(window, cn, bodyStr, kStatusTooltipCharPt,
+                                      sf::Vector2f(textLeft, y), innerW, bodyInnerH, kStatusTooltipPlain);
+                }
                 boxTop += boxHeight + boxGapY;
             }
         }
@@ -4724,31 +5168,47 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float boxGapY = 6.f;
             float boxTop = mModelTop + 8.f;
 
-            // 先计算统一的高度和最大宽度
-            float boxHeight = -1.f;
-            float maxBoxWidth = 0.f;
-            for (size_t i = 0; i < mStatuses.size(); ++i) {
-                const auto& st = mStatuses[i];
-                if (battle_ui_status_hide_from_icon_row(st.id))
-                    continue;
-                std::wstring desc = makeStatusTooltipText(st);
-                sf::Text tip(fontForChinese(), sf::String(desc), 20);
-                const sf::FloatRect tb = tip.getLocalBounds();
-                if (boxHeight < 0.f)
-                    boxHeight = tb.size.y + paddingY * 2.f;
-                float w = tb.size.x + paddingX * 2.f;
-                if (w > maxBoxWidth) maxBoxWidth = w;
-            }
+            const sf::Font& cn = fontForChinese();
+            const float innerW =
+                std::clamp(static_cast<float>(width_) * 0.26f, 220.f, 380.f);
+            const float lineH = cn.getLineSpacing(kStatusTooltipCharPt);
 
-            // 再按统一宽度逐个绘制
+            int maxBodyLines = 0;
+            float maxPixelLineW = 0.f;
             for (size_t i = 0; i < mStatuses.size(); ++i) {
                 const auto& st = mStatuses[i];
                 if (battle_ui_status_hide_from_icon_row(st.id))
                     continue;
                 std::wstring desc = makeStatusTooltipText(st);
-                sf::Text tip(fontForChinese(), sf::String(desc), 20);
-                tip.setFillColor(sf::Color(235, 230, 220));
-                const sf::FloatRect tb = tip.getLocalBounds();
+                sf::String titleStr;
+                sf::String bodyStr;
+                split_status_tooltip_desc(desc, titleStr, bodyStr);
+                sf::Text titleMeasure(cn, titleStr, kStatusTooltipCharPt);
+                const float titleW = titleMeasure.getLocalBounds().size.x;
+                float bodyMaxLineW = 0.f;
+                int bodyLines = 0;
+                if (!bodyStr.isEmpty()) {
+                    measure_wrapped_lines_unlimited(cn, bodyStr, kStatusTooltipCharPt, innerW, bodyMaxLineW,
+                                                    bodyLines);
+                }
+                maxBodyLines = std::max(maxBodyLines, bodyLines);
+                maxPixelLineW = std::max(maxPixelLineW, std::max(titleW, bodyMaxLineW));
+            }
+            const float maxBoxWidth = std::max(48.f, maxPixelLineW + paddingX * 2.f);
+            const float titleBodyGapCol = (maxBodyLines > 0) ? kStatusTooltipTitleBodyGap : 0.f;
+            const float boxHeight = paddingY + lineH + titleBodyGapCol +
+                                    static_cast<float>(std::max(0, maxBodyLines)) * lineH + paddingY;
+            const float bodyInnerH =
+                static_cast<float>(std::max(1, maxBodyLines)) * lineH + lineH * 0.35f;
+
+            for (size_t i = 0; i < mStatuses.size(); ++i) {
+                const auto& st = mStatuses[i];
+                if (battle_ui_status_hide_from_icon_row(st.id))
+                    continue;
+                std::wstring desc = makeStatusTooltipText(st);
+                sf::String titleStr;
+                sf::String bodyStr;
+                split_status_tooltip_desc(desc, titleStr, bodyStr);
                 const float boxLeft = boxRight - maxBoxWidth;
                 sf::RectangleShape bg(sf::Vector2f(maxBoxWidth, boxHeight));
                 bg.setPosition(sf::Vector2f(boxLeft, boxTop));
@@ -4756,8 +5216,21 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 bg.setOutlineColor(sf::Color(150, 140, 120));
                 bg.setOutlineThickness(1.f);
                 window.draw(bg);
-                tip.setPosition(sf::Vector2f(boxLeft + paddingX - tb.position.x, boxTop + paddingY - tb.position.y));
-                window.draw(tip);
+                const float textLeft = boxLeft + paddingX;
+                float y = boxTop + paddingY;
+                if (!titleStr.isEmpty()) {
+                    sf::Text titleT(cn, titleStr, kStatusTooltipCharPt);
+                    titleT.setFillColor(kStatusTooltipTitleGold);
+                    const sf::FloatRect tb = titleT.getLocalBounds();
+                    titleT.setPosition(sf::Vector2f(textLeft - tb.position.x, y - tb.position.y));
+                    window.draw(titleT);
+                }
+                y += lineH;
+                if (!bodyStr.isEmpty()) {
+                    y += kStatusTooltipTitleBodyGap;
+                    draw_wrapped_text(window, cn, bodyStr, kStatusTooltipCharPt,
+                                      sf::Vector2f(textLeft, y), innerW, bodyInnerH, kStatusTooltipPlain);
+                }
                 boxTop += boxHeight + boxGapY;
             }
         }
@@ -4934,6 +5407,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float angleStepDeg = (handCount > 1) ? (handFanSpanDeg / static_cast<float>(handCount - 1)) : 0.f;
         hand_card_rects_.clear();
         hand_card_rect_indices_.clear();
+        hand_preview_glossary_entries_.clear();
+        hand_preview_glossary_active_ = false;
         hand_card_rects_.reserve(handCount);
         hand_card_rect_indices_.reserve(handCount);
 
@@ -5078,8 +5553,28 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             sf::RenderStates states(tr);
 
             const CardInstance& inst = s.hand[idx];
+            const bool fanSmallHover = useFanOverride && !isSelected && isHover;
+            const bool wantGlossarySidebar =
+                (!isSelected && isHover && !fanSmallHover) || (isSelected && w >= CARD_PREVIEW_W * 0.92f);
+            std::vector<CardGlossaryEntry>* glossOut =
+                wantGlossarySidebar ? &hand_preview_glossary_entries_ : nullptr;
             drawDetailedCardAt(window, inst.id, 0.f, 0.f, w, h,
-                               sf::Color(180, 50, 45), isHover ? 12.f : 8.f, states, &s, &inst);
+                               sf::Color(180, 50, 45), isHover ? 12.f : 8.f, states, &s, &inst, glossOut);
+            if (glossOut && !hand_preview_glossary_entries_.empty()) {
+                const sf::Transform& ct = states.transform;
+                auto tp = [&](float x, float y) { return ct.transformPoint(sf::Vector2f(x, y)); };
+                const sf::Vector2f q0 = tp(0.f, 0.f);
+                const sf::Vector2f q1 = tp(w, 0.f);
+                const sf::Vector2f q2 = tp(w, h);
+                const sf::Vector2f q3 = tp(0.f, h);
+                const float minx = std::min(std::min(q0.x, q1.x), std::min(q2.x, q3.x));
+                const float maxx = std::max(std::max(q0.x, q1.x), std::max(q2.x, q3.x));
+                const float miny = std::min(std::min(q0.y, q1.y), std::min(q2.y, q3.y));
+                const float maxy = std::max(std::max(q0.y, q1.y), std::max(q2.y, q3.y));
+                hand_preview_glossary_card_screen_ =
+                    sf::FloatRect(sf::Vector2f(minx, miny), sf::Vector2f(maxx - minx, maxy - miny));
+                hand_preview_glossary_active_ = true;
+            }
             };
 
         if (handSelectReshuffleFan) {
@@ -5296,6 +5791,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         btnText.setOrigin(sf::Vector2f(bt.position.x + bt.size.x * 0.5f, bt.position.y + bt.size.y * 0.5f));
         btnText.setPosition(sf::Vector2f(btnCx, btnCy));
         window.draw(btnText);
+
+        if (hand_preview_glossary_active_ && !hand_preview_glossary_entries_.empty())
+            draw_card_glossary_beside_preview_(window, hand_preview_glossary_card_screen_, hand_preview_glossary_entries_);
+    }
+
+    void BattleUI::draw_card_glossary_beside_preview_(sf::RenderWindow& window, const sf::FloatRect& cardBb,
+                                                      const std::vector<CardGlossaryEntry>& entries) {
+        draw_card_glossary_beside_preview_impl(window, cardBb, entries, fontForChinese(), width_, height_);
     }
 
     // 右上角：地图、牌组、设置三个按钮；可选在下方显示“回合 N”
