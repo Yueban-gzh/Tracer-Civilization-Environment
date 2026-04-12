@@ -1,6 +1,7 @@
 #include "GameFlow/CardCatalogScreen.hpp"
 
 #include <algorithm>
+#include <array>
 
 #include "BattleEngine/BattleStateSnapshot.hpp"
 #include "BattleEngine/BattleUI.hpp"
@@ -57,11 +58,40 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
     SortKey sortKey = SortKey::Rarity;
     bool sortAsc = true;
 
+    enum class CatalogColorFilter { Red, Green, Colorless, Curse };
+    CatalogColorFilter colorFilter = CatalogColorFilter::Red;
+
     sf::Font uiFont;
     (void)load_ui_font_for_catalog(uiFont);
 
+    auto cardColorMatches = [](CardColor c, CatalogColorFilter f) -> bool {
+        switch (f) {
+        case CatalogColorFilter::Red: return c == CardColor::Red;
+        case CatalogColorFilter::Green: return c == CardColor::Green;
+        case CatalogColorFilter::Colorless: return c == CardColor::Colorless;
+        case CatalogColorFilter::Curse: return c == CardColor::Curse;
+        }
+        return false;
+    };
+
+    constexpr float kTopPad = 16.f;
+    constexpr float kBtnH = 44.f;
+    constexpr float kSortBtnW = 170.f;
+    constexpr float kGap = 14.f;
+    constexpr float kFilterRowGap = 10.f;
+    constexpr float kFilterBtnW = 132.f;
+    constexpr float kFilterGap = 10.f;
+    const float kFilterRowY = kTopPad + kBtnH + kFilterRowGap;
+    /** 第二行筛选条占用高度：与 BattleUI standalone 网格下移量一致，避免压住牌格 */
+    constexpr float kCatalogStandaloneNudge = kBtnH + kFilterRowGap;
+
     auto rebuildCards = [&]() {
         std::vector<CardId> ids = baseIds;
+        ids.erase(std::remove_if(ids.begin(), ids.end(), [&](const CardId& id) {
+            const CardData* cd = get_card_by_id(id);
+            if (!cd) return true;
+            return !cardColorMatches(cd->color, colorFilter);
+        }), ids.end());
         auto rarityRank = [](Rarity r) {
             switch (r) {
             case Rarity::Common: return 0;
@@ -117,6 +147,7 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
 
     rebuildCards();
     ui.set_deck_view_standalone_grid_layout(true); // 与 drawDeckViewOnly 同几何，否则点击/滚轮仍按战斗牌组布局会整体偏下
+    ui.set_deck_view_standalone_vertical_nudge(kCatalogStandaloneNudge);
     ui.set_deck_view_active(true);
 
     BattleStateSnapshot snap{};
@@ -149,14 +180,19 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
             }
             ui.setMousePosition(mp);
 
-            // 顶部排序按钮（无顶栏）
-            const float topPad = 16.f;
-            const float btnH = 44.f;
-            const float btnW = 170.f;
-            const float gap = 14.f;
-            const sf::FloatRect rBtn(sf::Vector2f(20.f, topPad), sf::Vector2f(btnW, btnH));
-            const sf::FloatRect tBtn(sf::Vector2f(20.f + (btnW + gap), topPad), sf::Vector2f(btnW, btnH));
-            const sf::FloatRect cBtn(sf::Vector2f(20.f + 2.f * (btnW + gap), topPad), sf::Vector2f(btnW, btnH));
+            const sf::FloatRect rBtn(sf::Vector2f(20.f, kTopPad), sf::Vector2f(kSortBtnW, kBtnH));
+            const sf::FloatRect tBtn(sf::Vector2f(20.f + (kSortBtnW + kGap), kTopPad), sf::Vector2f(kSortBtnW, kBtnH));
+            const sf::FloatRect cBtn(sf::Vector2f(20.f + 2.f * (kSortBtnW + kGap), kTopPad), sf::Vector2f(kSortBtnW, kBtnH));
+            const std::array<sf::FloatRect, 4> filterBtns = {
+                sf::FloatRect(sf::Vector2f(20.f + 0.f * (kFilterBtnW + kFilterGap), kFilterRowY),
+                              sf::Vector2f(kFilterBtnW, kBtnH)),
+                sf::FloatRect(sf::Vector2f(20.f + 1.f * (kFilterBtnW + kFilterGap), kFilterRowY),
+                              sf::Vector2f(kFilterBtnW, kBtnH)),
+                sf::FloatRect(sf::Vector2f(20.f + 2.f * (kFilterBtnW + kFilterGap), kFilterRowY),
+                              sf::Vector2f(kFilterBtnW, kBtnH)),
+                sf::FloatRect(sf::Vector2f(20.f + 3.f * (kFilterBtnW + kFilterGap), kFilterRowY),
+                              sf::Vector2f(kFilterBtnW, kBtnH)),
+            };
 
             if (const auto* mpress = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mpress->button == sf::Mouse::Button::Left) {
@@ -168,6 +204,26 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
                     if (rBtn.contains(mp)) { toggleSort(SortKey::Rarity); continue; }
                     if (tBtn.contains(mp)) { toggleSort(SortKey::Type); continue; }
                     if (cBtn.contains(mp)) { toggleSort(SortKey::Cost); continue; }
+                    if (filterBtns[0].contains(mp)) {
+                        colorFilter = CatalogColorFilter::Red;
+                        rebuildCards();
+                        continue;
+                    }
+                    if (filterBtns[1].contains(mp)) {
+                        colorFilter = CatalogColorFilter::Green;
+                        rebuildCards();
+                        continue;
+                    }
+                    if (filterBtns[2].contains(mp)) {
+                        colorFilter = CatalogColorFilter::Colorless;
+                        rebuildCards();
+                        continue;
+                    }
+                    if (filterBtns[3].contains(mp)) {
+                        colorFilter = CatalogColorFilter::Curse;
+                        rebuildCards();
+                        continue;
+                    }
                 }
             }
 
@@ -179,14 +235,9 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
 
         window.clear(sf::Color(18, 16, 24));
 
-        // 顶部排序按钮绘制
-        const float topPad = 16.f;
-        const float btnH = 44.f;
-        const float btnW = 170.f;
-        const float gap = 14.f;
         auto drawSortBtn = [&](float x, const std::wstring& label, bool active) {
-            sf::RectangleShape b(sf::Vector2f(btnW, btnH));
-            b.setPosition(sf::Vector2f(x, topPad));
+            sf::RectangleShape b(sf::Vector2f(kSortBtnW, kBtnH));
+            b.setPosition(sf::Vector2f(x, kTopPad));
             b.setFillColor(active ? sf::Color(92, 86, 110) : sf::Color(58, 54, 72));
             b.setOutlineColor(sf::Color(200, 190, 150));
             b.setOutlineThickness(active ? 2.5f : 2.f);
@@ -195,13 +246,32 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
             t.setFillColor(sf::Color(245, 240, 235));
             const sf::FloatRect tb = t.getLocalBounds();
             t.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-            t.setPosition(sf::Vector2f(x + btnW * 0.5f, topPad + btnH * 0.5f));
+            t.setPosition(sf::Vector2f(x + kSortBtnW * 0.5f, kTopPad + kBtnH * 0.5f));
+            window.draw(t);
+        };
+        auto drawFilterBtn = [&](float x, const std::wstring& label, bool active) {
+            sf::RectangleShape b(sf::Vector2f(kFilterBtnW, kBtnH));
+            b.setPosition(sf::Vector2f(x, kFilterRowY));
+            b.setFillColor(active ? sf::Color(110, 78, 72) : sf::Color(52, 48, 62));
+            b.setOutlineColor(active ? sf::Color(230, 175, 120) : sf::Color(160, 150, 130));
+            b.setOutlineThickness(active ? 2.5f : 2.f);
+            window.draw(b);
+            sf::Text t(uiFont, sf::String(label), 18);
+            t.setFillColor(sf::Color(248, 242, 235));
+            const sf::FloatRect tb = t.getLocalBounds();
+            t.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+            t.setPosition(sf::Vector2f(x + kFilterBtnW * 0.5f, kFilterRowY + kBtnH * 0.5f));
             window.draw(t);
         };
         const auto arrow = sortAsc ? L"↑" : L"↓";
-        drawSortBtn(20.f,                   std::wstring(L"稀有度") + arrow, sortKey == SortKey::Rarity);
-        drawSortBtn(20.f + (btnW + gap),    std::wstring(L"类型")   + arrow, sortKey == SortKey::Type);
-        drawSortBtn(20.f + 2.f*(btnW+gap),  std::wstring(L"耗费")   + arrow, sortKey == SortKey::Cost);
+        drawSortBtn(20.f, std::wstring(L"稀有度") + arrow, sortKey == SortKey::Rarity);
+        drawSortBtn(20.f + (kSortBtnW + kGap), std::wstring(L"类型") + arrow, sortKey == SortKey::Type);
+        drawSortBtn(20.f + 2.f * (kSortBtnW + kGap), std::wstring(L"耗费") + arrow, sortKey == SortKey::Cost);
+
+        drawFilterBtn(20.f + 0.f * (kFilterBtnW + kFilterGap), L"红色牌", colorFilter == CatalogColorFilter::Red);
+        drawFilterBtn(20.f + 1.f * (kFilterBtnW + kFilterGap), L"绿色牌", colorFilter == CatalogColorFilter::Green);
+        drawFilterBtn(20.f + 2.f * (kFilterBtnW + kFilterGap), L"无色牌", colorFilter == CatalogColorFilter::Colorless);
+        drawFilterBtn(20.f + 3.f * (kFilterBtnW + kFilterGap), L"诅咒牌", colorFilter == CatalogColorFilter::Curse);
 
         ui.drawDeckViewOnly(window, snap);
         window.display();

@@ -530,27 +530,25 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 add(u8"参悟堆", L"参悟堆", L"与抽牌相关的牌堆；部分效果会将弃牌堆洗入此处再抽取。");
                 add(u8"人工制品", L"人工制品", L"抵消下一次受到的负面效果（层数各算一次）。");
                 add(u8"无实体", L"无实体", L"免疫若干次受到的伤害（按层数消耗）。");
-                add(u8"破绽", L"破绽", L"受到的攻击伤害提高；层数在敌人回合结束时减少。");
-                add(u8"涣散", L"涣散", L"造成的攻击伤害降低；层数在敌人回合结束时减少。");
-                add(u8"蛊毒", L"蛊毒", L"回合结束时受到层数伤害，随后层数减少。");
+                add(u8"破绽", L"破绽", L"有破绽者受到的攻击伤害提高50%。");
+                add(u8"涣散", L"涣散", L"涣散者造成的攻击伤害降低25%。");
+                add(u8"蛊毒", L"蛊毒", L"回合结束时失去相应层数气血，层数每回合下降1。");
                 add(u8"内伤", L"内伤", L"状态/诅咒类效果中使用的伤害或惩罚标记。");
                 add(u8"焚毁", L"焚毁", L"将牌移入消耗堆，本场战斗通常不再回到抽牌堆。");
                 add(u8"虚无", L"虚无", L"在手牌中于回合结束时被消耗；否则会进入消耗堆。");
-                add(u8"参悟", L"参悟", L"从抽牌堆抽取若干张牌加入手牌（与部分「不能再抽」效果分别结算）。");
+                add(u8"劲力", L"劲力", L"劲力会让武学获得额外的伤害。");
+                add(u8"本命", L"本命", L"在每场战斗开始时，这张牌会出现在你的手牌中。");
+                add(u8"留存", L"留存", L"留存的牌不会在回合结束时被放入弃牌堆。");
+                add(u8"参悟", L"参悟", L"从抽牌堆抽取若干张牌加入手牌。");
                 add(u8"折损", L"折损", L"直接失去生命，通常无视护体罡气。");
                 add(u8"气血", L"气血", L"当前生命；最大气血为生命上限。");
                 add(u8"武学", L"武学", L"敌人的攻击类意图；与「受到武学」等描述对应。");
-                add(u8"灼伤", L"灼伤", L"状态牌：在回合结束时造成伤害。");
                 add(u8"劲力", L"劲力", L"提高攻击牌造成的伤害。");
-                add(u8"灵动", L"灵动", L"提高每回合获得的护体罡气。");
-                add(u8"真气", L"真气", L"即能量，用于打出卡牌。");
-                add(u8"脆弱", L"脆弱", L"受到的伤害增加。");
-                add(u8"易伤", L"易伤", L"受到的攻击伤害增加。");
-                add(u8"格挡", L"格挡", L"与护体罡气同义：抵挡将受到的伤害，下回合开始前失效。");
+                add(u8"灵动", L"灵动", L"增加你从行动中获得的护体罡气。");
+                add(u8"真气", L"真气", L"你需要真气来行动。");
+                add(u8"脆弱", L"脆弱", L"你可获得的护体罡气减少25%。");
                 add(u8"斩杀", L"斩杀", L"指本次伤害使目标生命值降至 0 或以下。");
-                add(u8"手牌", L"手牌", L"当前可打出的牌；回合结束未打出的牌通常进入弃牌堆。");
                 add(u8"抽牌", L"抽牌", L"从抽牌堆顶将牌加入手牌。");
-                add(u8"抽牌堆", L"抽牌堆", L"尚未加入手牌的牌所在牌堆；抽牌从此处取牌。");
                 add(u8"能力牌", L"能力牌", L"打出时生效的一类牌，与武学牌等区分。");
                 add(u8"武学牌", L"武学牌", L"以武学方式结算的攻击类牌。");
                 add(u8"保留", L"保留", L"回合结束时仍可留在手牌的特性；与部分减耗效果联动。");
@@ -585,7 +583,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             return card_desc_match_keyword_at(full, pos, tab) != nullptr;
         }
 
-        /** 供牌面描述关键词金色：关键词整块；普通段整块不切分（与早期实现一致） */
+        /** 供牌面描述关键词金色：关键词整块；普通段仅在宽度超过 maxWidth 时按字切开以便换行 */
         struct CardDescLayoutAtom {
             sf::String s;
             bool kw{};
@@ -593,6 +591,46 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             std::wstring title;
             std::wstring body;
         };
+
+        /** 将过宽的普通 atom 拆成多段（关键词与强制换行不变），避免整段宽于描述框却独占一行导致画出牌面 */
+        inline void card_desc_expand_oversized_plain_atoms(const sf::Font& font, unsigned int charSize,
+                                                         float maxWidth, std::vector<CardDescLayoutAtom>& atoms) {
+            if (maxWidth <= 1.f) return;
+            sf::Text measure(font, sf::String(L""), charSize);
+            std::vector<CardDescLayoutAtom> out;
+            out.reserve(atoms.size() + 8u);
+
+            for (const auto& a : atoms) {
+                if (a.lineBreak || a.kw) {
+                    out.push_back(a);
+                    continue;
+                }
+                measure.setString(a.s);
+                if (measure.getLocalBounds().size.x <= maxWidth + 0.5f) {
+                    out.push_back(a);
+                    continue;
+                }
+                sf::String current;
+                for (std::size_t i = 0; i < a.s.getSize(); ++i) {
+                    const char32_t ch = a.s[i];
+                    if (ch == U'\r') continue;
+                    sf::String candidate = current;
+                    candidate += ch;
+                    measure.setString(candidate);
+                    const float w = measure.getLocalBounds().size.x;
+                    if (!current.isEmpty() && w > maxWidth) {
+                        out.push_back({current, false, false, {}, {}});
+                        current.clear();
+                        current += ch;
+                    } else {
+                        current = std::move(candidate);
+                    }
+                }
+                if (!current.isEmpty())
+                    out.push_back({current, false, false, {}, {}});
+            }
+            atoms = std::move(out);
+        }
 
         inline void card_desc_build_layout_atoms_from_text(const sf::String& text,
                                                            std::vector<CardDescLayoutAtom>& atoms) {
@@ -688,11 +726,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             std::unordered_set<std::wstring> glossarySeen;
             std::vector<CardDescLayoutAtom> atoms;
             card_desc_build_layout_atoms_from_text(text, atoms);
+            card_desc_expand_oversized_plain_atoms(font, charSize, maxWidth, atoms);
 
             sf::Text measure(font, sf::String(L""), charSize);
             measure.setFillColor(plainColor);
-            // 金色关键词与两侧普通字块略留空，避免贴太紧
-            const float kwSidePad = std::max(2.5f, static_cast<float>(charSize) * 0.09f);
+            // 金色关键词与两侧普通字块留空；前侧略大于后侧，避免贴住上一段文字
+            const float kwPadAfter =
+                std::max(2.5f, static_cast<float>(charSize) * 0.09f);
+            const float kwPadBefore =
+                std::max(3.4f, static_cast<float>(charSize) * 0.12f);
             std::vector<float> atomW;
             atomW.reserve(atoms.size());
             for (const auto& a : atoms) {
@@ -702,7 +744,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
                 measure.setString(a.s);
                 float w = measure.getLocalBounds().size.x;
-                if (a.kw) w += kwSidePad * 2.f;
+                if (a.kw) w += kwPadBefore + kwPadAfter;
                 atomW.push_back(w);
             }
 
@@ -773,7 +815,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     const CardDescLayoutAtom& a = atoms[li];
                     sf::Text t(font, a.s, charSize);
                     t.setFillColor(a.kw ? keywordColor : plainColor);
-                    const float drawX = x + (a.kw ? kwSidePad : 0.f);
+                    const float drawX = x + (a.kw ? kwPadBefore : 0.f);
                     t.setPosition(sf::Vector2f(drawX, y));
                     target.draw(t, states);
                     if (glossaryOut && a.kw && glossarySeen.insert(a.title).second)
@@ -784,7 +826,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
-        /** 牌侧名词解释（与牌面分离）；在匿名命名空间内以便使用 build_round_rect / draw_wrapped_text */
+        /** 牌侧名词解释（与牌面分离）；与 drawDetailedCardAt 相同参照高 410，随卡牌屏幕高度等比缩放 */
         inline void draw_card_glossary_beside_preview_impl(
             sf::RenderWindow& window,
             const sf::FloatRect& cardBb,
@@ -793,18 +835,26 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             unsigned winW,
             unsigned winH) {
             if (entries.empty()) return;
-            constexpr unsigned kTitlePt = 20;
-            constexpr unsigned kBodyPt = 18;
-            constexpr float kPadX = 10.f;
-            constexpr float kPadY = 8.f;
-            constexpr float kTitleBodyGap = 5.f;
-            constexpr float kPanelGap = 7.f;
-            constexpr float kFromCard = 10.f;
-            const float margin = 6.f;
-            // 侧栏宽度固定：与窗口略挂钩但上下限夹紧，短句不会把框压窄
-            constexpr float kFixedInnerW = 258.f;
-            const float innerW =
-                std::clamp(kFixedInnerW, 120.f, std::max(120.f, static_cast<float>(winW) * 0.22f));
+            constexpr float kCardLayoutRefH = 410.f;
+            const float s =
+                std::clamp(cardBb.size.y / kCardLayoutRefH, 0.28f, 3.2f);
+            const unsigned titlePt =
+                static_cast<unsigned>(std::max(10.f, std::round(22.f * s)));
+            const unsigned bodyPt =
+                static_cast<unsigned>(std::max(10.f, std::round(21.f * s)));
+            const float kPadX = 10.f * s;
+            const float kPadY = 8.f * s;
+            const float kTitleBodyGap = 5.f * s;
+            const float kPanelGap = 7.f * s;
+            const float kFromCard = 10.f * s;
+            const float margin = std::max(4.f, 6.f * s);
+            const float cornerR = std::max(3.f, 7.f * s);
+            const float outlineTh = std::max(0.75f, 1.1f * s);
+            // 与 410 参照下栏宽成比例；再用窗口宽度设上限，避免窄窗下侧栏比屏还宽
+            float innerW = 258.f * s;
+            const float capFromWin = static_cast<float>(winW) * 0.34f - 2.f * kPadX;
+            if (capFromWin > 52.f) innerW = std::min(innerW, capFromWin);
+            innerW = std::max(innerW, 52.f);
             const float pw = innerW + kPadX * 2.f;
 
             struct PanelSz {
@@ -814,16 +864,16 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             };
             std::vector<PanelSz> sizes;
             sizes.reserve(entries.size());
-            const float bodyLineH = cn.getLineSpacing(kBodyPt);
-            const float titleLineH = cn.getLineSpacing(kTitlePt);
+            const float bodyLineH = cn.getLineSpacing(bodyPt);
+            const float titleLineH = cn.getLineSpacing(titlePt);
 
             for (const auto& e : entries) {
                 float titleLineMaxW = 0.f;
                 int titleLines = 0;
-                measure_wrapped_lines_unlimited(cn, sf::String(e.title), kTitlePt, innerW, titleLineMaxW, titleLines);
+                measure_wrapped_lines_unlimited(cn, sf::String(e.title), titlePt, innerW, titleLineMaxW, titleLines);
                 float bodyLineMaxW = 0.f;
                 int bodyLines = 0;
-                measure_wrapped_lines_unlimited(cn, sf::String(e.body), kBodyPt, innerW, bodyLineMaxW, bodyLines);
+                measure_wrapped_lines_unlimited(cn, sf::String(e.body), bodyPt, innerW, bodyLineMaxW, bodyLines);
                 const float titleBlockH = static_cast<float>(std::max(0, titleLines)) * titleLineH;
                 const float bodyBlockH = static_cast<float>(std::max(0, bodyLines)) * bodyLineH;
                 const float ph = kPadY + titleBlockH + kTitleBodyGap + bodyBlockH + kPadY;
@@ -851,17 +901,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 const PanelSz& sz = sizes[ei];
                 const float bx = panelX;
                 const float by = y;
-                build_round_rect_poly(rr, bx, by, pw, sz.h, 7.f, 3);
-                draw_convex_poly(window, rr, sf::Color(28, 26, 32, 238), sf::Color(168, 163, 152), 1.1f,
+                build_round_rect_poly(rr, bx, by, pw, sz.h, cornerR, 3);
+                draw_convex_poly(window, rr, sf::Color(28, 26, 32, 238), sf::Color(168, 163, 152), outlineTh,
                                  sf::RenderStates::Default);
 
                 const float titleMaxH = sz.titleBlockH + titleLineH * 0.5f;
-                draw_wrapped_text(window, cn, sf::String(entries[ei].title), kTitlePt,
+                draw_wrapped_text(window, cn, sf::String(entries[ei].title), titlePt,
                                   sf::Vector2f(bx + kPadX, by + kPadY), innerW, titleMaxH,
                                   sf::Color(235, 205, 115), sf::RenderStates::Default);
 
                 const float bodyTop = by + kPadY + sz.titleBlockH + kTitleBodyGap;
-                draw_wrapped_text(window, cn, sf::String(entries[ei].body), kBodyPt,
+                draw_wrapped_text(window, cn, sf::String(entries[ei].body), bodyPt,
                                   sf::Vector2f(bx + kPadX, bodyTop), innerW, sz.bodyBlockH + bodyLineH * 0.5f,
                                   sf::Color(235, 235, 240), sf::RenderStates::Default);
                 y += sz.h + kPanelGap;
@@ -1844,6 +1894,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_deck_view_cards(std::vector<CardInstance> cards) {
         deck_view_cards_ = std::move(cards);
+        deck_view_scroll_y_             = 0.f;
         deck_view_detail_active_        = false;
         deck_view_detail_show_upgraded_ = false;
         deck_view_glossary_entries_.clear();
@@ -1852,8 +1903,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::deck_view_grid_layout_(float& outContentTop, float& outFirstRowCenterY, float& outViewTop) const {
         if (deck_view_standalone_grid_layout_) {
-            outContentTop        = 72.f;
-            outFirstRowCenterY   = 260.f;
+            const float n = deck_view_standalone_vertical_nudge_;
+            outContentTop        = 72.f + n;
+            outFirstRowCenterY   = 260.f + n;
             outViewTop           = 0.f;
         } else {
             outContentTop        = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
@@ -1880,6 +1932,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!active) {
             deck_view_scroll_y_ = 0.f;
             deck_view_standalone_grid_layout_ = false;
+            deck_view_standalone_vertical_nudge_ = 0.f;
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
@@ -3731,8 +3784,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         sf::String typeStr = sf::String(L"?");
         if (cd) {
             switch (cd->cardType) {
-            case CardType::Attack: typeStr = sf::String(L"攻击"); break;
-            case CardType::Skill:  typeStr = sf::String(L"技能"); break;
+            case CardType::Attack: typeStr = sf::String(L"武学"); break;
+            case CardType::Skill:  typeStr = sf::String(L"秘籍"); break;
             case CardType::Power:  typeStr = sf::String(L"能力"); break;
             case CardType::Status: typeStr = sf::String(L"状态"); break;
             case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;

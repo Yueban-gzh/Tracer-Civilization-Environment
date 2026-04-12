@@ -482,8 +482,8 @@ void draw_detailed_card_at(sf::RenderWindow& window, const sf::Font& fontZh, con
     sf::String typeStr = sf::String(L"?");
     if (cd) {
         switch (cd->cardType) {
-        case CardType::Attack: typeStr = sf::String(L"攻击"); break;
-        case CardType::Skill:  typeStr = sf::String(L"技能"); break;
+        case CardType::Attack: typeStr = sf::String(L"武学"); break;
+        case CardType::Skill:  typeStr = sf::String(L"秘籍"); break;
         case CardType::Power:  typeStr = sf::String(L"能力"); break;
         case CardType::Status: typeStr = sf::String(L"状态"); break;
         case CardType::Curse:  typeStr = sf::String(L"诅咒"); break;

@@ -60,6 +60,8 @@ public:
     bool is_deck_view_active() const { return deck_view_active_; }  // 牌组界面是否打开中
     /** 牌组网格与 drawDeckViewStandalone_ 同几何（卡牌总览等无顶栏/遗物栏）；须在 set_deck_view_active(true) 之前设为 true */
     void set_deck_view_standalone_grid_layout(bool standalone) { deck_view_standalone_grid_layout_ = standalone; }
+    /** 仅 standalone 布局：整体下移牌网格（像素），供总览第二行筛选条等；关闭牌组视图时会清零 */
+    void set_deck_view_standalone_vertical_nudge(float dy) { deck_view_standalone_vertical_nudge_ = dy; }
     /** 轮询一次是否请求打开牌组界面；outMode: 1=牌组(右上角)，2=抽牌堆(左下角)，3=弃牌堆(右下角)，4=消耗堆(弃牌堆上方) */
     bool pollOpenDeckViewRequest(int& outMode);
 
@@ -333,6 +335,7 @@ private:
 
     // 牌组界面
     bool                          deck_view_standalone_grid_layout_ = false; // 与 drawDeckViewStandalone_ 同布局（卡牌总览）
+    float                         deck_view_standalone_vertical_nudge_ = 0.f; // standalone 下 contentTop / 首行中心 Y 额外下移
     bool                          deck_view_active_ = false;   // 牌组界面是否打开
     std::vector<CardInstance>     deck_view_cards_;             // 牌组视图要展示的牌列表
     float                         deck_view_scroll_y_ = 0.f;   // 牌组视图纵向滚动偏移
