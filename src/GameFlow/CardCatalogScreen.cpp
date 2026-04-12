@@ -116,6 +116,7 @@ void runCardCatalogScreen(sf::RenderWindow& window) {
     };
 
     rebuildCards();
+    ui.set_deck_view_standalone_grid_layout(true); // 与 drawDeckViewOnly 同几何，否则点击/滚轮仍按战斗牌组布局会整体偏下
     ui.set_deck_view_active(true);
 
     BattleStateSnapshot snap{};

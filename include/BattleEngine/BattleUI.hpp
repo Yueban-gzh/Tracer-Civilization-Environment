@@ -58,6 +58,8 @@ public:
     void set_deck_view_cards(std::vector<CardInstance> cards);  // 设置牌组视图要展示的牌
     void set_deck_view_active(bool active);    // 打开/关闭牌组界面
     bool is_deck_view_active() const { return deck_view_active_; }  // 牌组界面是否打开中
+    /** 牌组网格与 drawDeckViewStandalone_ 同几何（卡牌总览等无顶栏/遗物栏）；须在 set_deck_view_active(true) 之前设为 true */
+    void set_deck_view_standalone_grid_layout(bool standalone) { deck_view_standalone_grid_layout_ = standalone; }
     /** 轮询一次是否请求打开牌组界面；outMode: 1=牌组(右上角)，2=抽牌堆(左下角)，3=弃牌堆(右下角)，4=消耗堆(弃牌堆上方) */
     bool pollOpenDeckViewRequest(int& outMode);
 
@@ -127,6 +129,8 @@ private:
     void layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH);
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
     void drawDeckViewStandalone_(sf::RenderWindow& window, const BattleStateSnapshot& s); // 不含顶栏的牌组网格（总览等）
+    /** 牌组网格 contentTop / 首行牌中心 Y / 裁剪顶边（与绘制一致，供命中与滚轮） */
+    void deck_view_grid_layout_(float& outContentTop, float& outFirstRowCenterY, float& outViewTop) const;
     void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌、「查看升级」与左右翻牌箭头命中矩形
     void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
@@ -140,7 +144,7 @@ private:
                             const CardInstance* handInst = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
-    /** 手牌扇形在 drawBottomBar 中后画，会盖住血条下效果栏；本函数在底栏/飞牌之后补画状态图标 */
+    /** 绘制 drawBattleCenter 期间入队的状态效果图标（应在手牌/飞牌之前调用，使手牌盖住图标） */
     void flushPendingBattleStatusIcons_(sf::RenderWindow& window);
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
     void show_center_tip(std::wstring text, float seconds);  // 内部：设置中央提示（供 showTip 调用）
@@ -188,6 +192,8 @@ private:
     bool                                pending_select_ui_force_center_fly_ = false;
 
     sf::Clock                           ui_hover_anim_clock_{};
+    /** 怪物意图图标上下浮动（drawBattleCenter 内用 sin(time) 偏移） */
+    sf::Clock                           intent_float_clock_{};
     float                               hover_draw_pile_    = 0.f;
     float                               hover_discard_pile_ = 0.f;
     float                               hover_exhaust_pile_ = 0.f;
@@ -308,6 +314,7 @@ private:
     std::unordered_map<std::string, sf::Texture> cardArtTextures_;
 
     // 牌组界面
+    bool                          deck_view_standalone_grid_layout_ = false; // 与 drawDeckViewStandalone_ 同布局（卡牌总览）
     bool                          deck_view_active_ = false;   // 牌组界面是否打开
     std::vector<CardInstance>     deck_view_cards_;             // 牌组视图要展示的牌列表
     float                         deck_view_scroll_y_ = 0.f;   // 牌组视图纵向滚动偏移

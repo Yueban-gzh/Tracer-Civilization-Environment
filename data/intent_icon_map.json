@@ -1,0 +1,14 @@
+{
+  "_说明": "键与 BattleUI 中 iconLookup 一致，值为 assets/intention/ 下文件名（无扩展名，建议 ASCII）。可改图后只改本表。",
+  "Attack": "longsword",
+  "Block": "guard",
+  "AttackBlock": "longsword_guard",
+  "Ritual": "empower",
+  "Strategy": "empower",
+  "Debuff": "debuff",
+  "SmallKnife": "small_knife",
+  "AttackVulnerable": "longsword_debuff",
+  "Unknown": "heavy_debuff",
+  "Sleep": "sleep",
+  "Stun": "stun"
+}

@@ -11,6 +11,7 @@
 #include "DataLayer/JsonParser.h"
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -45,7 +46,8 @@ bool JsonValue::as_bool() const {
 
 // ----- 递归下降解析（递归即栈：每次 parse_value/parse_array/parse_object 调用压栈，返回时出栈）-----
 static std::string read_file_utf8(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    namespace fs = std::filesystem;
+    std::ifstream f(fs::u8path(path), std::ios::binary);
     if (!f) return "";
     std::stringstream ss;
     ss << f.rdbuf();

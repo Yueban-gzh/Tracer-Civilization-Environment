@@ -12,6 +12,9 @@ namespace tce {
  */
 void setup_asset_working_directory();
 
+/** 可执行文件所在目录（UTF-8）。Windows 下用宽字符 API，避免中文路径被 ANSI 截断。 */
+std::string get_executable_directory_utf8();
+
 /** 判断 UTF-8 路径是否存在。 */
 bool file_exists_utf8(const std::string& p);
 

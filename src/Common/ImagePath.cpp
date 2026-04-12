@@ -26,20 +26,6 @@ static std::string path_to_consistent_utf8(const fs::path& p) {
     return n.u8string();
 }
 
-std::string get_executable_directory() {
-#ifdef _WIN32
-    char buf[MAX_PATH];
-    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) return {};
-    std::string full(buf, buf + n);
-    const size_t pos = full.find_last_of("\\/");
-    if (pos == std::string::npos) return {};
-    return full.substr(0, pos);
-#else
-    return {};
-#endif
-}
-
 static std::string join_path(const std::string& dir, const std::string& rel) {
     if (rel.empty())
         return path_to_consistent_utf8(fs::u8path(dir));
@@ -85,48 +71,65 @@ static bool is_typical_build_output_folder(const fs::path& dir) {
 }
 
 /**
- * 从 start 向上找：同时含 assets/ 与 data/，且最后一级目录名不是 Debug/Release/x64 等输出目录。
- * 避免 x64/Debug 里整套误拷资源被当成工程根。
+ * 从 start 向上扫：同时含 assets/ 与 data/、且目录名不是 Debug/Release/x64 等输出目录。
+ * 取**最外层**（向上遍历中最后一次满足条件的祖先），避免停在中间目录的空壳 assets+data 上，
+ * 导致 assets/intention 等实际仍在仓库根时解析失败。
  */
-static fs::path find_first_ancestor_with_game_content_root(const fs::path& start) {
+static fs::path find_outermost_ancestor_with_game_content_root(const fs::path& start) {
+    fs::path best;
     fs::path step = start;
     for (int i = 0; i < 24; ++i) {
         std::error_code ec;
         if (!is_typical_build_output_folder(step)
             && fs::exists(step / "assets", ec) && fs::exists(step / "data", ec))
-            return step;
+            best = step;
         fs::path parent = step.parent_path();
         if (parent == step)
             break;
         step = std::move(parent);
     }
-    return {};
+    return best;
 }
 
 } // namespace
 
 namespace tce {
 
+std::string get_executable_directory_utf8() {
+#ifdef _WIN32
+    wchar_t buf[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    std::wstring wfull(buf, buf + n);
+    const auto pos = wfull.find_last_of(L"\\/");
+    if (pos == std::wstring::npos) return {};
+    wfull.resize(pos);
+    const int need = WideCharToMultiByte(CP_UTF8, 0, wfull.c_str(), static_cast<int>(wfull.size()), nullptr, 0, nullptr, nullptr);
+    if (need <= 0) return {};
+    std::string out(static_cast<size_t>(need), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wfull.c_str(), static_cast<int>(wfull.size()), out.data(), need, nullptr, nullptr);
+    return out;
+#else
+    return {};
+#endif
+}
+
 void setup_asset_working_directory() {
     std::error_code ec;
+    fs::path start;
 #ifdef _WIN32
-    std::string exeDir = get_executable_directory();
-    if (exeDir.empty()) return;
-    fs::path start = fs::u8path(exeDir);
-#else
-    fs::path start = fs::current_path(ec);
-#endif
-    for (int i = 0; i < 24; ++i) {
-        if (start.empty()) break;
-        if (!is_typical_build_output_folder(start)
-            && fs::exists(start / "assets", ec) && fs::exists(start / "data", ec)) {
-            fs::current_path(start, ec);
-            return;
-        }
-        fs::path parent = start.parent_path();
-        if (parent == start) break;
-        start = std::move(parent);
+    {
+        const std::string exeDir = get_executable_directory_utf8();
+        if (exeDir.empty()) return;
+        start = fs::u8path(exeDir);
     }
+#else
+    start = fs::current_path(ec);
+    if (start.empty()) return;
+#endif
+    const fs::path root = find_outermost_ancestor_with_game_content_root(start);
+    if (!root.empty())
+        fs::current_path(root, ec);
 }
 
 bool file_exists_utf8(const std::string& p) {
@@ -137,10 +140,10 @@ bool file_exists_utf8(const std::string& p) {
 std::string resolve_image_path(const std::string& base_no_ext) {
     std::vector<std::string> candidates;
 
-    // 先按「exe 向上 → 同时含 assets/ 与 data/ 的工程根」解析，勿停在 x64/Debug 下的假 assets
+    // 先按「exe 向上 → 最外层含 assets/ 与 data/ 的工程根」解析，勿停在中间目录空壳或 x64/Debug 假资源
 #ifdef _WIN32
-    if (const std::string exeDir = get_executable_directory(); !exeDir.empty()) {
-        const fs::path root = find_first_ancestor_with_game_content_root(fs::u8path(exeDir));
+    if (const std::string exeDir = get_executable_directory_utf8(); !exeDir.empty()) {
+        const fs::path root = find_outermost_ancestor_with_game_content_root(fs::u8path(exeDir));
         if (!root.empty()) {
             for (const char* ext : kImageExts) {
                 const fs::path file = root / fs::u8path(base_no_ext + ext);
@@ -171,9 +174,10 @@ std::string resolve_image_path(const std::string& base_no_ext) {
     push_prefix("../../");
     push_prefix("../../../");
     push_prefix("../../../../");
+    push_prefix("../../../../../");
 
 #ifdef _WIN32
-    const std::string exeDir = get_executable_directory();
+    const std::string exeDir = get_executable_directory_utf8();
     if (!exeDir.empty()) {
         for (const char* up : {"", "../", "../../", "../../../", "../../../../", "../../../../../"}) {
             // 禁止 exeDir + "assets/..."（即 x64/Debug/assets），避免命中输出目录里的空壳/损坏图
@@ -208,12 +212,12 @@ void append_status_effect_icon_scan_roots(std::vector<std::filesystem::path>& ou
         out.push_back(statusDir);
     };
     auto push_from_start_dir = [&](const fs::path& start) {
-        const fs::path root = find_first_ancestor_with_game_content_root(start);
+        const fs::path root = find_outermost_ancestor_with_game_content_root(start);
         if (!root.empty())
             try_push(root / "assets" / "status");
     };
 #ifdef _WIN32
-    if (const std::string exeDir = get_executable_directory(); !exeDir.empty())
+    if (const std::string exeDir = get_executable_directory_utf8(); !exeDir.empty())
         push_from_start_dir(fs::u8path(exeDir));
 #endif
     std::error_code ec;

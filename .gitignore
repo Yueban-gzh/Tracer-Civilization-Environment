@@ -52,6 +52,7 @@ build/*.dll
 
 # 本地爬虫/会话（勿提交）
 assets/status/cookie.txt
+assets/intention/cookie.txt
 
 # 其他
 *.aps

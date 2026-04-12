@@ -1,0 +1,4 @@
+requests>=2.28.0
+beautifulsoup4>=4.12.0
+# 可选：若仅靠 Cookie 仍 403，可 pip install cloudscraper 后加参数 --cloudscraper
+# cloudscraper>=1.2.71

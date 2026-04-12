@@ -68,6 +68,32 @@ static std::string ascii_lower_ascii(std::string s) {
     return s;
 }
 
+/** 意图贴图查找：先精确键，再 ASCII 不区分大小写（与预载键 Attack 与 JSON 里 attack 对齐） */
+static const sf::Texture* lookup_intention_texture(const std::unordered_map<std::string, sf::Texture>& m, const std::string& id) {
+    if (id.empty()) return nullptr;
+    auto it = m.find(id);
+    if (it != m.end()) return &it->second;
+    const std::string want = ascii_lower_ascii(id);
+    for (const auto& kv : m) {
+        if (ascii_lower_ascii(kv.first) == want)
+            return &kv.second;
+    }
+    return nullptr;
+}
+
+/** 在意图图标上叠画伤害数字（按 kind，与悬停说明一致） */
+static bool monster_intent_shows_attack_value_on_icon(MonsterIntentKind k) {
+    switch (k) {
+    case MonsterIntentKind::Attack:
+    case MonsterIntentKind::Mul_Attack:
+    case MonsterIntentKind::Attack_And_Weak:
+    case MonsterIntentKind::Attack_And_Vulnerable:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /** 扫描 assets/status，用绝对 path 建立主名(小写)→路径（含 Icon *.png 扫出的主名键，作次要回退）。 */
 static std::unordered_map<std::string, std::filesystem::path> g_statusWikiLowerToAbsPath;
 static bool                                                 g_statusIconDirIndexed = false;
@@ -282,7 +308,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float HP_BAR_H = 10.f;             // 血条高度（变细）；下方为增益减益栏
         constexpr float BATTLE_STATUS_ICON_SZ = 40.f; // 血条下状态效果图标边长（玩家/怪物共用）
         constexpr unsigned BATTLE_STATUS_STACK_FONT_SZ = 22u; // 状态层数角标字号
-        constexpr float INTENT_ORB_R = 14.f;              // 怪物意图图标半径（缩小，悬停显示详情）
+        constexpr float INTENT_ORB_R = 34.f;              // 怪物意图图标半径（方形贴图边长约 2R）
+        constexpr float INTENT_FLOAT_AMP_PX = 6.f;        // 意图图标上下浮动振幅（1920 设计坐标，再乘 uiScaleX_）
+        constexpr float INTENT_FLOAT_SPEED  = 2.35f;      // 角速度（rad/s），约 2π/2.7s 一周期
+        constexpr float INTENT_FLOAT_PHASE  = 0.58f;      // 相邻怪物相位差（rad），避免完全同相
+        /** 怪物立绘呼吸：相对缩放的半振幅（如 0.02 → 约 0.98~1.02），脚底贴地 */
+        constexpr float MONSTER_BREATH_SCALE_AMP = 0.022f;
+        constexpr float MONSTER_BREATH_SPEED     = 1.65f;  // rad/s，略慢于意图球
+        constexpr float MONSTER_BREATH_PHASE     = 0.47f;  // 相邻怪相位差
         constexpr float MODEL_PLACEHOLDER_W = 380.f;      // 玩家/怪物模型占位（1:1）
         constexpr float MODEL_PLACEHOLDER_H = 380.f;
         constexpr float MODEL_TOP_OFFSET = 190.f;      // 约为高度一半，使模型中心对齐 modelCenterY
@@ -648,7 +681,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     bool BattleUI::loadIntentionTexture(const std::string& key, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
+        tex.setSmooth(true);
         intentionTextures_[key] = std::move(tex);
         return true;
     }
@@ -1059,10 +1093,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 if (wheel) {
                     constexpr float CARD_H = 300.f;
                     constexpr float ROW_CENTER_TO_CENTER = 360.f;
-                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
-                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+                    float contentTop = 0.f;
+                    float firstRowCenterY = 0.f;
+                    float viewTopUnused = 0.f;
+                    deck_view_grid_layout_(contentTop, firstRowCenterY, viewTopUnused);
                     const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
-                    const float firstRowTop = FIRST_ROW_CENTER_Y - CARD_H * 0.5f;
+                    const float firstRowTop = firstRowCenterY - CARD_H * 0.5f;
                     const float padTop = firstRowTop - contentTop;
                     const float lastCardBottomY = numRows > 0
                         ? contentTop + padTop + (numRows - 1) * ROW_CENTER_TO_CENTER + CARD_H
@@ -1110,12 +1146,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     constexpr float COL_CENTER_TO_CENTER = 276.f;
                     constexpr float ROW_CENTER_TO_CENTER = 360.f;
                     constexpr int COLS = 5;
-                    const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
-                    const float viewTop = TOP_BAR_BG_H;
+                    float contentTop = 0.f;
+                    float firstRowCenterY = 0.f;
+                    float viewTop = 0.f;
+                    deck_view_grid_layout_(contentTop, firstRowCenterY, viewTop);
                     const float viewBottom = static_cast<float>(height_);
                     const size_t cardCount = deck_view_cards_.size();
-                    constexpr float FIRST_ROW_CENTER_Y = 430.f;
-                    const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+                    const float firstRowTop = firstRowCenterY - DECK_CARD_H * 0.5f;
                     const float padTop = firstRowTop - contentTop;
                     const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
                     const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
@@ -1451,6 +1488,18 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         deck_view_detail_show_upgraded_ = false;
     }
 
+    void BattleUI::deck_view_grid_layout_(float& outContentTop, float& outFirstRowCenterY, float& outViewTop) const {
+        if (deck_view_standalone_grid_layout_) {
+            outContentTop        = 72.f;
+            outFirstRowCenterY   = 260.f;
+            outViewTop           = 0.f;
+        } else {
+            outContentTop        = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
+            outFirstRowCenterY   = 430.f;
+            outViewTop           = TOP_BAR_BG_H;
+        }
+    }
+
     void BattleUI::set_deck_view_active(bool active) {
         deck_view_active_ = active;
         if (active) {
@@ -1468,6 +1517,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
         if (!active) {
             deck_view_scroll_y_ = 0.f;
+            deck_view_standalone_grid_layout_ = false;
             deck_view_detail_active_         = false;
             deck_view_detail_show_upgraded_  = false;
             deck_view_detail_inst_           = CardInstance{};
@@ -1480,10 +1530,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
         // 默认滚动到第二行可见、并露出第三行一部分（3 行及以上时）
         constexpr float ROW_CENTER_TO_CENTER = 360.f;
-        constexpr float FIRST_ROW_CENTER_Y = 430.f;
         constexpr float DECK_CARD_H = 300.f;
-        const float contentTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;
-        const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+        float contentTop = 0.f;
+        float firstRowCenterY = 0.f;
+        float viewTopUnused = 0.f;
+        deck_view_grid_layout_(contentTop, firstRowCenterY, viewTopUnused);
+        const float firstRowTop = firstRowCenterY - DECK_CARD_H * 0.5f;
         const float padTop = firstRowTop - contentTop;
         const int numRows = (static_cast<int>(deck_view_cards_.size()) + 4) / 5;
         const float lastCardBottomY = numRows > 0
@@ -2010,7 +2062,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         lastSnapshot_      = &snapshotForEvents_;
         if (!fontLoaded_) return;                   // 字体未加载则不绘制（避免崩溃）
 
-        pendingBattleStatusIcons_.clear();          // 由 drawBattleCenter 收集，底栏之后再 flush（避免手牌盖住）
+        pendingBattleStatusIcons_.clear();          // 由 drawBattleCenter 入队，随后在 drawBottomBar 之前 flush（手牌盖住效果栏）
 
         const bool bottomHudInteractive = !deck_view_active_ && !pause_menu_active_ && !settings_panel_active_
             && !map_overlay_blocks_world_input_ && !card_select_active_ && !reward_screen_active_;
@@ -2055,9 +2107,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利标题+金币+遗物/药水+三选一卡牌+跳过/继续
             drawBattleCenter(window, s);             // 底层仍画战场（模糊背景感）
+            flushPendingBattleStatusIcons_(window);
             drawBottomBar(window, s);
             draw_pile_card_anims_(window);
-            flushPendingBattleStatusIcons_(window);
             drawTopRight(window, s);
             drawRewardScreen(window);
             draw_center_tip(window);
@@ -2066,9 +2118,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         if (card_select_active_) {                   // 选牌弹窗：底层战场 + 弹窗
             drawBattleCenter(window, s);
+            flushPendingBattleStatusIcons_(window);
             drawBottomBar(window, s);
             draw_pile_card_anims_(window);
-            flushPendingBattleStatusIcons_(window);
             drawTopRight(window, s);
             drawCardSelectScreen(window);
             draw_center_tip(window);
@@ -2081,9 +2133,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         // 不再铺手牌区整宽纯色底条，避免挡住战斗背景；手牌与底栏控件直接叠在背景上。
 
+        flushPendingBattleStatusIcons_(window);      // 血条下状态图标在手牌/飞牌之下
         drawBottomBar(window, s);                   // 底栏：抽牌堆、能量、手牌（扇形）、结束回合、弃牌堆、消耗堆
         draw_pile_card_anims_(window);
-        flushPendingBattleStatusIcons_(window);     // 效果图标在手牌之上
         drawTopRight(window, s, true);              // 右上角：地图/牌组/设置按钮、回合数（战斗界面显示回合数）
         draw_center_tip(window);                    // 中央提示（如"能量不足"），带淡出
 
@@ -3770,13 +3822,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float COL_CENTER_TO_CENTER = 276.f;
         constexpr float ROW_CENTER_TO_CENTER = 360.f;
         constexpr int COLS = 5;
-        const float contentTop = 72.f; // 给排序按钮留空间
+        float contentTop = 0.f;
+        float firstRowCenterY = 0.f;
+        float viewTop = 0.f;
+        deck_view_grid_layout_(contentTop, firstRowCenterY, viewTop);
         constexpr float returnBtnBottomMargin = 120.f;
-        const float viewTop = 0.f;
         const float viewBottom = static_cast<float>(height_);
         const size_t cardCount = deck_view_cards_.size();
-        constexpr float FIRST_ROW_CENTER_Y = 260.f;
-        const float firstRowTop = FIRST_ROW_CENTER_Y - DECK_CARD_H * 0.5f;
+        const float firstRowTop = firstRowCenterY - DECK_CARD_H * 0.5f;
         const float padTop = firstRowTop - contentTop;
         const float totalContentW = (COLS - 1) * COL_CENTER_TO_CENTER + DECK_CARD_W;
         const float contentLeft = (static_cast<float>(width_) - totalContentW) * 0.5f;
@@ -4057,8 +4110,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const auto& m = s.monsters[i];
             float intentY = mModelTop - INTENT_ORB_R * 2.f - 6.f;
             const float intentLeft = monsterCenterX - INTENT_ORB_R;
-            const float intentTop = intentY - INTENT_ORB_R;
+            const float intentTopBase = intentY - INTENT_ORB_R;
             const float intentSz = INTENT_ORB_R * 2.f;
+            const float intentFloatY =
+                std::sin(intent_float_clock_.getElapsedTime().asSeconds() * INTENT_FLOAT_SPEED
+                         + static_cast<float>(i) * INTENT_FLOAT_PHASE)
+                * (INTENT_FLOAT_AMP_PX * uiScaleX_);
+            const float intentTop = intentTopBase + intentFloatY;
             sf::FloatRect intentRect(sf::Vector2f(intentLeft, intentTop), sf::Vector2f(intentSz, intentSz));
             monsterIntentRects_.push_back(intentRect);
             // 意图图标：优先用图片，无图则灰色圆球占位
@@ -4075,11 +4133,21 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Frail) iconLookup = "Strategy";
             else if (m.currentIntent.kind == MonsterIntentKind::Player_Dexterity_Down) iconLookup = "Debuff";
             else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak) iconLookup = "SmallKnife"; // 兼容旧资源名，可用 ui_icon 覆盖
-            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable) iconLookup = "Unknown";
+            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable) iconLookup = "AttackVulnerable";
             else if (m.currentIntent.kind == MonsterIntentKind::Buff) iconLookup = "Strategy";
-            auto itTex = intentionTextures_.find(iconLookup);
-            if (itTex != intentionTextures_.end()) {
-                sf::Sprite intentSprite(itTex->second);
+            else if (m.currentIntent.kind == MonsterIntentKind::Debuff) iconLookup = "Debuff";
+            else if (m.currentIntent.kind == MonsterIntentKind::Sleep) iconLookup = "Sleep";
+            else if (m.currentIntent.kind == MonsterIntentKind::Stun) iconLookup = "Stun";
+            else if (m.currentIntent.kind == MonsterIntentKind::Unknown) iconLookup = "Unknown";
+            const sf::Texture* intentTex = lookup_intention_texture(intentionTextures_, iconLookup);
+            if (!intentTex && !iconLookup.empty()) {
+                if (const std::string p = resolve_image_path("assets/intention/" + iconLookup); !p.empty()) {
+                    if (loadIntentionTexture(iconLookup, p))
+                        intentTex = lookup_intention_texture(intentionTextures_, iconLookup);
+                }
+            }
+            if (intentTex) {
+                sf::Sprite intentSprite(*intentTex);
                 const sf::FloatRect tr = intentSprite.getLocalBounds();
                 const float sx = (tr.size.x > 0.f) ? (intentSz / tr.size.x) : 1.f;
                 const float sy = (tr.size.y > 0.f) ? (intentSz / tr.size.y) : 1.f;
@@ -4093,6 +4161,24 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 intentOrb.setOutlineColor(sf::Color(140, 140, 150));
                 intentOrb.setOutlineThickness(1.f);
                 window.draw(intentOrb);
+            }
+            // 攻击类意图：在图标中心略偏左下叠画伤害数字（连击总伤 / 单段攻击等共用 value）
+            if (monster_intent_shows_attack_value_on_icon(m.currentIntent.kind) && m.currentIntent.value != 0 && fontLoaded_) {
+                const float cx = intentLeft + intentSz * 0.5f;
+                const float cy = intentTop + intentSz * 0.5f;
+                const unsigned valFontSz = static_cast<unsigned>(std::lround(std::clamp(intentSz * 0.30f, 15.f, 22.f)));
+                char vbuf[32];
+                std::snprintf(vbuf, sizeof(vbuf), "%d", m.currentIntent.value);
+                sf::Text valText(font_, vbuf, valFontSz);
+                valText.setStyle(sf::Text::Bold);
+                valText.setFillColor(sf::Color(255, 252, 245));
+                valText.setOutlineThickness(2.4f);
+                valText.setOutlineColor(sf::Color(25, 18, 28));
+                const sf::FloatRect vb = valText.getLocalBounds();
+                valText.setOrigin(sf::Vector2f(vb.position.x + vb.size.x * 0.5f, vb.position.y + vb.size.y * 0.5f));
+                // 相对中心更靠左下（略小于字号，避免抢图标主体）
+                valText.setPosition(sf::Vector2f(cx - intentSz * 0.34f, cy + intentSz * 0.34f));
+                window.draw(valText);
             }
             if (intentRect.contains(mousePos_)) {
                 sf::String intentStr;
@@ -4187,24 +4273,38 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
+        const float breathT = intent_float_clock_.getElapsedTime().asSeconds();
+        const float modelFootY = mModelTop + monModelH;
         for (size_t i = 0; i < nMonsters; ++i) {
             const float monsterCenterX = monsterCenterXs[i];
-            sf::FloatRect modelRect(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop),
-                                    sf::Vector2f(monModelW, monModelH));
+            const float breath =
+                1.f
+                + MONSTER_BREATH_SCALE_AMP
+                      * std::sin(breathT * MONSTER_BREATH_SPEED + static_cast<float>(i) * MONSTER_BREATH_PHASE);
+            const float drawW = monModelW * breath;
+            const float drawH = monModelH * breath;
+            const float modelLeft = monsterCenterX - drawW * 0.5f;
+            const float modelTop = modelFootY - drawH;
+            sf::FloatRect modelRect(sf::Vector2f(modelLeft, modelTop), sf::Vector2f(drawW, drawH));
             monsterModelRects_.push_back(modelRect);
             const std::string& monsterId = s.monsters[i].id;
             auto it = monsterTextures_.find(monsterId);
             if (it != monsterTextures_.end()) {
                 sf::Sprite monsterSprite(it->second);
                 const sf::FloatRect texRect = monsterSprite.getLocalBounds();
-                const float scaleX = (texRect.size.x > 0.f) ? (monModelW / texRect.size.x) : 1.f;
-                const float scaleY = (texRect.size.y > 0.f) ? (monModelH / texRect.size.y) : 1.f;
-                monsterSprite.setScale(sf::Vector2f(scaleX, scaleY));
-                monsterSprite.setPosition(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop));
+                const float baseSx = (texRect.size.x > 0.f) ? (monModelW / texRect.size.x) : 1.f;
+                const float baseSy = (texRect.size.y > 0.f) ? (monModelH / texRect.size.y) : 1.f;
+                const float ox = texRect.position.x + texRect.size.x * 0.5f;
+                const float oy = texRect.position.y + texRect.size.y;
+                monsterSprite.setOrigin(sf::Vector2f(ox, oy));
+                monsterSprite.setScale(sf::Vector2f(baseSx * breath, baseSy * breath));
+                monsterSprite.setPosition(sf::Vector2f(monsterCenterX, modelFootY));
                 window.draw(monsterSprite);
             } else {
                 sf::RectangleShape monsterModel(sf::Vector2f(monModelW, monModelH));
-                monsterModel.setPosition(sf::Vector2f(monsterCenterX - monModelW * 0.5f, mModelTop));
+                monsterModel.setOrigin(sf::Vector2f(monModelW * 0.5f, monModelH));
+                monsterModel.setScale(sf::Vector2f(breath, breath));
+                monsterModel.setPosition(sf::Vector2f(monsterCenterX, modelFootY));
                 monsterModel.setFillColor(sf::Color(70, 55, 65));
                 monsterModel.setOutlineColor(sf::Color(110, 90, 100));
                 monsterModel.setOutlineThickness(1.f);
@@ -5260,5 +5360,32 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             window.draw(turnText);                      // 回合数（如 "回合 3"），至少显示 1
         }
     }
+
+std::vector<std::string> ui_get_all_known_potion_ids() {
+    // 与 GameFlowController::preload_battle_ui_assets 中 kPotions 一致，便于总览与资源预载对齐
+    static const std::vector<std::string> kIds = {
+        "attack_potion", "block_potion", "blood_potion", "dexterity_potion", "energy_potion",
+        "explosion_potion", "fear_potion", "fire_potion", "focus_potion", "poison_potion",
+        "speed_potion", "steroid_potion", "strength_potion", "swift_potion", "weak_potion"};
+    return kIds;
+}
+
+std::vector<std::string> ui_get_all_known_relic_ids() {
+    static const std::vector<std::string> kIds = {
+        "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
+        "clockwork_boots", "copper_scales", "data_disk", "hand_drum", "happy_flower", "lantern",
+        "marble_bag", "nunchaku", "orichalcum", "pen_nib", "potion_belt", "preparation_pack",
+        "red_skull", "small_blood_vial", "smooth_stone", "snake_skull", "strawberry",
+        "toy_ornithopter", "vajra", "relic_strength_plus"};
+    return kIds;
+}
+
+std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id) {
+    return get_potion_display_info(id);
+}
+
+std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id) {
+    return get_relic_display_info(id);
+}
 
 } // namespace tce

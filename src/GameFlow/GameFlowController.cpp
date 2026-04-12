@@ -19,6 +19,7 @@
 #include "DataLayer/DataLayer.hpp"
 #include "Common/ImagePath.hpp"
 #include "Common/UserSettings.hpp"
+#include "DataLayer/JsonParser.h"
 #include "Effects/CardEffects.hpp"
 #include "EventEngine/EventShopRestUI.hpp"
 #include "EventEngine/EventShopRestUICommon.hpp"
@@ -260,10 +261,82 @@ std::string read_debug_event_override_id() {
     return (start < line.size()) ? line.substr(start) : std::string();
 }
 
-/** 预加载战斗 UI：玩家立绘、遗物/药水图标（支持 .png / .jpg / .jpeg）。 */
+static std::string gfc_join_path(const std::string& dir, const std::string& rel) {
+    if (dir.empty()) return rel;
+    if (!rel.empty() && (rel[0] == '/' || rel[0] == '\\')) return rel;
+    const char last = dir.back();
+    if (last == '/' || last == '\\') return dir + rel;
+    return dir + "/" + rel;
+}
+
+/** 从 data/intent_icon_map.json 预载意图贴图（逻辑键 -> assets/intention/ 下无扩展名文件名）；失败则回退英文文件名。 */
+static bool preload_intention_icons_from_data_map(BattleUI& ui) {
+    const char* const kFile = "intent_icon_map.json";
+    std::vector<std::string> candidates = {
+        std::string("data/") + kFile,
+        std::string("./data/") + kFile,
+        std::string("../data/") + kFile,
+        std::string("../../data/") + kFile,
+        std::string("../../../data/") + kFile,
+    };
+    if (const std::string exeDir = tce::get_executable_directory_utf8(); !exeDir.empty()) {
+        candidates.push_back(gfc_join_path(exeDir, std::string("data/") + kFile));
+        candidates.push_back(gfc_join_path(exeDir, std::string("../data/") + kFile));
+        candidates.push_back(gfc_join_path(exeDir, std::string("../../data/") + kFile));
+    }
+    DataLayer::JsonValue root;
+    for (const std::string& p : candidates) {
+        root = DataLayer::parse_json_file(p);
+        if (root.is_object() && !root.obj.empty())
+            break;
+        root = DataLayer::JsonValue();
+    }
+    if (!root.is_object() || root.obj.empty())
+        return false;
+    int n = 0;
+    for (const auto& kv : root.obj) {
+        if (kv.first.empty() || kv.first[0] == '_')
+            continue;
+        if (!kv.second.is_string())
+            continue;
+        const std::string stem = kv.second.as_string();
+        if (stem.empty())
+            continue;
+        const std::string base = "assets/intention/" + stem;
+        if (const std::string path = resolve_image_path(base); !path.empty()) {
+            if (ui.loadIntentionTexture(kv.first, path))
+                ++n;
+        }
+    }
+    return n > 0;
+}
+
+/** 预加载战斗 UI：玩家立绘、遗物/药水、怪物意图图标（支持 .png / .jpg / .jpeg）。 */
 void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
     if (const std::string playerPath = resolve_image_path("assets/player/" + character_id); !playerPath.empty()) {
         ui.loadPlayerTexture(character_id, playerPath);
+    }
+    if (!preload_intention_icons_from_data_map(ui)) {
+        // 与 BattleUI::drawBattleCenter 中 iconLookup 一致；无映射表或解析失败时使用英文主文件名
+        static const char* const kIntentionBases[] = {
+            "assets/intention/Attack",
+            "assets/intention/Block",
+            "assets/intention/Strategy",
+            "assets/intention/Unknown",
+            "assets/intention/AttackBlock",
+            "assets/intention/Ritual",
+            "assets/intention/Debuff",
+            "assets/intention/SmallKnife",
+        };
+        for (const char* base : kIntentionBases) {
+            const std::string baseStr(base);
+            if (const std::string path = resolve_image_path(baseStr); !path.empty()) {
+                std::string key = baseStr;
+                const size_t slash = key.find_last_of("/\\");
+                if (slash != std::string::npos) key.erase(0, slash + 1);
+                ui.loadIntentionTexture(key, path);
+            }
+        }
     }
     static const std::vector<std::string> kRelics = {
         "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
