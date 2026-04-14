@@ -48,6 +48,13 @@ public:
 
     void draw(sf::RenderWindow& window, IBattleUIDataProvider& data);  // 绘制整帧 UI
 
+    /**
+     * 回合提示/战斗开始提示：用于主循环决定是否推进 BattleEngine::step_turn_phase()。
+     * - 当快照 phase 为 PlayerTurnStart/EnemyTurnStart 时，会在屏幕中心依次播放提示；
+     * - 在提示播放完之前返回 true（阻止推进），播放完后返回 false（允许推进）。
+     */
+    bool blocks_battle_engine_step(const BattleStateSnapshot& s);
+
     /** 轮询一次是否有“打出牌”的请求，若有则返回手牌下标与目标怪物下标 */
     bool pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex);
 
@@ -157,7 +164,11 @@ private:
     void flushPendingBattleStatusIcons_(sf::RenderWindow& window);
     void drawTopRight(sf::RenderWindow& window, const BattleStateSnapshot& s, bool showTurnCounter = true);  // 右上角：地图/牌组/设置 + 可选回合数
     void show_center_tip(std::wstring text, float seconds);  // 内部：设置中央提示（供 showTip 调用）
+    void show_center_tip_(std::wstring text, float seconds, unsigned font_size, bool pop_anim);  // 内部扩展：可定制字号/入场动画
     void draw_center_tip(sf::RenderWindow& window);          // 内部：绘制中央提示
+    bool center_tip_active_() const;
+    void enqueue_center_tip_(std::wstring text, float seconds);
+    void tick_center_tip_queue_();
     void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/药水悬停提示
     /** 大预览手牌时：在牌侧（不压牌面）绘制名词解释小框，框随文案收紧 */
     void draw_card_glossary_beside_preview_(sf::RenderWindow& window, const sf::FloatRect& cardScreenAabb,
@@ -280,6 +291,22 @@ private:
     sf::Clock    centerTipClock_;              // 提示计时器
     float        centerTipSeconds_ = 0.f;       // 提示剩余显示秒数
     std::wstring centerTipText_;               // 提示文本
+    unsigned     centerTipFontSize_ = 40u;     // 当前提示字号
+    bool         centerTipPopAnim_ = false;    // 是否使用“弹出”入场动画
+    struct CenterTipItem {
+        std::wstring text;
+        float seconds = 1.0f;
+        unsigned font_size = 40u;
+        bool pop_anim = false;
+    };
+    std::vector<CenterTipItem> centerTipQueue_;  // 简易队列：按入队顺序播放
+    std::wstring              lastPhaseForTurnTips_;
+    bool                      battleStartTipShown_ = false;
+
+    // 攻击位移动画（表现层）：通过 pendingDamageDisplays 触发
+    sf::Clock                 playerAttackClock_{};
+    std::vector<sf::Clock>    monsterAttackClocks_;
+    int                       prevFreshDamageEventCount_ = 0;
 
     // 怪物图片缓存（monster_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> monsterTextures_;
@@ -289,6 +316,11 @@ private:
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
+    // 顶栏图标（金币/生命）：assets/image/gold.png, assets/image/heart.png
+    sf::Texture topbarGoldIconTex_{};
+    sf::Texture topbarHeartIconTex_{};
+    bool        topbarGoldIconLoaded_ = false;
+    bool        topbarHeartIconLoaded_ = false;
     // 顶栏右上角“设置”按钮对应的暂停菜单 / 设置界面状态
     bool pause_menu_active_ = false;         // 一级暂停菜单是否打开
     bool settings_panel_active_ = false;     // 二级“设置”页面是否打开

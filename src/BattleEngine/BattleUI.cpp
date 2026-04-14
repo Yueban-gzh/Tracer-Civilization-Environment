@@ -37,6 +37,17 @@ inline std::uint8_t ui_hover_lighten_byte(std::uint8_t v, float hover01, int max
     return static_cast<std::uint8_t>(std::min(255, static_cast<int>(v) + add));
 }
 
+// 将 0~1 的时间映射为“前冲再回弹”的位移系数
+inline float ui_attack_lunge01(float t01) {
+    if (t01 <= 0.f) return 0.f;
+    if (t01 >= 1.f) return 0.f;
+    // 更“沉”的前冲：先加速后减速（峰值略靠前），回弹更柔
+    const float t = t01;
+    const float s = std::sin(3.1415926f * t);
+    const float w = 0.88f + 0.12f * (1.f - t); // 前段略更强，后段略收
+    return s * w;
+}
+
 } // namespace
 
 namespace tce {
@@ -534,6 +545,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 add(u8"涣散", L"涣散", L"涣散者造成的攻击伤害降低25%。");
                 add(u8"蛊毒", L"蛊毒", L"回合结束时失去相应层数气血，层数每回合下降1。");
                 add(u8"内伤", L"内伤", L"状态/诅咒类效果中使用的伤害或惩罚标记。");
+                add(u8"升级", L"升级", L"升级后卡牌会变得更强大，每张卡牌只能升级一次。");
                 add(u8"焚毁", L"焚毁", L"将牌移入消耗堆，本场战斗通常不再回到抽牌堆。");
                 add(u8"虚无", L"虚无", L"在手牌中于回合结束时被消耗；否则会进入消耗堆。");
                 add(u8"劲力", L"劲力", L"劲力会让武学获得额外的伤害。");
@@ -1142,9 +1154,78 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     }
 
     void BattleUI::show_center_tip(std::wstring text, float seconds) {
+        show_center_tip_(std::move(text), seconds, 40u, false);
+    }
+
+    void BattleUI::show_center_tip_(std::wstring text, float seconds, unsigned font_size, bool pop_anim) {
         centerTipText_ = std::move(text);           // 设置中央提示文本（如"能量不足"）
         centerTipSeconds_ = seconds;                // 显示时长（秒）
+        centerTipFontSize_ = (font_size > 0u) ? font_size : 40u;
+        centerTipPopAnim_ = pop_anim;
         centerTipClock_.restart();                  // 重置计时器，开始计时
+    }
+
+    bool BattleUI::center_tip_active_() const {
+        if (centerTipText_.empty() || centerTipSeconds_ <= 0.f) return false;
+        const float t = centerTipClock_.getElapsedTime().asSeconds();
+        return t <= centerTipSeconds_;
+    }
+
+    void BattleUI::enqueue_center_tip_(std::wstring text, float seconds) {
+        if (text.empty() || seconds <= 0.f) return;
+        CenterTipItem it;
+        it.text = std::move(text);
+        it.seconds = seconds;
+        // 默认：队列里的提示一般是“回合/战斗开始”，用更醒目的样式
+        it.font_size = 64u;
+        it.pop_anim  = true;
+        centerTipQueue_.push_back(std::move(it));
+    }
+
+    void BattleUI::tick_center_tip_queue_() {
+        if (center_tip_active_()) return;
+        if (centerTipQueue_.empty()) return;
+        CenterTipItem it = std::move(centerTipQueue_.front());
+        centerTipQueue_.erase(centerTipQueue_.begin());
+        show_center_tip_(std::move(it.text), it.seconds, it.font_size, it.pop_anim);
+    }
+
+    bool BattleUI::blocks_battle_engine_step(const BattleStateSnapshot& s) {
+        // 先推进队列（上一条提示播完后开始下一条）
+        tick_center_tip_queue_();
+
+        // 仅在“回合开始”阶段阻塞推进，确保提示先播放，随后再让主循环推进引擎逻辑（抽牌/怪物行动等）。
+        const std::wstring& phase = s.phaseDebugLabel;
+        const bool phase_changed = (phase != lastPhaseForTurnTips_);
+
+        if (phase == L"PlayerTurnStart") {
+            if (phase_changed) {
+                if (s.turnNumber == 1 && !battleStartTipShown_) {
+                    enqueue_center_tip_(L"战斗开始", 0.95f);
+                    battleStartTipShown_ = true;
+                }
+                {
+                    std::wstring msg = L"玩家回合 ";
+                    msg += std::to_wstring(std::max(1, s.turnNumber));
+                    enqueue_center_tip_(std::move(msg), 0.95f);
+                }
+            }
+            lastPhaseForTurnTips_ = phase;
+            tick_center_tip_queue_();
+            return center_tip_active_() || !centerTipQueue_.empty();
+        }
+        if (phase == L"EnemyTurnStart") {
+            if (phase_changed) {
+                enqueue_center_tip_(L"敌方回合", 0.95f);
+            }
+            lastPhaseForTurnTips_ = phase;
+            tick_center_tip_queue_();
+            return center_tip_active_() || !centerTipQueue_.empty();
+        }
+
+        // 其它阶段不阻塞；同时刷新 lastPhase，避免从其它阶段切回时漏触发。
+        lastPhaseForTurnTips_ = phase;
+        return false;
     }
 
     bool BattleUI::can_pay_selected_card_cost() const {
@@ -1159,32 +1240,55 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         float t = centerTipClock_.getElapsedTime().asSeconds();
         if (t > centerTipSeconds_) return;         // 超时不再绘制
 
-        // 简单淡出：最后 0.25 秒逐渐透明
+        // 入场动画：轻微“弹出缩放 + 上移”（回合提示），普通提示则保持稳定
+        float popScale   = 1.f;
+        float popYOffset = 0.f;
+        float inAlpha01  = 1.f;
+        if (centerTipPopAnim_) {
+            const float inDur = 0.18f;
+            float u = t / inDur;
+            if (u < 0.f) u = 0.f;
+            if (u > 1.f) u = 1.f;
+            const float e = 1.f - (1.f - u) * (1.f - u); // easeOutQuad
+            // 0.86 -> 1.06 -> 1.00（轻微回弹）
+            const float overshoot = (u < 0.65f)
+                ? (0.86f + (1.06f - 0.86f) * (e / 0.65f))
+                : (1.06f + (1.00f - 1.06f) * ((e - 0.65f) / 0.35f));
+            popScale = overshoot;
+            popYOffset = (1.f - e) * 18.f;
+            inAlpha01 = 0.35f + 0.65f * e;
+        }
+
+        // 淡出：最后 0.25 秒逐渐透明
         float alpha01 = 1.f;
         const float fade = 0.25f;
         if (centerTipSeconds_ > 0.f && t > centerTipSeconds_ - fade) {
             alpha01 = (centerTipSeconds_ - t) / fade;
             if (alpha01 < 0.f) alpha01 = 0.f;
         }
+        alpha01 *= inAlpha01;
         auto a = static_cast<std::uint8_t>(200.f * alpha01);  // 描边透明度
 
-        sf::Text tip(fontForChinese(), sf::String(centerTipText_), 40);
+        sf::Text tip(fontForChinese(), sf::String(centerTipText_), centerTipFontSize_);
         tip.setFillColor(sf::Color(255, 240, 220, static_cast<std::uint8_t>(255.f * alpha01)));
         tip.setOutlineThickness(3.f);
         tip.setOutlineColor(sf::Color(20, 10, 10, a));
         const sf::FloatRect tb = tip.getLocalBounds();
         tip.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-        tip.setPosition(sf::Vector2f(width_ * 0.5f, height_ * 0.5f));
+        const sf::Vector2f center(width_ * 0.5f, height_ * 0.5f - popYOffset);
+        tip.setPosition(center);
+        tip.setScale(sf::Vector2f(popScale, popScale));
 
         // 半透明背景条，居中
         const float padX = 26.f;
         const float padY = 14.f;
         sf::RectangleShape bg(sf::Vector2f(tb.size.x + padX * 2.f, tb.size.y + padY * 2.f));
         bg.setOrigin(sf::Vector2f(bg.getSize().x * 0.5f, bg.getSize().y * 0.5f));
-        bg.setPosition(sf::Vector2f(width_ * 0.5f, height_ * 0.5f));
+        bg.setPosition(center);
         bg.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(120.f * alpha01)));
         bg.setOutlineThickness(2.f);
         bg.setOutlineColor(sf::Color(255, 220, 180, static_cast<std::uint8_t>(90.f * alpha01)));
+        bg.setScale(sf::Vector2f(popScale, popScale));
         window.draw(bg);
         window.draw(tip);
     }
@@ -2787,6 +2891,16 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         float x = left;                       // 当前绘制 x 位置
         char buf[128];
 
+        // 顶栏小图标（懒加载）
+        auto ensure_topbar_icon = [&](const char* base, sf::Texture& tex, bool& loadedFlag) {
+            if (loadedFlag) return;
+            const std::string p = resolve_image_path(base);
+            if (!p.empty() && load_sf_texture_utf8(tex, p)) {
+                tex.setSmooth(true);
+                loadedFlag = true;
+            }
+        };
+
         // 1. 钥匙槽
         const float keySz = 44.f;
         sf::RectangleShape keySlot(sf::Vector2f(keySz, keySz));
@@ -2812,18 +2926,45 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         x += 88.f + itemGap + 80.f;           // 生命再往右
 
         // 4. HP
+        // 资源目录为 assets/images（注意复数）
+        ensure_topbar_icon("assets/images/heart", topbarHeartIconTex_, topbarHeartIconLoaded_);
+        const float hpIconSz = 34.f;
+        if (topbarHeartIconLoaded_) {
+            sf::Sprite heart(topbarHeartIconTex_);
+            const sf::FloatRect tr = heart.getLocalBounds();
+            const float sx = (tr.size.x > 0.f) ? (hpIconSz / tr.size.x) : 1.f;
+            const float sy = (tr.size.y > 0.f) ? (hpIconSz / tr.size.y) : 1.f;
+            heart.setScale(sf::Vector2f(sx, sy));
+            heart.setPosition(sf::Vector2f(x, rowY + 3.f));
+            window.draw(heart);
+        }
+        const float hpTextX = x + hpIconSz + 6.f;
         std::snprintf(buf, sizeof(buf), "%d/%d", s.currentHp, s.maxHp);
         sf::Text hpText(font_, buf, hpSize);
         hpText.setFillColor(sf::Color(230, 80, 80));
-        hpText.setPosition(sf::Vector2f(x, rowY));
+        hpText.setPosition(sf::Vector2f(hpTextX, rowY));
         window.draw(hpText);
         x += 96.f + itemGap + 50.f;           // 金钱再往右
 
         // 5. 金币
+        ensure_topbar_icon("assets/images/gold", topbarGoldIconTex_, topbarGoldIconLoaded_);
+        const float goldIconSz = 32.f;
+        const float goldShiftLeft = 18.f; // 让金币与图标整体更靠左
+        const float goldX = x - goldShiftLeft;
+        if (topbarGoldIconLoaded_) {
+            sf::Sprite gold(topbarGoldIconTex_);
+            const sf::FloatRect tr = gold.getLocalBounds();
+            const float sx = (tr.size.x > 0.f) ? (goldIconSz / tr.size.x) : 1.f;
+            const float sy = (tr.size.y > 0.f) ? (goldIconSz / tr.size.y) : 1.f;
+            gold.setScale(sf::Vector2f(sx, sy));
+            gold.setPosition(sf::Vector2f(goldX, rowY + 5.f));
+            window.draw(gold);
+        }
+        const float goldTextX = goldX + goldIconSz + 6.f;
         std::snprintf(buf, sizeof(buf), "%d", s.gold);
         sf::Text goldText(font_, buf, restSize);
         goldText.setFillColor(sf::Color(255, 200, 80));
-        goldText.setPosition(sf::Vector2f(x, rowY));
+        goldText.setPosition(sf::Vector2f(goldTextX, rowY));
         window.draw(goldText);
         x += 44.f + itemGap + 12.f;          // 药水栏再往右，金钱与药水栏间隙缩小
 
@@ -4392,6 +4533,49 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     // 战场中央：玩家区(背景+模型+血条在下+增益减益)、怪物区(背景+意图在上+模型+血条在下)
     void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        // 根据“新伤害飘字事件”触发攻击位移动画（纯表现层，尽量不侵入规则层）
+        {
+            int fresh = 0;
+            for (const auto& ev : s.pendingDamageDisplays) {
+                if (ev.frames_remaining >= 179) ++fresh;  // BattleEngine 推入时为 180
+            }
+            if (fresh != prevFreshDamageEventCount_) {
+                // 新增事件：触发对应攻击者的前冲动画
+                for (const auto& ev : s.pendingDamageDisplays) {
+                    if (ev.frames_remaining < 179) continue;
+                    if (!ev.is_player) {
+                        // 怪物受击：近似为玩家攻击
+                        playerAttackClock_.restart();
+                    } else {
+                        // 玩家受击：近似为怪物攻击（选一只存活怪物前冲）
+                        int chosen = -1;
+                        const int n = static_cast<int>(s.monsters.size());
+                        if (n == 1) chosen = 0;
+                        if (chosen < 0) {
+                            for (int i = 0; i < n; ++i) {
+                                if (s.monsters[static_cast<size_t>(i)].currentHp <= 0) continue;
+                                if (monster_intent_shows_attack_value_on_icon(s.monsters[static_cast<size_t>(i)].currentIntent.kind)) {
+                                    chosen = i;
+                                    break;
+                                }
+                            }
+                        }
+                        if (chosen < 0) {
+                            for (int i = 0; i < n; ++i) {
+                                if (s.monsters[static_cast<size_t>(i)].currentHp > 0) { chosen = i; break; }
+                            }
+                        }
+                        if (chosen >= 0) {
+                            if (static_cast<size_t>(chosen) >= monsterAttackClocks_.size())
+                                monsterAttackClocks_.resize(static_cast<size_t>(chosen) + 1);
+                            monsterAttackClocks_[static_cast<size_t>(chosen)].restart();
+                        }
+                    }
+                }
+                prevFreshDamageEventCount_ = fresh;
+            }
+        }
+
         const float battleTop = RELICS_ROW_Y + RELICS_ROW_H + 14.f;  // 战场在遗物栏下方
         const float battleH = (height_ * BOTTOM_BAR_Y_RATIO) - battleTop - 16.f;  // 战场高度
         const float playerLeft = width_ * 0.06f;      // 玩家区左边界
@@ -4405,6 +4589,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // ---------- 玩家区：模型占位 -> 血条在模型下方 -> 增益减益在血条下方 ----------
         // playerModelRect_ 用于自选目标牌高亮与点击命中检测
         float playerCenterX = playerLeft + playerW * 0.5f;  // 玩家区中心 x
+        // 玩家攻击位移：向右前冲（朝怪物区）
+        {
+            const float dur = 0.22f;
+            const float t = playerAttackClock_.getElapsedTime().asSeconds();
+            if (t >= 0.f && t <= dur) {
+                const float t01 = t / dur;
+                playerCenterX += ui_attack_lunge01(t01) * 54.f;
+            }
+        }
         float modelTop = modelCenterY - MODEL_TOP_OFFSET;    // 模型上边，固定不变
         playerModelRect_ = sf::FloatRect(
             sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop),
@@ -4728,7 +4921,16 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float breathT = intent_float_clock_.getElapsedTime().asSeconds();
         const float modelFootY = mModelTop + monModelH;
         for (size_t i = 0; i < nMonsters; ++i) {
-            const float monsterCenterX = monsterCenterXs[i];
+            float monsterCenterX = monsterCenterXs[i];
+            // 怪物攻击位移：向左前冲（朝玩家区）
+            if (i < monsterAttackClocks_.size()) {
+                const float dur = 0.22f;
+                const float t = monsterAttackClocks_[i].getElapsedTime().asSeconds();
+                if (t >= 0.f && t <= dur) {
+                    const float t01 = t / dur;
+                    monsterCenterX += -ui_attack_lunge01(t01) * 44.f;
+                }
+            }
             const float breath =
                 1.f
                 + MONSTER_BREATH_SCALE_AMP
@@ -5288,12 +5490,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
-        // 受击伤害数字：玩家左侧、怪物右侧；多怪时按 monster_index 定位；约 3 秒后清除
-        // 同一目标多个伤害按方位错位：玩家受伤在左侧，后续往左下方叠；怪物受伤在右侧，后续往右下方叠
-        // 错开出现：用 frames_remaining 推断“入队时长”，第 i 个需等待 i*12 帧后才显示（纯 UI 逻辑，不改结构体）
+        // 受击伤害数字：
+        // - 玩家受击：仍显示在玩家左侧
+        // - 怪物受击：从怪物模型处“蹦出”红色数字，随后缓缓变小并淡出
+        // 同一目标多个伤害错开出现：用 frames_remaining 推断“入队时长”，第 i 个需等待 i*12 帧后才显示（纯 UI 逻辑，不改结构体）
         constexpr int DAMAGE_DISPLAY_DURATION = 180;  // 与 BattleEngine 一致
         constexpr int STAGGER_FRAMES = 12;            // 同目标相邻数字间隔约 0.2 秒
-        const float damageNumSize = 36.f;  // 伤害数字的字号（字体大小）
+        const float damageNumSize = 42.f;  // 伤害数字的字号（字体大小）
         const float playerDamageX = playerCenterX - MODEL_PLACEHOLDER_W * 0.5f - 50.f;  // 玩家受伤数字显示在玩家模型左侧一点
         const float damageY = modelCenterY - 20.f;  // 伤害数字的垂直位置（接近模型中心略偏上）
         const float offsetStepX = 16.f, offsetStepY = 12.f;  // 每个后续伤害的错位步长（玩家左、怪物右；都略向下）
@@ -5302,7 +5505,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const auto key = std::make_pair(ev.is_player, ev.monster_index);
         const int idx = targetIndex[key]++;  // 该目标下第几个（0,1,2...）
         const int age = DAMAGE_DISPLAY_DURATION - ev.frames_remaining;  // 入队已过帧数
-        if (age < idx * STAGGER_FRAMES) continue;  // 未到显示时机，跳过（错开出现）
+        const int ageDisplay = age - idx * STAGGER_FRAMES;
+        if (ageDisplay < 0) continue;  // 未到显示时机，跳过（错开出现）
+        const int displayFrames = std::max(1, DAMAGE_DISPLAY_DURATION - idx * STAGGER_FRAMES);
+        float t01 = static_cast<float>(ageDisplay) / static_cast<float>(displayFrames);
+        if (t01 < 0.f) t01 = 0.f;
+        if (t01 > 1.f) t01 = 1.f;
         float dx = 0.f, dy = 0.f;
         if (idx > 0) {  // 第 2 个及以后：玩家往左下方叠，怪物往右下方叠
             if (ev.is_player) { dx = -idx * offsetStepX; dy = idx * offsetStepY; }
@@ -5312,17 +5520,42 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         std::snprintf(buf, sizeof(buf), "%d", ev.amount);  // 把伤害数值格式化为字符串
         sf::Text dmgText(font_, buf, static_cast<unsigned>(damageNumSize));  // 创建 SFML 文本对象显示伤害数字
         dmgText.setStyle(sf::Text::Bold);  // 使用粗体，让数字更醒目
-        dmgText.setFillColor(sf::Color(255, 100, 80));  // 数字填充颜色：亮红橙色
+        dmgText.setFillColor(sf::Color(255, 70, 60));  // 数字填充颜色：偏红
         dmgText.setOutlineThickness(3.f);  // 数字描边厚度：3 像素
-        dmgText.setOutlineColor(sf::Color(80, 20, 20));  // 数字描边颜色：深红棕色，增强对比度
+        dmgText.setOutlineColor(sf::Color(70, 10, 10));  // 数字描边颜色：深红，增强对比度
         const sf::FloatRect db = dmgText.getLocalBounds();  // 获取文本本地边界，用于计算中心点
         dmgText.setOrigin(sf::Vector2f(db.position.x + db.size.x * 0.5f, db.position.y + db.size.y * 0.5f));  // 将原点设置为文本中心，便于居中放置
         if (ev.is_player) {  // 如果是玩家受伤事件
             dmgText.setPosition(sf::Vector2f(playerDamageX + dx, damageY + dy));  // 在玩家左侧，多数字往左下方叠
             window.draw(dmgText);  // 绘制玩家受伤数字
-        } else if (ev.monster_index >= 0 && static_cast<size_t>(ev.monster_index) < monsterCenterXs.size()) {  // 否则是怪物受伤，且索引有效
-            const float mx = monsterCenterXs[static_cast<size_t>(ev.monster_index)] + monModelW * 0.5f + 20.f;  // 以对应怪物模型右侧为基准的 X 坐标
-            dmgText.setPosition(sf::Vector2f(mx + dx, damageY + dy));  // 把数字放在这个怪物右侧，多数字往右下方叠
+        } else if (ev.monster_index >= 0 && static_cast<size_t>(ev.monster_index) < monsterModelRects_.size()) {  // 否则是怪物受伤，且索引有效
+            const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(ev.monster_index)];
+            const float mx = mr.position.x + mr.size.x * 0.5f;
+            const float my = mr.position.y + mr.size.y * 0.35f; // 略靠上：更像“从身上蹦出来”
+
+            // 弧线蹦出→下坠：让时间更快走完，从而更快消失
+            float tf = t01 * 1.55f; // >1 表示更快结束
+            if (tf > 1.f) tf = 1.f;
+            const float e = 1.f - (1.f - tf) * (1.f - tf); // easeOutQuad
+
+            // 轨迹：x 方向轻微弧线偏移，y 方向先上后下（抛物线）
+            const float side = (idx % 2 == 0) ? 1.f : -1.f;
+            const float arcX = side * (10.f + 16.f * e) + side * 6.f * std::sin(3.1415926f * e);
+            // 注意：最高点高度约为 up^2/(4*fall)。如果 up 与 fall 等比例增大，肉眼提升会不明显。
+            // 这里用更高的 up + 相对较小的 fall，让“蹦起高度”更直观。
+            const float up = 260.f;    // 上冲强度（越大越高）
+            const float fall = 180.f;  // 下坠强度（越大越快落）
+            const float yArc = -(up * tf) + (fall * tf * tf); // tf≈0.28 附近到达最高点，之后下坠
+
+            // 缩放与透明：更快淡出/缩小
+            const float scale = 1.42f - 0.92f * e;
+            float alpha01 = 1.f - tf;
+            alpha01 = alpha01 * alpha01 * alpha01; // 更快收尾
+            const auto a = static_cast<std::uint8_t>(std::clamp(alpha01, 0.f, 1.f) * 255.f);
+            dmgText.setFillColor(sf::Color(255, 60, 60, a));
+            dmgText.setOutlineColor(sf::Color(70, 10, 10, a));
+            dmgText.setScale(sf::Vector2f(scale, scale));
+            dmgText.setPosition(sf::Vector2f(mx + dx + arcX, my + dy + yArc));
             window.draw(dmgText);  // 绘制怪物受伤数字
         }
     }

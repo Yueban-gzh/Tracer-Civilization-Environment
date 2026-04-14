@@ -1382,13 +1382,19 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             }
         }
 
-        if (!map_browse_overlay_active_ && !ui.is_deck_view_active() && !ui.is_card_select_active()
-            && !ui.is_reward_screen_active() && !battleEngine_.is_battle_over()) {
-            battleEngine_.step_turn_phase();
-        }
-
+        // 回合推进：在 PlayerTurnStart / EnemyTurnStart 时先播放中央提示（战斗开始/玩家回合/敌方回合），提示播完后再推进引擎逻辑。
+        // 这样可以实现：进入战斗→战斗开始→玩家回合1→发牌；结束回合→敌方回合→敌方行动→玩家回合N→发牌。
         BattleState state = battleEngine_.get_battle_state();
         BattleStateSnapshot snapshot = make_snapshot_from_core_refactor(state, &cardSystem_);
+        if (!map_browse_overlay_active_ && !ui.is_deck_view_active() && !ui.is_card_select_active()
+            && !ui.is_reward_screen_active() && !battleEngine_.is_battle_over()) {
+            const bool blockStep = ui.blocks_battle_engine_step(snapshot);
+            if (!blockStep) {
+                battleEngine_.step_turn_phase();
+                state = battleEngine_.get_battle_state();
+                snapshot = make_snapshot_from_core_refactor(state, &cardSystem_);
+            }
+        }
         tce::SnapshotBattleUIDataProvider adapter(&snapshot);
         ui.set_top_bar_map_floor(mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
         window_.clear(sf::Color(28, 26, 32));
