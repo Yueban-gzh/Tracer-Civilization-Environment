@@ -1,5 +1,4 @@
 #include "GameFlow/GameFlowController.hpp"
-#include "EventEngine/TreasureRoomLogic.hpp"
 
 #include <algorithm>
 #include <ctime>
@@ -362,22 +361,6 @@ void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
     }
 }
 
-void applyBattleTestMock(PlayerBattleState& p) {
-    if (std::find(p.relics.begin(), p.relics.end(), "burning_blood") == p.relics.end()) {
-        p.relics.push_back("burning_blood");
-    }
-    if (std::find(p.relics.begin(), p.relics.end(), "marble_bag") == p.relics.end()) {
-        p.relics.push_back("marble_bag");
-    }
-
-    p.statuses.erase(std::remove_if(p.statuses.begin(), p.statuses.end(),
-        [](const StatusInstance& s) { return s.id == "metallicize"; }),
-        p.statuses.end());
-    p.statuses.push_back(StatusInstance{"metallicize", 6, 3});
-
-    p.potions = {"poison_potion", "block_potion", "strength_potion"};
-}
-
 /** 战斗结束全屏遮罩：victory=true 为通关界面，false 为失败界面（视觉与文案不同）。 */
 void runPostBattleExitOverlay(sf::RenderWindow& window,
                               BattleUI& ui,
@@ -570,6 +553,8 @@ bool GameFlowController::initialize(CharacterClass cc) {
     seenEventRootsByLayer_.clear();
     hudBattleUi_.set_deck_view_active(false);
     hudBattleUi_.set_pause_menu_active(false);
+    hasPendingTreasureOutcome_     = false;
+    treasureOutcomeSnapshotValid_ = false;
 
     dataLayer_.load_cards("");
     dataLayer_.load_monsters("");
@@ -1034,7 +1019,6 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     const int mapPage = mapConfigManager_.getCurrentIndex();
     std::vector<MonsterId> monsters = dataLayer_.roll_monsters_for_battle(mapPage, nodeType, runRng_);
 
-    applyBattleTestMock(playerState_);
     battleEngine_.start_battle(monsters, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
     BattleUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
     if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
@@ -2430,7 +2414,21 @@ void GameFlowController::resolveMerchant() {
 }
 
 bool GameFlowController::runTreasureScene() {
-    const TreasureRoomOutcome tr = roll_and_resolve_treasure_room(runRng_, playerState_.relics);
+    struct TreasureSnapshotClearOnExit {
+        GameFlowController* self;
+        explicit TreasureSnapshotClearOnExit(GameFlowController* s) : self(s) {}
+        ~TreasureSnapshotClearOnExit() { self->treasureOutcomeSnapshotValid_ = false; }
+    } snapClear{this};
+
+    TreasureRoomOutcome tr{};
+    if (hasPendingTreasureOutcome_) {
+        tr                         = pendingTreasureOutcome_;
+        hasPendingTreasureOutcome_ = false;
+    } else {
+        tr = roll_and_resolve_treasure_room(runRng_, playerState_.relics);
+    }
+    treasureOutcomeSnapshot_       = tr;
+    treasureOutcomeSnapshotValid_  = true;
 
     std::string relicIconPath;
     if (!tr.relic_id.empty()) {

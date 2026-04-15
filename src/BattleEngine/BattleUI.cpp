@@ -278,6 +278,34 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         return s.energy >= effective_hand_card_energy_cost(cd, inst, &s);
     }
 
+    /** 忽略当前能量时是否仍满足「可尝试打出」的前置规则（用于区分「能量不足」与「不满足使用条件」） */
+    inline bool hand_index_playable_ignoring_energy(const BattleStateSnapshot& s, int handIdx) {
+        if (handIdx < 0 || static_cast<size_t>(handIdx) >= s.hand.size()) return false;
+        const CardData* cd = get_card_by_id(s.hand[static_cast<size_t>(handIdx)].id);
+        if (!cd) return true;
+        if (cd->unplayable) return false;
+        if (cd->cost == -2) return false;
+        if (cd->cost == -1) return true;
+        {
+            bool has_normality = false;
+            for (const auto& hc : s.hand) {
+                if (hc.id == "normality" || hc.id == "normality+") {
+                    has_normality = true;
+                    break;
+                }
+            }
+            if (has_normality && s.cardsPlayedThisTurn >= 3)
+                return false;
+        }
+        {
+            const std::string& hid = s.hand[static_cast<size_t>(handIdx)].id;
+            if (hid == "grand_finale" || hid == "grand_finale+") {
+                if (s.drawPileSize > 0) return false;
+            }
+        }
+        return true;
+    }
+
     namespace { // 文件内匿名命名空间；像素常量按 1920×1080 设计（与 BattleUI::kDesignWidth/Height 一致）
         constexpr float TOP_BAR_BG_H = 72.f;       // 顶栏高度 72 像素
         constexpr float TOP_ROW_Y = 20.f;            // 顶栏内容起始 Y 坐标
@@ -1914,7 +1942,19 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         for (size_t i = 0; i < monsterModelRects_.size(); ++i) {
                             if (monsterModelRects_[i].contains(mousePos)) {
                                 if (!can_pay_selected_card_cost()) {
-                                    show_center_tip(L"能量不足", 1.2f);
+                                    if (lastSnapshot_ && selectedHandIndex_ >= 0
+                                        && static_cast<size_t>(selectedHandIndex_) < lastSnapshot_->hand.size()) {
+                                        const CardData* cd =
+                                            get_card_by_id(lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id);
+                                        if (cd && (cd->unplayable || cd->cost == -2))
+                                            show_center_tip(L"无法打出", 1.2f);
+                                        else if (hand_index_playable_ignoring_energy(*lastSnapshot_, selectedHandIndex_))
+                                            show_center_tip(L"能量不足", 1.2f);
+                                        else
+                                            show_center_tip(L"不满足使用条件", 1.2f);
+                                    } else {
+                                        show_center_tip(L"能量不足", 1.2f);
+                                    }
                                     return false;
                                 }
                                 pendingPlayHandIndex_ = selectedHandIndex_;
@@ -1929,7 +1969,19 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         // 自选（玩家）目标牌：鼠标离开原位矩形且玩家模型黄框时点击，视为对玩家使用
                         if (!selectedCardInsideOriginRect_) {
                             if (!can_pay_selected_card_cost()) {
-                                show_center_tip(L"能量不足", 1.2f);
+                                if (lastSnapshot_ && selectedHandIndex_ >= 0
+                                    && static_cast<size_t>(selectedHandIndex_) < lastSnapshot_->hand.size()) {
+                                    const CardData* cd =
+                                        get_card_by_id(lastSnapshot_->hand[static_cast<size_t>(selectedHandIndex_)].id);
+                                    if (cd && (cd->unplayable || cd->cost == -2))
+                                        show_center_tip(L"无法打出", 1.2f);
+                                    else if (hand_index_playable_ignoring_energy(*lastSnapshot_, selectedHandIndex_))
+                                        show_center_tip(L"能量不足", 1.2f);
+                                    else
+                                        show_center_tip(L"不满足使用条件", 1.2f);
+                                } else {
+                                    show_center_tip(L"能量不足", 1.2f);
+                                }
                                 return false;
                             }
                             pendingPlayHandIndex_ = selectedHandIndex_;
@@ -2970,8 +3022,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         // 6. 药水栏：槽位矩形保持未动画（供点击/提示命中）；绘制时按 hover_potion_slot_ 插值放大上移
         const int potionSlotCount = std::max(1, std::min(5, s.potionSlotCount));  // 1~5 槽
-        const float potionW = 48.f;
-        const float potionH = 40.f;
+        const float potionW = 56.f;
+        const float potionH = 46.f;
         const float potionGap = 14.f;
         const float potionStartX = x;
         potionSlotRects_.clear();
@@ -3218,11 +3270,16 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 遗物与药水奖励（显示在金币下方，各 40% 概率，互不冲突）
         rewardRowY = (reward_gold_ > 0) ? (panelY + 168.f) : (panelY + 120.f);
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
-            constexpr float REWARD_ICON_SZ = 48.f;
+            constexpr float REWARD_RELIC_ICON_SZ = 48.f;
+            constexpr float REWARD_POTION_ICON_SZ = 56.f;
             constexpr float REWARD_ICON_GAP = 12.f;
-            const float total = static_cast<float>(reward_relic_ids_.size() + reward_potion_ids_.size());
-            float x = panelX + panelW * 0.5f - (total
-                * (REWARD_ICON_SZ + REWARD_ICON_GAP) - REWARD_ICON_GAP) * 0.5f;
+            const size_t nr = reward_relic_ids_.size();
+            const size_t np = reward_potion_ids_.size();
+            const float rowW =
+                static_cast<float>(nr) * (REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP)
+                + static_cast<float>(np) * (REWARD_POTION_ICON_SZ + REWARD_ICON_GAP);
+            float x = panelX + panelW * 0.5f
+                - ((nr + np) > 0 ? (rowW - REWARD_ICON_GAP) * 0.5f : 0.f);
 
             // 刷新点击矩形 + hover 容器
             reward_relic_rects_.clear();
@@ -3232,7 +3289,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
             for (const auto& rid : reward_relic_ids_) {
                 const size_t idx = reward_relic_rects_.size();
-                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY), sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
+                    sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
                 reward_relic_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_relic_[idx] = ui_hover_lerp(hover_reward_relic_[idx], over ? 1.f : 0.f, dtHover);
@@ -3241,7 +3299,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
                 // 图标底板
                 {
-                    sf::RectangleShape back(sf::Vector2f(REWARD_ICON_SZ + 10.f + grow * 2.f, REWARD_ICON_SZ + 10.f + grow * 2.f));
+                    sf::RectangleShape back(sf::Vector2f(
+                        REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f, REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(230, 210, 150, 245) : sf::Color(160, 140, 110, 220));
@@ -3252,11 +3311,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 if (rit != relicTextures_.end()) {
                     sf::Sprite spr(rit->second);
                     spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_ICON_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
+                    float scale = REWARD_RELIC_ICON_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
                     spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(120, 80, 100));
                     icon.setOutlineColor(sf::Color(180, 100, 120));
@@ -3267,20 +3326,22 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(220, 200, 210));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_ICON_SZ * 0.5f, rewardRowY + REWARD_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_RELIC_ICON_SZ * 0.5f, rewardRowY + REWARD_RELIC_ICON_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP;
             }
             for (const auto& pid : reward_potion_ids_) {
                 const size_t idx = reward_potion_rects_.size();
-                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY), sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
+                    sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
                 reward_potion_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_potion_[idx] = ui_hover_lerp(hover_reward_potion_[idx], over ? 1.f : 0.f, dtHover);
                 const float h01 = hover_reward_potion_[idx];
                 const float grow = 3.f * h01;
                 {
-                    sf::RectangleShape back(sf::Vector2f(REWARD_ICON_SZ + 10.f + grow * 2.f, REWARD_ICON_SZ + 10.f + grow * 2.f));
+                    sf::RectangleShape back(sf::Vector2f(
+                        REWARD_POTION_ICON_SZ + 10.f + grow * 2.f, REWARD_POTION_ICON_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(190, 220, 255, 245) : sf::Color(110, 140, 180, 220));
@@ -3291,11 +3352,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 if (pit != potionTextures_.end()) {
                     sf::Sprite spr(pit->second);
                     spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_ICON_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
+                    float scale = REWARD_POTION_ICON_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
                     spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_ICON_SZ, REWARD_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(80, 100, 140));
                     icon.setOutlineColor(sf::Color(120, 150, 200));
@@ -3306,11 +3367,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(200, 210, 230));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_ICON_SZ * 0.5f, rewardRowY + REWARD_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_POTION_ICON_SZ * 0.5f, rewardRowY + REWARD_POTION_ICON_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_POTION_ICON_SZ + REWARD_ICON_GAP;
             }
-            rewardRowY += REWARD_ICON_SZ + 28.f;
+            rewardRowY += std::max(REWARD_RELIC_ICON_SZ, REWARD_POTION_ICON_SZ) + 28.f;
         }
 
         // 奖励区整体下移：避免卡牌/提示与遗物/药水行发生重叠
@@ -5748,8 +5809,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     const CardData* cd = get_card_by_id(s.hand[static_cast<size_t>(hoverIndex)].id);
                     if (cd && (cd->unplayable || cd->cost == -2))
                         show_center_tip(L"无法打出", 1.2f);
-                    else
+                    else if (hand_index_playable_ignoring_energy(s, hoverIndex))
                         show_center_tip(L"能量不足", 1.2f);
+                    else
+                        show_center_tip(L"不满足使用条件", 1.2f);
                     return;
                 }
                 selectedHandIndex_ = hoverIndex;

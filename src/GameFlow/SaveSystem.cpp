@@ -108,7 +108,9 @@ bool GameFlowController::saveRun(const std::string& path) const {
         //
         // 例外：若在“战斗胜利奖励界面”存档，则需要能读档回到奖励界面而不重新战斗，
         // 因此此时必须写入当前实时状态（含牌组/药水等变更与奖励候选）。
-        const bool useCheckpoint = checkpointValid_ && lastSceneForSave_ != LastSceneKind::BattleReward;
+        // 宝箱房同理：进入房间时已消耗 RNG 得到固定结果，若仍写检查点 RNG，读档后会再 roll 一次导致遗物不一致。
+        const bool useCheckpoint = checkpointValid_ && lastSceneForSave_ != LastSceneKind::BattleReward
+            && lastSceneForSave_ != LastSceneKind::Treasure;
         const uint64_t rng_state = useCheckpoint ? checkpointRunRngState_ : runRng_.get_state();
         const int current_layer = useCheckpoint ? checkpointCurrentLayer_ : mapEngine_.get_current_layer();
         const std::string current_node_id = useCheckpoint ? checkpointCurrentNodeId_ : "";
@@ -236,6 +238,34 @@ bool GameFlowController::saveRun(const std::string& path) const {
                 out << "\"" << json_escape(savedBattleRewardPotionOffers_[i]) << "\"";
             }
             out << "]\n";
+            out << "  },\n";
+        }
+
+        // 宝箱房：固定本次已随机出的内容（读档后不重 roll）
+        if (lastSceneForSave_ == LastSceneKind::Treasure && treasureOutcomeSnapshotValid_) {
+            const TreasureRoomOutcome& t = treasureOutcomeSnapshot_;
+            auto chestStr = [](TreasureChestKind k) -> const char* {
+                switch (k) {
+                case TreasureChestKind::Small: return "Small";
+                case TreasureChestKind::Medium: return "Medium";
+                case TreasureChestKind::Large:
+                default: return "Large";
+                }
+            };
+            auto tierStr = [](TreasureRelicTier r) -> const char* {
+                switch (r) {
+                case TreasureRelicTier::Common: return "Common";
+                case TreasureRelicTier::Uncommon: return "Uncommon";
+                case TreasureRelicTier::Rare:
+                default: return "Rare";
+                }
+            };
+            out << "  \"treasure_room\": {\n";
+            out << "    \"chest_kind\": \"" << chestStr(t.chest_kind) << "\",\n";
+            out << "    \"relic_tier\": \"" << tierStr(t.relic_tier) << "\",\n";
+            out << "    \"grants_gold\": " << (t.grants_gold ? "true" : "false") << ",\n";
+            out << "    \"gold_amount\": " << t.gold_amount << ",\n";
+            out << "    \"relic_id\": \"" << json_escape(t.relic_id) << "\"\n";
             out << "  },\n";
         }
 
@@ -430,6 +460,55 @@ bool GameFlowController::loadRun(const std::string& path) {
                 }
                 if (const auto* arr = br->get_key("potion_offers"); arr && arr->is_array()) {
                     for (const auto& e : arr->arr) if (e.is_string()) savedBattleRewardPotionOffers_.push_back(e.s);
+                }
+            }
+        }
+
+        // 宝箱房：读档后使用存档内已固定的结果，避免再次 roll
+        hasPendingTreasureOutcome_ = false;
+        if (sceneAfterLoad_ == LastSceneKind::Treasure) {
+            if (const auto* tro = root.get_key("treasure_room"); tro && tro->is_object()) {
+                TreasureRoomOutcome tout;
+                bool chestOk = false;
+                if (const auto* k = tro->get_key("chest_kind"); k && k->is_string()) {
+                    if (k->s == "Small") {
+                        tout.chest_kind = TreasureChestKind::Small;
+                        chestOk         = true;
+                    } else if (k->s == "Medium") {
+                        tout.chest_kind = TreasureChestKind::Medium;
+                        chestOk         = true;
+                    } else if (k->s == "Large") {
+                        tout.chest_kind = TreasureChestKind::Large;
+                        chestOk         = true;
+                    }
+                }
+                bool tierOk = false;
+                if (const auto* k = tro->get_key("relic_tier"); k && k->is_string()) {
+                    if (k->s == "Common") {
+                        tout.relic_tier = TreasureRelicTier::Common;
+                        tierOk          = true;
+                    } else if (k->s == "Uncommon") {
+                        tout.relic_tier = TreasureRelicTier::Uncommon;
+                        tierOk          = true;
+                    } else if (k->s == "Rare") {
+                        tout.relic_tier = TreasureRelicTier::Rare;
+                        tierOk          = true;
+                    }
+                }
+                if (const auto* k = tro->get_key("grants_gold"); k && k->is_bool())
+                    tout.grants_gold = k->b;
+                else
+                    tout.grants_gold = false;
+                if (const auto* k = tro->get_key("gold_amount"); k && k->is_int())
+                    tout.gold_amount = k->i;
+                else
+                    tout.gold_amount = 0;
+                tout.relic_id.clear();
+                if (const auto* k = tro->get_key("relic_id"); k && k->is_string())
+                    tout.relic_id = k->s;
+                if (chestOk && tierOk) {
+                    pendingTreasureOutcome_    = tout;
+                    hasPendingTreasureOutcome_ = true;
                 }
             }
         }

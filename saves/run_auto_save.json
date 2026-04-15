@@ -1,9 +1,35 @@
 {
-  "schema_version": 1,
-  "run_rng_state": "16483435313299636534",
+  "schema_version": 2,
+  "run_rng_state": "2091409917830381447",
   "map": {
-    "current_layer": 0,
-    "current_node_id": "0-1"
+    "page_index": 0,
+    "total_layers": 12,
+    "current_layer": 5,
+    "current_node_id": "",
+    "nodes": [
+      {"id":"0-0","type":"Enemy","content_id":"content_0_0-0","layer":0,"px":99297,"py":98000,"prev":[],"next":["1-1","1-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"1-0","type":"Event","content_id":"content_2_1-0","layer":1,"px":87043,"py":78500,"prev":["0-0"],"next":["2-0","2-1"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"1-1","type":"Enemy","content_id":"content_0_1-1","layer":1,"px":114043,"py":74000,"prev":["0-0"],"next":["2-1"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"2-0","type":"Enemy","content_id":"content_0_2-0","layer":2,"px":82202,"py":56100,"prev":["1-0"],"next":["3-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"2-1","type":"Enemy","content_id":"content_0_2-1","layer":2,"px":109202,"py":56900,"prev":["1-0","1-1"],"next":["3-1"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"3-0","type":"Rest","content_id":"content_3_3-0","layer":3,"px":79338,"py":31900,"prev":["2-0"],"next":["4-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"3-1","type":"Rest","content_id":"content_3_3-1","layer":3,"px":112631,"py":37700,"prev":["2-1"],"next":["4-1"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"4-0","type":"Event","content_id":"content_2_4-0","layer":4,"px":83277,"py":14600,"prev":["3-0"],"next":["5-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"4-1","type":"Enemy","content_id":"content_0_4-1","layer":4,"px":110787,"py":18400,"prev":["3-1"],"next":["5-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"10-0","type":"Rest","content_id":"content_3_10-0","layer":10,"px":95899,"py":-107100,"prev":["9-0"],"next":["11-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"5-0","type":"Treasure","content_id":"content_5_5-0","layer":5,"px":98575,"py":-3500,"prev":["4-0","4-1"],"next":["6-1","6-0","6-2"],"is_visited":true,"is_current":true,"is_reachable":true,"is_completed":true},
+      {"id":"6-0","type":"Enemy","content_id":"content_0_6-0","layer":6,"px":73384,"py":-27100,"prev":["5-0"],"next":["7-0","7-1"],"is_visited":false,"is_current":false,"is_reachable":true,"is_completed":false},
+      {"id":"6-1","type":"Enemy","content_id":"content_0_6-1","layer":6,"px":100384,"py":-21000,"prev":["5-0"],"next":["7-1"],"is_visited":false,"is_current":false,"is_reachable":true,"is_completed":false},
+      {"id":"6-2","type":"Enemy","content_id":"content_0_6-2","layer":6,"px":127384,"py":-26600,"prev":["5-0"],"next":["7-2"],"is_visited":false,"is_current":false,"is_reachable":true,"is_completed":false},
+      {"id":"7-0","type":"Elite","content_id":"content_1_7-0","layer":7,"px":71411,"py":-49500,"prev":["6-0"],"next":["8-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"7-1","type":"Enemy","content_id":"content_0_7-1","layer":7,"px":98411,"py":-42700,"prev":["6-0","6-1"],"next":["8-1","8-2"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"7-2","type":"Enemy","content_id":"content_0_7-2","layer":7,"px":125411,"py":-44700,"prev":["6-2"],"next":["8-2"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"8-0","type":"Event","content_id":"content_2_8-0","layer":8,"px":67832,"py":-69200,"prev":["7-0"],"next":["9-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"8-1","type":"Enemy","content_id":"content_0_8-1","layer":8,"px":94832,"py":-68900,"prev":["7-1"],"next":["9-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"8-2","type":"Event","content_id":"content_2_8-2","layer":8,"px":121832,"py":-63200,"prev":["7-1","7-2"],"next":["9-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"9-0","type":"Enemy","content_id":"content_0_9-0","layer":9,"px":95529,"py":-86900,"prev":["8-0","8-1","8-2"],"next":["10-0"],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false},
+      {"id":"11-0","type":"Boss","content_id":"content_6_11-0","layer":11,"px":96051,"py":-144500,"prev":["10-0"],"next":[],"is_visited":false,"is_current":false,"is_reachable":false,"is_completed":false}
+    ]
   },
   "player": {
     "name": "Telys",
@@ -14,9 +40,16 @@
     "gold": 99,
     "max_energy": 3,
     "potion_slots": 3,
-    "potions": ["poison_potion", "block_potion", "strength_potion"],
+    "potions": [],
     "relics": ["burning_blood"],
-    "master_deck": ["armaments", "exhume", "burning_pact", "true_grit", "survivor", "acrobatics", "flame_barrier", "second_wind", "spot_weakness", "prepared", "all_out_attack", "calculated_gamble", "concentrate", "piercing_wail", "sneaky_strike", "venomology", "noxious_fumes", "reflex", "tactician", "tools_of_the_trade", "well_laid_plans"]
+    "master_deck": ["strike", "strike", "strike", "strike", "strike", "defend", "defend", "defend", "defend", "bash"]
   },
-  "last_scene": "battle"
+  "treasure_room": {
+    "chest_kind": "Medium",
+    "relic_tier": "Common",
+    "grants_gold": true,
+    "gold_amount": 45,
+    "relic_id": "ceramic_fish"
+  },
+  "last_scene": "treasure"
 }

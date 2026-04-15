@@ -21,6 +21,7 @@ struct ContextSettings;
 #include "MapEngine/MapConfig.hpp"
 #include "MapEngine/MapEngine.hpp"
 #include "MapEngine/MapUI.hpp"
+#include "EventEngine/TreasureRoomLogic.hpp"
 
 namespace tce {
 
@@ -127,6 +128,14 @@ private:
     std::vector<std::string> savedBattleRewardCards_;
     std::vector<std::string> savedBattleRewardRelicOffers_;
     std::vector<std::string> savedBattleRewardPotionOffers_;
+
+    /** 读档进入宝箱房：使用存档中已固定的随机结果，不再 roll（与 battle_reward 同理）。 */
+    bool                hasPendingTreasureOutcome_ = false;
+    TreasureRoomOutcome pendingTreasureOutcome_{};
+
+    /** 当前宝箱界面已确定的结算（const saveRun 序列化用）；离开房间后清除。 */
+    mutable bool                treasureOutcomeSnapshotValid_ = false;
+    mutable TreasureRoomOutcome treasureOutcomeSnapshot_{};
 
     // 从暂停菜单“保存并退出”返回开始界面，而不是直接关游戏
     bool exitToStartRequested_ = false;
