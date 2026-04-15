@@ -25,7 +25,7 @@ std::wstring relic_name_w(const std::string& id) {
         {"happy_flower", L"开心小花"},         {"lantern", L"灯笼"},
         {"smooth_stone", L"意外光滑的石头"},   {"orichalcum", L"奥利哈钢"},
         {"red_skull", L"红头骨"},             {"snake_skull", L"异蛇头骨"},
-        {"strawberry", L"草莓"},               {"potion_belt", L"药水腰带"},
+        {"strawberry", L"草莓"},               {"potion_belt", L"灵液腰带"},
         {"vajra", L"金刚杵"},                  {"nunchaku", L"双截棍"},
         {"ceramic_fish", L"陶瓷小鱼"},         {"hand_drum", L"手摇鼓"},
         {"pen_nib", L"钢笔尖"},               {"toy_ornithopter", L"玩具扑翼飞机"},
@@ -110,7 +110,7 @@ void draw_relic_combo_strip(sf::RenderWindow& window, const sf::Font& font,
     window.draw(nameText);
 }
 
-/** 仅遗物/药水占左栏时的居中展示 */
+/** 仅遗物/灵液占左栏时的居中展示 */
 void draw_event_item_solo(sf::RenderWindow& window, const sf::Font& font,
     float cx, float topY, float regionH, float regionW,
     const std::string& itemId, const sf::Texture* tex, unsigned bodySize, bool isRelic) {

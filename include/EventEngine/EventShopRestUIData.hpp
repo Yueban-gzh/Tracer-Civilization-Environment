@@ -44,7 +44,7 @@ struct ShopRelicOffer {
     int price = 0;
 };
 
-/** 商店药剂槽位 */
+/** 商店灵液槽位 */
 struct ShopPotionOffer {
     std::string id;
     std::wstring name;

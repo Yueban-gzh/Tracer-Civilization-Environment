@@ -107,7 +107,7 @@ bool GameFlowController::saveRun(const std::string& path) const {
         // 避免通过 SL 刷宝箱内容/事件结果（房间内 RNG 消耗不写入存档）。
         //
         // 例外：若在“战斗胜利奖励界面”存档，则需要能读档回到奖励界面而不重新战斗，
-        // 因此此时必须写入当前实时状态（含牌组/药水等变更与奖励候选）。
+        // 因此此时必须写入当前实时状态（含牌组/灵液等变更与奖励候选）。
         const bool useCheckpoint = checkpointValid_ && lastSceneForSave_ != LastSceneKind::BattleReward;
         const uint64_t rng_state = useCheckpoint ? checkpointRunRngState_ : runRng_.get_state();
         const int current_layer = useCheckpoint ? checkpointCurrentLayer_ : mapEngine_.get_current_layer();

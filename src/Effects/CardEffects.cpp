@@ -740,7 +740,7 @@ void effect_panache(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("panache", is_upgraded ? 14 : 10, -1);
 }
 
-// 炼制药水：获得一瓶随机药水（药水栏满则无效果）
+// 炼制灵液：获得一瓶随机灵液（灵液栏满则无效果）
 void effect_venomology(EffectContext& ctx, bool /*is_upgraded*/) {
     (void)ctx.grant_random_potion();
 }

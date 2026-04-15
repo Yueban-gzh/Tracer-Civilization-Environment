@@ -59,7 +59,7 @@ public:
     bool pollShopPayRemoveService();
     /** 是否购买遗物；若 true，outIndex 为 relicsForSale 下标 */
     bool pollShopBuyRelic(int& outIndex);
-    /** 是否购买药剂；若 true，outIndex 为 potionsForSale 下标 */
+    /** 是否购买灵液；若 true，outIndex 为 potionsForSale 下标 */
     bool pollShopBuyPotion(int& outIndex);
     /** 是否点击边缘「离开」离开商店 */
     bool pollShopLeave();
@@ -78,6 +78,8 @@ private:
     void drawRestForgeUpgradeConfirmOverlay(sf::RenderWindow& window);
     /** 商店净简选牌后「移除确认」：单卡放大预览（在 drawShopScreen 删牌页内调用） */
     void drawShopRemoveConfirmOverlay(sf::RenderWindow& window);
+    /** 商店购牌确认：单卡放大预览 + 确认/返回（在 drawShopScreen 商品页内调用） */
+    void drawShopBuyConfirmOverlay(sf::RenderWindow& window);
     /** 成功加载普通事件插图时写入，供结果页/预览缺省时不留白 */
     void syncEventIllustrationSceneBackup(const std::string& path);
     void drawPanel(sf::RenderWindow& window, float centerX, float centerY, float w, float h);
@@ -90,7 +92,7 @@ private:
         float regionBottom, float clipTop, float clipBottom, float scale, unsigned bodySize, float layoutW,
         float layoutH, float& scrollOffset, float& scrollMax, float& cardScrollStep,
         std::vector<sf::FloatRect>& outHitRects, sf::FloatRect& outListViewportRect, bool previewUpgrade,
-        bool forgeOrangeHover, bool showCardDescription);
+        bool forgeOrangeHover, bool showCardDescription, int cols = 5);
     bool clickInRect(const sf::Vector2f& pos, const sf::FloatRect& r) const;
 
     unsigned width_;
@@ -151,6 +153,11 @@ private:
     InstanceId shopRemoveConfirmInstanceId_ = 0;
     sf::FloatRect shopRemoveConfirmBackRect_;
     sf::FloatRect shopRemoveConfirmOkRect_;
+    bool shopBuyConfirmOpen_ = false;
+    CardId shopBuyConfirmCardId_;
+    int shopBuyConfirmPrice_ = 0;
+    sf::FloatRect shopBuyConfirmBackRect_;
+    sf::FloatRect shopBuyConfirmOkRect_;
     sf::FloatRect restHealButton_;
     sf::FloatRect restUpgradeChoiceButton_;  // 「升级」大按钮（进入选牌前）
     sf::FloatRect restBackButton_;           // 升级列表中「返回」

@@ -60,7 +60,7 @@ void draw_card_tile(sf::RenderWindow& window, const sf::Font& font, const sf::Ve
         window.draw(hi);
     }
 
-    std::wstring priceStr = std::to_wstring(price) + L" 文钱";
+    std::wstring priceStr = std::to_wstring(price) + L" 金币";
     sf::Text priceText(font, sf::String(priceStr), shopPriceFont);
     priceText.setFillColor(canAfford ? sf::Color(255, 220, 120) : sf::Color(160, 150, 140));
     const sf::FloatRect pb = priceText.getLocalBounds();
@@ -134,7 +134,7 @@ void draw_icon_offer(sf::RenderWindow& window, const sf::Font& font, const sf::V
     if (iconTexture && iconTexture->getSize().x > 0 && iconTexture->getSize().y > 0) {
         sf::Sprite icon(*iconTexture);
         const sf::Vector2u ts = iconTexture->getSize();
-        // 商店遗物/药水改为纯图标展示：去外框，并略微放大图标
+        // 商店遗物/灵液改为纯图标展示：去外框，并略微放大图标
         const float innerPad = std::max(1.5f, std::min(rect.size.x, rect.size.y) * 0.04f);
         const float targetW = std::max(6.f, rect.size.x - innerPad * 2.f);
         const float targetH = std::max(6.f, rect.size.y - innerPad * 2.f);
@@ -187,7 +187,7 @@ void EventShopRestUI::drawMasterDeckCardPickGrid(sf::RenderWindow& window,
     float contentW, float regionTop, float regionBottom, float clipTop, float clipBottom, float scale,
     unsigned bodySize, float layoutW, float layoutH, float& scrollOffset, float& scrollMax, float& cardScrollStep,
     std::vector<sf::FloatRect>& outHitRects, sf::FloatRect& outListViewportRect, bool previewUpgrade,
-    bool forgeOrangeHover, bool showCardDescription) {
+    bool forgeOrangeHover, bool showCardDescription, int cols) {
     constexpr float kCardAspect = 300.f / 206.f;
     float listTop = regionTop;
     if (drawTipLine && !tipText.isEmpty()) {
@@ -204,7 +204,7 @@ void EventShopRestUI::drawMasterDeckCardPickGrid(sf::RenderWindow& window,
     const float listH = std::max(50.f, listBottom - listTopClamped);
     outListViewportRect = sf::FloatRect(sf::Vector2f(contentLeft, listTopClamped), sf::Vector2f(contentW, listH));
 
-    constexpr int kCols = 5;
+    const int kCols = std::max(1, cols);
     const float sidePadX = 18.f * scale;
     const float gapX = 16.f * scale;
     const float gapY = 14.f * scale;
@@ -429,7 +429,7 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
         drawMasterDeckCardPickGrid(window, shopData_.deckForRemove, sf::String(L"请选择一张卡牌进行移除"), true,
             contentLeft, contentW, pageTop, pageBottom, clipTop, clipBottom, scale, bodySize, lw, lh,
             shopDeckScrollOffset_, shopDeckScrollMax_, eventCardScrollStep_, shopRemoveRects_, shopDeckAreaRect_,
-            false, true, true);
+            false, true, true, 3);
 
         drawLeaveButton();
         if (shopRemoveConfirmOpen_) drawShopRemoveConfirmOverlay(window);
@@ -729,6 +729,8 @@ void EventShopRestUI::drawShopScreen(sf::RenderWindow& window) {
 
     // StS：离开贴在面板左缘外侧偏下（侧挂），略压边框形成「咬住」感
     drawLeaveButton();
+
+    if (shopBuyConfirmOpen_) drawShopBuyConfirmOverlay(window);
 }
 
 namespace {
@@ -987,6 +989,96 @@ void EventShopRestUI::drawShopRemoveConfirmOverlay(sf::RenderWindow& window) {
     draw_outline_checkmark(window, okCenter, okEm, sf::Color(255, 255, 250));
     draw_outline_checkmark(window, okCenter + sf::Vector2f(1.f, 0.f), okEm, sf::Color(255, 255, 250));
     draw_outline_checkmark(window, okCenter + sf::Vector2f(-1.f, 0.f), okEm, sf::Color(255, 255, 250));
+}
+
+void EventShopRestUI::drawShopBuyConfirmOverlay(sf::RenderWindow& window) {
+    if (!shopBuyConfirmOpen_ || shopBuyConfirmCardId_.empty()) return;
+    const CardData* cd = get_card_by_id(shopBuyConfirmCardId_);
+    if (!cd) return;
+
+    const sf::Vector2f vsz = window.getView().getSize();
+    const float lw = std::max(1.f, vsz.x);
+    const float lh = std::max(1.f, vsz.y);
+
+    sf::RectangleShape dim2(sf::Vector2f(lw, lh));
+    dim2.setPosition(sf::Vector2f(0.f, 0.f));
+    dim2.setFillColor(sf::Color(5, 4, 8, 195));
+    window.draw(dim2);
+
+    const float scale = std::clamp(lw / 780.f, 0.78f, 1.4f);
+    const unsigned bodySize = static_cast<unsigned>(std::round(BODY_CHAR_SIZE * scale));
+
+    sf::Text title(fontForText(), sf::String(L"购牌确认"), static_cast<unsigned>(bodySize + 8u));
+    title.setFillColor(sf::Color(255, 230, 180));
+    title.setOutlineColor(sf::Color(20, 16, 12));
+    title.setOutlineThickness(1.f);
+    const sf::FloatRect titleBounds = title.getLocalBounds();
+    title.setOrigin(
+        sf::Vector2f(titleBounds.position.x + titleBounds.size.x * 0.5f, titleBounds.position.y + titleBounds.size.y * 0.5f));
+    title.setPosition(sf::Vector2f(lw * 0.5f, 42.f));
+    window.draw(title);
+
+    constexpr float kBattleCardW = 206.f;
+    constexpr float kBattleCardH = 300.f;
+    const float cardMul = 1.42f;
+    const float cardW = kBattleCardW * scale * cardMul;
+    const float cardH = kBattleCardH * scale * cardMul;
+    const float centerY = lh * 0.43f;
+    const sf::FloatRect cardRect(sf::Vector2f(lw * 0.5f - cardW * 0.5f, centerY - cardH * 0.5f),
+        sf::Vector2f(cardW, cardH));
+    bool hoverPreview = false;
+    draw_battle_card_tile_no_price(window, fontForText(), mousePos_, shopBuyConfirmCardId_,
+        utf8_to_wstring(cd->name), cardRect, hoverPreview, true, true, false, true);
+
+    std::wstring hintStr = L"确认花费 " + std::to_wstring(std::max(0, shopBuyConfirmPrice_)) + L" 金币购买此卡？";
+    sf::Text hint(fontForText(), sf::String(hintStr), static_cast<unsigned>(bodySize + 2u));
+    hint.setFillColor(sf::Color(248, 240, 220));
+    hint.setOutlineColor(sf::Color(20, 18, 24));
+    hint.setOutlineThickness(1.f);
+    const sf::FloatRect hb = hint.getLocalBounds();
+    hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+    hint.setPosition(sf::Vector2f(lw * 0.5f, lh - 58.f));
+    window.draw(hint);
+
+    constexpr float kBottomBand = 96.f;
+    constexpr float kSideMargin = 40.f;
+    const float backW = 118.f;
+    const float backH = 44.f;
+    const float backLeft = kSideMargin;
+    const float bandY = lh - kBottomBand;
+    const float backTop = bandY + (kBottomBand - backH) * 0.5f;
+    shopBuyConfirmBackRect_ = sf::FloatRect(sf::Vector2f(backLeft, backTop), sf::Vector2f(backW, backH));
+    const bool backHover = shopBuyConfirmBackRect_.contains(mousePos_);
+    sf::RectangleShape backBtn(shopBuyConfirmBackRect_.size);
+    backBtn.setPosition(shopBuyConfirmBackRect_.position);
+    backBtn.setFillColor(backHover ? sf::Color(155, 42, 38) : sf::Color(128, 36, 32));
+    backBtn.setOutlineThickness(2.f);
+    backBtn.setOutlineColor(sf::Color(220, 160, 120));
+    window.draw(backBtn);
+    sf::Text backLab(fontForText(), sf::String(L"← 返回"), static_cast<unsigned>(std::max(14u, bodySize - 1u)));
+    backLab.setFillColor(sf::Color(255, 248, 238));
+    const sf::FloatRect br = backLab.getLocalBounds();
+    backLab.setOrigin(sf::Vector2f(br.position.x + br.size.x * 0.5f, br.position.y + br.size.y * 0.5f));
+    backLab.setPosition(sf::Vector2f(backLeft + backW * 0.5f, backTop + backH * 0.5f));
+    window.draw(backLab);
+
+    const float okW = 118.f;
+    const float okH = 44.f;
+    const float okLeft = lw - kSideMargin - okW;
+    shopBuyConfirmOkRect_ = sf::FloatRect(sf::Vector2f(okLeft, backTop), sf::Vector2f(okW, okH));
+    const bool okHover = shopBuyConfirmOkRect_.contains(mousePos_);
+    sf::RectangleShape okBtn(shopBuyConfirmOkRect_.size);
+    okBtn.setPosition(shopBuyConfirmOkRect_.position);
+    okBtn.setFillColor(okHover ? sf::Color(72, 195, 178) : sf::Color(48, 155, 142));
+    okBtn.setOutlineThickness(2.f);
+    okBtn.setOutlineColor(sf::Color(180, 255, 240));
+    window.draw(okBtn);
+    sf::Text okLab(fontForText(), sf::String(L"确认"), static_cast<unsigned>(std::max(15u, bodySize)));
+    okLab.setFillColor(sf::Color(255, 255, 250));
+    const sf::FloatRect ob = okLab.getLocalBounds();
+    okLab.setOrigin(sf::Vector2f(ob.position.x + ob.size.x * 0.5f, ob.position.y + ob.size.y * 0.5f));
+    okLab.setPosition(sf::Vector2f(okLeft + okW * 0.5f, backTop + okH * 0.5f));
+    window.draw(okLab);
 }
 
 } // namespace tce

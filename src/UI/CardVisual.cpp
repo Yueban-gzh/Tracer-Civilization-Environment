@@ -4,6 +4,7 @@
 #include "UI/CardVisual.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
 #include "CardSystem/CardSystem.hpp"
+#include "Common/ImagePath.hpp"
 #include "DataLayer/DataLayer.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <cstdio>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace tce {
@@ -421,6 +423,23 @@ void draw_detailed_card_at(sf::RenderWindow& window, const sf::Font& fontZh, con
             artPath = cd->art;
         } else if (const CardData* baseCd = get_card_by_id(base_id_for_art_fallback(card_id)); baseCd && !baseCd->art.empty()) {
             artPath = baseCd->art;
+        }
+
+        if (artPath.empty()) {
+            // 兼容 cards.json 未填写 art 的情况：按卡牌 id 自动回退到 assets/cards/<id>.(png/jpg/...)
+            std::vector<std::string> fallbackIds;
+            fallbackIds.push_back(card_id);
+            fallbackIds.push_back(base_id_for_art_fallback(card_id));
+            fallbackIds.push_back(base_art_key(card_id));
+            std::unordered_set<std::string> seen;
+            for (const auto& id : fallbackIds) {
+                if (id.empty() || !seen.insert(id).second) continue;
+                const std::string resolved = resolve_image_path("assets/cards/" + id);
+                if (!resolved.empty()) {
+                    artPath = resolved;
+                    break;
+                }
+            }
         }
 
         if (!artPath.empty()) {

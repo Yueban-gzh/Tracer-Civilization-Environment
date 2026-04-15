@@ -23,8 +23,8 @@
      s.maxEnergy   = p.maxEnergy;                        // 最大能量
      s.cardsPlayedThisTurn = p.cardsPlayedThisTurn;      // 本回合已打出牌数（凡庸等）
      s.stance      = p.stance;                           // 姿态
-     s.potionSlotCount = p.potionSlotCount;             // 药水槽位数
-     s.potions     = p.potions;                         // 药水列表
+     s.potionSlotCount = p.potionSlotCount;             // 灵液槽位数
+     s.potions     = p.potions;                         // 灵液列表
      s.relics      = p.relics;                           // 遗物列表
      s.playerStatuses = p.statuses;                      // 玩家状态效果（金属化、易伤等）
      s.turnNumber  = state.turnNumber;                   // 当前回合数

@@ -1,11 +1,11 @@
-#include "../../include/BattleCoreRefactor/PotionEffects.hpp"  // 药水效果头文件
+#include "../../include/BattleCoreRefactor/PotionEffects.hpp"  // 灵液效果头文件
 #include "../../include/BattleCoreRefactor/BattleEngine.hpp"   // get_status_stacks：不能抽牌
 #include "../../include/CardSystem/CardSystem.hpp"             // 抽牌需 CardSystem
 
 namespace tce {
 
 void apply_potion_effect(const PotionId& id, BattleState& state, int target_monster_index, CardSystem* card_system) {
-    if (id == "strength_potion") {                                  // 力量药水
+    if (id == "strength_potion") {                                  // 力量灵液
         StatusInstance s;                                           // 创建状态实例
         s.id       = "strength";                                    // 状态 ID：力量
         s.stacks   = 2;                                             // 层数：2
@@ -13,13 +13,13 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         state.player.statuses.push_back(s);                         // 加入玩家状态列表
         return;
     }
-    // 格挡药水：获得 12 点格挡
+    // 格挡灵液：获得 12 点格挡
     if (id == "block_potion") {
         state.player.block += 12;
         return;
     }
 
-    // 能量药水：获得 2 点能量
+    // 能量灵液：获得 2 点能量
     if (id == "energy_potion") {
         state.player.energy += 2;                                   // 增加 2 点能量
         if (state.player.energy > state.player.maxEnergy)           // 若超过上限
@@ -27,7 +27,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
 
-    // 虚弱药水：对指定怪物施加 3 层虚弱（需传入 target_monster_index）
+    // 虚弱灵液：对指定怪物施加 3 层虚弱（需传入 target_monster_index）
     if (id == "weak_potion") {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size())
             return;                                                 // 目标无效则直接返回
@@ -48,7 +48,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
 
-    // 毒药水：对指定怪物施加 6 层中毒（需传入 target_monster_index）
+    // 毒灵液：对指定怪物施加 6 层中毒（需传入 target_monster_index）
     if (id == "poison_potion") {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size())
             return;
@@ -68,7 +68,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
 
-    // 恐惧药水：对指定怪物施加 3 层易伤（需传入 target_monster_index）
+    // 恐惧灵液：对指定怪物施加 3 层易伤（需传入 target_monster_index）
     if (id == "fear_potion") {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size())
             return;                                                 // 目标无效则直接返回
@@ -89,7 +89,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
     
-    // 爆炸药水：对所有存活敌人造成 10 点伤害（先扣格挡，再扣生命）
+    // 爆炸灵液：对所有存活敌人造成 10 点伤害（先扣格挡，再扣生命）
     if (id == "explosion_potion") {
         const int damage = 10;                                      // 固定 10 点伤害
         for (auto& m : state.monsters) {
@@ -108,14 +108,14 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
 
-    // 迅捷药水：抽 3 张牌（需传入 card_system）
+    // 迅捷灵液：抽 3 张牌（需传入 card_system）
     if (id == "swift_potion") {
         if (card_system && BattleEngine::get_status_stacks(state.player.statuses, "cannot_draw") <= 0)
             card_system->draw_cards(3);
         return;
     }
 
-    // 鲜血药水：回复最大生命值的 20%
+    // 鲜血灵液：回复最大生命值的 20%
     if (id == "blood_potion") {
         int heal = state.player.maxHp * 20 / 100;           // 回复量 = 最大生命 × 20%
         if (heal > 0) {                                    // 避免除零或无效回复
@@ -126,7 +126,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         return;
     }
 
-    // 火焰药水：对指定怪物造成 20 点伤害（需传入 target_monster_index）
+    // 火焰灵液：对指定怪物造成 20 点伤害（需传入 target_monster_index）
     if (id == "fire_potion") {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size())
             return;                                                 // 目标无效则直接返回

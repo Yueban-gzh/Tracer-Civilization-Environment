@@ -112,6 +112,9 @@ void EventShopRestUI::setScreen(EventShopRestScreen screen) {
     restForgeConfirmInstanceId_ = 0;
     shopRemoveConfirmOpen_ = false;
     shopRemoveConfirmInstanceId_ = 0;
+    shopBuyConfirmOpen_ = false;
+    shopBuyConfirmCardId_.clear();
+    shopBuyConfirmPrice_ = 0;
 }
 
 void EventShopRestUI::setEventData(const EventDisplayData& data) {
@@ -193,7 +196,7 @@ void EventShopRestUI::setEventResultFromUtf8(const std::string& resultSummary, c
     eventCardScrollOffset_ = 0.f;
     eventCardScrollMax_ = 0.f;
     eventCardScrollStep_ = 42.f;
-    // 无卡牌/遗物/药水等预览路径时保留进入结果页前的事件插图，避免左侧留白
+    // 无卡牌/遗物/灵液等预览路径时保留进入结果页前的事件插图，避免左侧留白
     if (!eventData_.imagePath.empty() && eventData_.imagePath != eventIllustPath_) {
         eventIllustPath_ = eventData_.imagePath;
         // "__cardid:" / "__cards:" 等走代码绘制，不加载贴图
@@ -299,6 +302,9 @@ void EventShopRestUI::setShopData(const ShopDisplayData& data) {
     shopDeckScrollMax_ = 0.f;
     shopRemoveConfirmOpen_ = false;
     shopRemoveConfirmInstanceId_ = 0;
+    shopBuyConfirmOpen_ = false;
+    shopBuyConfirmCardId_.clear();
+    shopBuyConfirmPrice_ = 0;
 }
 
 void EventShopRestUI::setRestData(const RestDisplayData& data) {
@@ -404,6 +410,23 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
                 }
             }
         } else if (screen_ == EventShopRestScreen::Shop) {
+            if (!shopRemovePickMode && shopBuyConfirmOpen_) {
+                if (shopBuyConfirmOkRect_.contains(mousePos)) {
+                    pendingShopBuyCard_ = shopBuyConfirmCardId_;
+                    pendingShopBuy_ = true;
+                    shopBuyConfirmOpen_ = false;
+                    shopBuyConfirmCardId_.clear();
+                    shopBuyConfirmPrice_ = 0;
+                    return true;
+                }
+                if (shopBuyConfirmBackRect_.contains(mousePos)) {
+                    shopBuyConfirmOpen_ = false;
+                    shopBuyConfirmCardId_.clear();
+                    shopBuyConfirmPrice_ = 0;
+                    return true;
+                }
+                return true;
+            }
             if (shopRemovePickMode && shopRemoveConfirmOpen_) {
                 if (shopRemoveConfirmOkRect_.contains(mousePos)) {
                     pendingShopRemoveInstance_ = shopRemoveConfirmInstanceId_;
@@ -442,15 +465,17 @@ bool EventShopRestUI::handleEvent(const sf::Event& ev, const sf::Vector2f& mouse
             }
             for (size_t i = 0; i < shopBuyRects_.size() && i < shopData_.forSale.size(); ++i) {
                 if (shopBuyRects_[i].contains(mousePos)) {
-                    pendingShopBuyCard_ = shopData_.forSale[i].id;
-                    pendingShopBuy_ = true;
+                    shopBuyConfirmCardId_ = shopData_.forSale[i].id;
+                    shopBuyConfirmPrice_ = shopData_.forSale[i].price;
+                    shopBuyConfirmOpen_ = true;
                     return true;
                 }
             }
             for (size_t i = 0; i < shopColorlessRects_.size() && i < shopData_.colorlessForSale.size(); ++i) {
                 if (shopColorlessRects_[i].contains(mousePos)) {
-                    pendingShopBuyCard_ = shopData_.colorlessForSale[i].id;
-                    pendingShopBuy_ = true;
+                    shopBuyConfirmCardId_ = shopData_.colorlessForSale[i].id;
+                    shopBuyConfirmPrice_ = shopData_.colorlessForSale[i].price;
+                    shopBuyConfirmOpen_ = true;
                     return true;
                 }
             }
@@ -670,10 +695,18 @@ bool EventShopRestUI::tryDismissRestForgeUpgradeConfirm() {
 bool EventShopRestUI::tryDismissShopRemoveConfirm() {
     const bool inRemovePickMode =
         (screen_ == EventShopRestScreen::Shop && shopData_.removeServicePaid && !shopData_.removeServiceSoldOut);
-    if (!inRemovePickMode || !shopRemoveConfirmOpen_) return false;
-    shopRemoveConfirmOpen_ = false;
-    shopRemoveConfirmInstanceId_ = 0;
-    return true;
+    if (inRemovePickMode && shopRemoveConfirmOpen_) {
+        shopRemoveConfirmOpen_ = false;
+        shopRemoveConfirmInstanceId_ = 0;
+        return true;
+    }
+    if (!inRemovePickMode && shopBuyConfirmOpen_) {
+        shopBuyConfirmOpen_ = false;
+        shopBuyConfirmCardId_.clear();
+        shopBuyConfirmPrice_ = 0;
+        return true;
+    }
+    return false;
 }
 
 void EventShopRestUI::syncRestForgeScrollbarDrag(const sf::Vector2f& mousePos) {
