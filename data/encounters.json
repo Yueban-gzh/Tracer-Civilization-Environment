@@ -4,24 +4,17 @@
       "enemy_groups": [
         ["1.1_xiuqicanzun"],
         ["1.2_liejianshusheng"],
-        ["1.3_yazhongzhihun"],
         ["1.4_buguguiqi"],
         ["1.5_fashengjiangli"],
         ["1.6_jianaidulian"],
         ["1.7_wentiantuhai"],
         ["1.8_bingyongcanju"],
-        ["1.9_nongjihuijin"]
+        ["1.9_nongjihuijin"],
+        ["1.1_xiuqicanzun"]
       ],
       "elite_groups": [
-        ["1.1_xiuqicanzun"],
-        ["1.2_liejianshusheng"],
-        ["1.3_yazhongzhihun"],
-        ["1.4_buguguiqi"],
         ["1.5_fashengjiangli"],
-        ["1.6_jianaidulian"],
-        ["1.7_wentiantuhai"],
-        ["1.8_bingyongcanju"],
-        ["1.9_nongjihuijin"]
+        ["1.8_bingyongcanju"]
       ],
       "boss": ["1.3_yazhongzhihun"]
     },
@@ -31,22 +24,14 @@
         ["2.2_canbiyansheng"],
         ["2.3_gongdiduanchang"],
         ["2.4_fengsuiyapao"],
-        ["2.5_zuimocanbi"],
         ["2.6_nichangyuyi"],
         ["2.7_tongjingsuizhaung"],
         ["2.8_fujielu"],
         ["2.1_huxuankongke"]
       ],
       "elite_groups": [
-        ["2.1_huxuankongke"],
-        ["2.2_canbiyansheng"],
         ["2.3_gongdiduanchang"],
-        ["2.4_fengsuiyapao"],
-        ["2.5_zuimocanbi"],
-        ["2.6_nichangyuyi"],
-        ["2.7_tongjingsuizhaung"],
-        ["2.8_fujielu"],
-        ["2.2_canbiyansheng"]
+        ["2.8_fujielu"]
       ],
       "boss": ["2.5_zuimocanbi"]
     },
@@ -58,19 +43,11 @@
         ["3.4_sancerusheng"],
         ["3.5_chenzhanhugong"],
         ["3.6_jiaotongxianmo"],
-        ["3.7_suizhicanmu"],
-        ["3.1_youshimohun"],
-        ["3.2_bizhongguyin"]
-      ],
-      "elite_groups": [
         ["3.1_youshimohun"],
         ["3.2_bizhongguyin"],
-        ["3.3_xiusitiou"],
-        ["3.4_sancerusheng"],
-        ["3.5_chenzhanhugong"],
-        ["3.6_jiaotongxianmo"],
-        ["3.7_suizhicanmu"],
-        ["3.3_xiusitiou"],
+        ["3.3_xiusitiou"]
+      ],
+      "elite_groups": [
         ["3.4_sancerusheng"]
       ],
       "boss": ["3.7_suizhicanmu"]

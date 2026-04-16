@@ -61,6 +61,10 @@ enum class MonsterIntentKind {
 struct MonsterIntent {
     MonsterIntentKind kind = MonsterIntentKind::Unknown;
     int value = 0;
+    /** 攻击类意图的单段基础值；Mul_Attack 时 value 仍可保留总值供旧逻辑兼容。 */
+    int baseValue = 0;
+    /** Mul_Attack 的连击次数；非连击时为 1。 */
+    int times = 1;
     /** 非空时悬停优先显示该别名（UTF-8）；JSON 可填 ui_label 或 display_name */
     std::string ui_label;
     /** 非空时覆盖意图图标的纹理查找 key；否则由 kind 决定默认 key */

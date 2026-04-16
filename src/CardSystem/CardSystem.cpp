@@ -372,10 +372,11 @@ int CardSystem::discard_random_hand_cards(int count) {
     return moved;
 }
 
-int CardSystem::discard_hand_card_by_instance_id(InstanceId instance_id) {
+int CardSystem::discard_hand_card_by_instance_id(InstanceId instance_id, CardId* out_removed_id) {
     for (int i = 0; i < static_cast<int>(hand_.size()); ++i) {
         if (hand_[static_cast<size_t>(i)].instanceId != instance_id) continue;
         auto c = remove_from_hand(i);
+        if (out_removed_id) *out_removed_id = c.id;
         add_to_discard(std::move(c));
         return 1;
     }
@@ -475,6 +476,16 @@ int CardSystem::draw_random_skill_cards_from_draw_pile(int max_count) {
         ++drawn;
     }
     return drawn;
+}
+
+bool CardSystem::move_draw_card_to_hand(InstanceId instance_id) {
+    auto it = std::find_if(draw_pile_.begin(), draw_pile_.end(),
+                           [instance_id](const CardInstance& c) { return c.instanceId == instance_id; });
+    if (it == draw_pile_.end()) return false;
+    CardInstance c = std::move(*it);
+    draw_pile_.erase(it);
+    add_to_hand(std::move(c));
+    return true;
 }
 
 bool CardSystem::move_exhaust_card_to_hand(InstanceId instance_id) {

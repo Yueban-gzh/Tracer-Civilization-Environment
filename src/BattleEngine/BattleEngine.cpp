@@ -98,8 +98,8 @@ bool is_shame_id(const CardId& id) { return id == "shame" || id == "shame+"; }
 bool is_pride_id(const CardId& id) { return id == "pride" || id == "pride+"; }
 /** 灼伤：回合结束时仍在手牌则受到对应伤害（与腐朽等同一时机） */
 int burn_end_turn_damage_for_id(const CardId& id) {
-    if (id == "card_026") return 2;
-    if (id == "card_026+") return 4;
+    if (id == "burn") return 2;
+    if (id == "burn+") return 4;
     return 0;
 }
 } // namespace
@@ -183,6 +183,8 @@ int burn_end_turn_damage_for_id(const CardId& id) {
         pain_dmg.source_type     = DamagePacket::SourceType::Status;
         apply_damage_to_player(pain_dmg);
     }
+
+    const bool rebound_pending = get_status_stacks(state_.player.statuses, "rebound") > 0;
 
     if (use_free_attack) {
         reduce_status_stacks(state_.player.statuses, "free_attack", 1);  // 消耗 1 次免费攻击
@@ -271,6 +273,9 @@ int burn_end_turn_damage_for_id(const CardId& id) {
     // 能力牌（Power）：按你的设计，打出后只生效一次，不再进入弃牌或消耗堆
     if (cd && cd->cardType == CardType::Power) {
         // 不调用 add_to_discard / add_to_exhaust，直接“从本场战斗中移除”
+    } else if (rebound_pending) {
+        reduce_status_stacks(state_.player.statuses, "rebound", 1);
+        card_system_->add_to_deck(played);                               // 回到抽牌堆顶
     } else if ((cd && cd->exhaust) || force_exhaust) {
         card_system_->add_to_exhaust(played);                          // 消耗 / 腐化技能
         apply_exhaust_passives_from_hand(1);
@@ -508,7 +513,7 @@ bool BattleEngine::take_reward_potion(const PotionId& id, int replace_slot) {
         "dark_embrace", "dark_embrace+", "evolve", "evolve+",
         "feel_no_pain", "feel_no_pain+",
         "expunger", "expunger+", "purity", "purity+", "violence", "violence+",
-        "jax", "jax+", "insight", "insight+", "chrysalis", "chrysalis+",
+        "j.a.x.", "j.a.x.+", "insight", "insight+", "chrysalis", "chrysalis+",
         "ritual_dagger", "ritual_dagger+", "secret_technique", "secret_technique+", "ghostly", "ghostly+"
      };
      std::vector<CardId> result;
@@ -1091,6 +1096,9 @@ void BattleEngine::apply_curse_hand_effects_before_turn_end_discard() {
  int EffectContext::draw_random_skill_cards_from_draw_pile(int max_count) {
      return engine_ ? engine_->draw_random_skill_cards_from_draw_pile_impl(max_count) : 0;
  }
+int EffectContext::add_draw_selected_to_hand(int n) {
+    return engine_ ? engine_->add_draw_selected_to_hand_impl(n) : 0;
+}
  int EffectContext::get_ritual_dagger_run_bonus() const {
      return engine_ ? engine_->get_ritual_dagger_run_bonus_impl() : 0;
  }
@@ -1450,11 +1458,19 @@ int BattleEngine::discard_all_hand_cards_impl() {
 int BattleEngine::discard_selected_hand_cards_impl(int n) {
    if (!card_system_ || n <= 0) return 0;
    int discarded = 0;
+   auto trigger_on_discard = [this](const CardId& id) {
+       if (id == "reflex") draw_cards_impl(2);
+       else if (id == "reflex+") draw_cards_impl(3);
+       else if (id == "tactician") add_energy_to_player_impl(1);
+       else if (id == "tactician+") add_energy_to_player_impl(2);
+   };
    while (n > 0 && !effect_selected_instance_ids_.empty()) {
        InstanceId iid = effect_selected_instance_ids_.front();
        effect_selected_instance_ids_.pop_front();
-       int ok = card_system_->discard_hand_card_by_instance_id(iid);
+       CardId removed_id;
+       int ok = card_system_->discard_hand_card_by_instance_id(iid, &removed_id);
        if (ok > 0) {
+           trigger_on_discard(removed_id);
            ++discarded;
            --n;
        }
@@ -1515,6 +1531,19 @@ int BattleEngine::add_exhaust_selected_to_hand_impl(int n) {
         InstanceId iid = effect_selected_instance_ids_.front();
         effect_selected_instance_ids_.pop_front();
         if (card_system_->move_exhaust_card_to_hand(iid)) {
+            ++moved;
+            --n;
+        }
+    }
+    return moved;
+}
+int BattleEngine::add_draw_selected_to_hand_impl(int n) {
+    if (!card_system_ || n <= 0) return 0;
+    int moved = 0;
+    while (n > 0 && !effect_selected_instance_ids_.empty()) {
+        InstanceId iid = effect_selected_instance_ids_.front();
+        effect_selected_instance_ids_.pop_front();
+        if (card_system_->move_draw_card_to_hand(iid)) {
             ++moved;
             --n;
         }

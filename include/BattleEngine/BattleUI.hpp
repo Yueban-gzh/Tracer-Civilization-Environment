@@ -107,7 +107,7 @@ public:
     void set_card_select_active(bool active);
     /** candidate_hand_indices：与 card_ids 同序，表示每张候选在「当前手牌」中的下标；手牌区选牌时优先用此匹配点击，避免 instanceId 与快照不一致导致无法选中 */
     /** hide_played_hand_index：>=0 时该手牌下标视为已打出，扇区与底栏手牌绘制中均不显示（选牌界面用） */
-    void set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel = true, bool use_hand_area = false, std::vector<InstanceId> candidate_instance_ids = {}, int required_pick_count = 1, std::vector<int> candidate_hand_indices = {}, int hide_played_hand_index = -1);
+    void set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel = true, bool use_hand_area = false, std::vector<InstanceId> candidate_instance_ids = {}, int required_pick_count = 1, std::vector<int> candidate_hand_indices = {}, int hide_played_hand_index = -1, int max_pick_count = -1);
     bool is_card_select_active() const { return card_select_active_; }
     /** 轮询一次选牌结果：-1 取消，0~N-1 选中的下标 */
     bool pollCardSelectPick(int& outCardIndex);
@@ -432,6 +432,7 @@ private:
     bool                          card_select_allow_cancel_ = true;
     bool                          card_select_use_hand_area_ = false;   // true=直接在手牌区选牌；false=弹窗网格选牌
     int                           card_select_required_pick_count_ = 1;
+    int                           card_select_max_pick_count_ = 1;
     /** 选牌时从扇区隐藏的手牌下标（触发选牌的那张，视作已打出） */
     int                           card_select_hide_hand_index_ = -1;
     std::vector<int>              card_select_selected_indices_;

@@ -156,6 +156,8 @@ bool parse_turn(const DataLayer::JsonValue& v, JsonBehaviorTurn& out) { // 解�
         MonsterIntent mi;
         mi.kind = parse_intent_kind(kind);
         mi.value = value;
+        mi.baseValue = value;
+        mi.times = 1;
         mi.ui_label = kind; // 默认直接显示 JSON 里的 intent.kind 原文
         if (const DataLayer::JsonValue* p = intent->get_key("ui_label"))
             mi.ui_label = p->as_string();
@@ -223,11 +225,15 @@ bool parse_turn(const DataLayer::JsonValue& v, JsonBehaviorTurn& out) { // 解�
             out.intent.ui_label = kind + " " + std::to_string(out.dexterity_down_stacks);
         out.intent.value = out.dexterity_down_stacks;
     }
+    out.intent.baseValue = out.attack_value;
+    out.intent.times = std::max(1, out.attack_times);
     if ((kind == "Mul_Attack" || kind == "Multi_Attack") && out.attack_times <= 0)
         out.attack_times = 1;
     if (kind == "Mul_Attack" || kind == "Multi_Attack") {
         if (out.intent.ui_label == kind) // 未显式传 ui_label 时，自动展示 X*Y
             out.intent.ui_label = kind + " " + std::to_string(out.attack_value) + "*" + std::to_string(out.attack_times);
+        out.intent.baseValue = out.attack_value;
+        out.intent.times = out.attack_times;
         out.intent.value = out.attack_value * out.attack_times; // value 展示总伤害
     }
 

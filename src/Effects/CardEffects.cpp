@@ -425,7 +425,7 @@ void effect_wild_strike(EffectContext& ctx, bool is_upgraded) {
         int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 17 : 12, ctx.target_monster_index);
         ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
     }
-    ctx.generate_to_draw_pile("card_025");
+    ctx.generate_to_draw_pile("wound");
 }
 
 // 无谋冲锋：造成 7/10 点伤害，将一张晕眩放入抽牌堆
@@ -434,14 +434,14 @@ void effect_reckless_charge(EffectContext& ctx, bool is_upgraded) {
         int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 10 : 7, ctx.target_monster_index);
         ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
     }
-    ctx.generate_to_draw_pile("daze");
+    ctx.generate_to_draw_pile("dazed");
 }
 
 // 燔祭：对所有敌人造成 21/28 点伤害，将一张灼伤放入弃牌堆
 void effect_immolate(EffectContext& ctx, bool is_upgraded) {
     int base = is_upgraded ? 28 : 21;
     ctx.deal_damage_to_all_monsters(base);
-    ctx.generate_to_discard_pile("card_026");
+    ctx.generate_to_discard_pile("burn");
 }
 
 // 背刺：造成 11/15 点伤害，固有，消耗
@@ -518,7 +518,7 @@ void effect_exhume(EffectContext& ctx, bool /*is_upgraded*/) {
     ctx.add_exhaust_selected_to_hand(1);
 }
 
-// 燃烧契约：随机消耗 1 张手牌；抽 2/3 张牌
+// 燃烧契约：消耗 1 张指定手牌；未预选时退化为随机；抽 2/3 张牌
 void effect_burning_pact(EffectContext& ctx, bool is_upgraded) {
     int exhausted = ctx.exhaust_selected_hand_cards(1);
     if (exhausted <= 0) exhausted = ctx.exhaust_random_hand_cards(1);
@@ -538,7 +538,7 @@ void effect_true_grit(EffectContext& ctx, bool is_upgraded) {
     }
 }
 
-// 生存者：获得 8/11 点格挡；随机弃掉 1 张手牌
+// 生存者：获得 8/11 点格挡；弃掉 1 张指定手牌；未预选时退化为随机
 void effect_survivor(EffectContext& ctx, bool is_upgraded) {
     int block = ctx.get_effective_block_for_player(is_upgraded ? 11 : 8);
     ctx.add_block_to_player(block);
@@ -546,7 +546,7 @@ void effect_survivor(EffectContext& ctx, bool is_upgraded) {
     if (discarded <= 0) ctx.discard_random_hand_cards(1);
 }
 
-// 杂技：抽 3/4 张牌，然后随机弃掉 1 张手牌
+// 杂技：抽 3/4 张牌，然后弃掉 1 张指定手牌；未预选时退化为随机
 void effect_acrobatics(EffectContext& ctx, bool is_upgraded) {
     ctx.draw_cards(is_upgraded ? 4 : 3);
     int discarded = ctx.discard_selected_hand_cards(1);
@@ -620,7 +620,7 @@ void effect_panacea(EffectContext& ctx, bool is_upgraded) {
     ctx.apply_status_to_player("artifact", is_upgraded ? 2 : 1, -1);
 }
 
-// 预谋：抽 1/2，随后随机弃 1/2（当前 UI 未支持手选弃牌）
+// 预谋：抽 1/2，随后弃 1/2 张指定手牌；未预选时退化为随机
 void effect_prepared(EffectContext& ctx, bool is_upgraded) {
     int n = is_upgraded ? 2 : 1;
     ctx.draw_cards(n);
@@ -631,8 +631,7 @@ void effect_prepared(EffectContext& ctx, bool is_upgraded) {
 // 全力攻击：对所有敌人造成 10/14 伤害，随后随机弃 1 张手牌
 void effect_all_out_attack(EffectContext& ctx, bool is_upgraded) {
     ctx.deal_damage_to_all_monsters(is_upgraded ? 14 : 10);
-    int discarded = ctx.discard_selected_hand_cards(1);
-    if (discarded <= 0) ctx.discard_random_hand_cards(1);
+    ctx.discard_random_hand_cards(1);
 }
 
 // 计算下注：弃掉全部手牌，然后抽等量张牌（消耗由 cards.json 字段控制）
@@ -641,7 +640,7 @@ void effect_calculated_gamble(EffectContext& ctx, bool /*is_upgraded*/) {
     if (n > 0) ctx.draw_cards(n);
 }
 
-// 全神贯注：随机弃 3/2 张牌，若弃牌数量满足则获得 2 点能量
+// 全神贯注：弃 3/2 张指定手牌，若弃牌数量满足则获得 2 点能量
 void effect_concentrate(EffectContext& ctx, bool is_upgraded) {
     int need = is_upgraded ? 2 : 3;
     int discarded = ctx.discard_selected_hand_cards(need);
@@ -799,7 +798,7 @@ void effect_skim(EffectContext& ctx, bool is_upgraded) {
 // 超频：抽 2/3 张牌，并加入 1 张灼伤到弃牌堆
 void effect_steam_power(EffectContext& ctx, bool is_upgraded) {
     ctx.draw_cards(is_upgraded ? 3 : 2);
-    ctx.generate_to_discard_pile("card_026");
+    ctx.generate_to_discard_pile("burn");
 }
 
 // 光束射线：造成 3/4 伤害，并施加 1/2 层易伤
@@ -832,11 +831,12 @@ void effect_auto_shields(EffectContext& ctx, bool is_upgraded) {
     ctx.add_block_to_player(block);
 }
 
-// 弹回：造成 9/12 点伤害（回牌堆顶效果待后续卡序系统补齐）
+// 弹回：造成 9/12 点伤害；本回合打出的下一张牌回到抽牌堆顶
 void effect_rebound(EffectContext& ctx, bool is_upgraded) {
     if (ctx.target_monster_index < 0) return;
     int dmg = ctx.get_effective_damage_dealt_by_player(is_upgraded ? 12 : 9, ctx.target_monster_index);
     ctx.deal_damage_to_monster(ctx.target_monster_index, dmg);
+    ctx.apply_status_to_player("rebound", 1, 1);
 }
 
 // 双倍能量：将当前能量翻倍（等价于再获得当前能量值）
@@ -887,8 +887,8 @@ void effect_dodge_and_roll(EffectContext& ctx, bool is_upgraded) {
 void effect_power_through(EffectContext& ctx, bool is_upgraded) {
     int block = ctx.get_effective_block_for_player(is_upgraded ? 20 : 15);
     ctx.add_block_to_player(block);
-    ctx.generate_to_hand("card_025");
-    ctx.generate_to_hand("card_025");
+    ctx.generate_to_hand("wound");
+    ctx.generate_to_hand("wound");
 }
 
 // 小刀：造成 4/6 点伤害，消耗；精准：每层 accuracy 为固定加伤（可叠加）
@@ -1049,11 +1049,13 @@ void effect_expunger(EffectContext& ctx, bool is_upgraded) {
     }
 }
 
-// 净化：随机消耗手牌中最多 3/5 张（打出后结算，不含本牌）
+// 净化：焚毁手牌中最多 3/5 张指定牌；若未预选则随机焚毁同数量
 void effect_purity(EffectContext& ctx, bool is_upgraded) {
     const int cap = is_upgraded ? 5 : 3;
     const int n = std::min(cap, ctx.get_hand_card_count());
-    if (n > 0) ctx.exhaust_random_hand_cards(n);
+    if (n <= 0) return;
+    int exhausted = ctx.exhaust_selected_hand_cards(n);
+    if (exhausted < n) ctx.exhaust_random_hand_cards(n - exhausted);
 }
 
 // 暴力：从抽牌堆随机将 3/4 张攻击牌入手
@@ -1063,7 +1065,7 @@ void effect_violence(EffectContext& ctx, bool is_upgraded) {
 
 // J.A.X.：失去 3 生命，获得 2/3 力量
 void effect_jax(EffectContext& ctx, bool is_upgraded) {
-    ctx.deal_damage_to_player(3);
+    ctx.deal_damage_to_player_ignoring_block(3);
     ctx.apply_status_to_player("strength", is_upgraded ? 3 : 2, -1);
 }
 
@@ -1085,9 +1087,10 @@ void effect_ritual_dagger(EffectContext& ctx, bool is_upgraded) {
     if (hp_before > 0 && hp_after <= 0) ctx.add_ritual_dagger_run_bonus(is_upgraded ? 5 : 3);
 }
 
-// 秘密技法：从抽牌堆随机 1 张技能牌入手（与尖塔「随机」一致时可改为顶牌序）
+// 秘密技法：从抽牌堆选择 1 张技能牌入手；若未预选则退化为随机 1 张
 void effect_secret_technique(EffectContext& ctx, bool /*is_upgraded*/) {
-    ctx.draw_random_skill_cards_from_draw_pile(1);
+    if (ctx.add_draw_selected_to_hand(1) <= 0)
+        ctx.draw_random_skill_cards_from_draw_pile(1);
 }
 
 // 灵体：获得 1 层无实体（持续 1 回合），虚无/消耗由数据层处理
@@ -1255,8 +1258,8 @@ void register_all_card_effects(CardSystem& card_system) {
     card_system.register_card_effect("purity+", [](EffectContext& c) { effect_purity(c, true); });
     card_system.register_card_effect("violence", [](EffectContext& c) { effect_violence(c, false); });
     card_system.register_card_effect("violence+", [](EffectContext& c) { effect_violence(c, true); });
-    card_system.register_card_effect("jax", [](EffectContext& c) { effect_jax(c, false); });
-    card_system.register_card_effect("jax+", [](EffectContext& c) { effect_jax(c, true); });
+    card_system.register_card_effect("j.a.x.", [](EffectContext& c) { effect_jax(c, false); });
+    card_system.register_card_effect("j.a.x.+", [](EffectContext& c) { effect_jax(c, true); });
     card_system.register_card_effect("insight", [](EffectContext& c) { effect_insight(c, false); });
     card_system.register_card_effect("insight+", [](EffectContext& c) { effect_insight(c, true); });
     card_system.register_card_effect("chrysalis", [](EffectContext& c) { effect_chrysalis(c, false); });

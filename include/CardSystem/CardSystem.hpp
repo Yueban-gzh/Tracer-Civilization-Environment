@@ -102,8 +102,8 @@ public:
     int  exhaust_all_hand_cards();
     /** 从手牌随机弃掉 count 张（移入弃牌堆）；返回实际弃牌张数。 */
     int  discard_random_hand_cards(int count);
-    /** 从手牌按实例 id 弃掉 1 张；成功返回 1，失败返回 0。 */
-    int  discard_hand_card_by_instance_id(InstanceId instance_id);
+    /** 从手牌按实例 id 弃掉 1 张；成功返回 1，失败返回 0。若 out_removed_id 非空则写出原始卡牌 id。 */
+    int  discard_hand_card_by_instance_id(InstanceId instance_id, CardId* out_removed_id = nullptr);
     /** 将手牌全部弃掉（移入弃牌堆）；返回实际弃牌张数。 */
     int  discard_all_hand_cards();
     /** 从手牌随机消耗 count 张（移入消耗堆）；返回实际消耗张数。 */
@@ -116,6 +116,8 @@ public:
     int  draw_random_attack_cards_from_draw_pile(int max_count);
     /** 从抽牌堆中随机将技能牌（仅 Skill，不含 Power）移入手牌；返回实际入手张数。 */
     int  draw_random_skill_cards_from_draw_pile(int max_count);
+    /** 按实例 id 将抽牌堆中的一张牌移入手牌；成功返回 true。 */
+    bool move_draw_card_to_hand(InstanceId instance_id);
     /** 牌堆间移动（统一视为「起点 pile → 终点 pile」）：消耗堆实例 → 手牌（发掘等）。 */
     bool move_exhaust_card_to_hand(InstanceId instance_id);
     /** 随机升级手牌中的 count 张可升级卡；返回实际升级张数。 */

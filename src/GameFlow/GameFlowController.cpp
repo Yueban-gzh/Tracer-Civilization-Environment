@@ -1182,6 +1182,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         int playHandIndex = -1;
         int playTargetMonsterIndex = -1;
         int requiredCount = 1;
+        int maxCount = 1;
         std::wstring title;
         std::vector<InstanceId> candidateInstanceIds;
         std::vector<InstanceId> selectedInstanceIds;
@@ -1310,6 +1311,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                         pendingSelectPlay.playHandIndex = handIndex;
                         pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
                         pendingSelectPlay.requiredCount = 1;
+                        pendingSelectPlay.maxCount = 1;
                         pendingSelectPlay.title = L"选择一张已消耗的牌";
                         pendingSelectPlay.candidateInstanceIds = candidateIids;
                         pendingSelectPlay.selectedInstanceIds.clear();
@@ -1322,7 +1324,42 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                             std::vector<InstanceId>(pendingSelectPlay.candidateInstanceIds),
                             1,
                             std::move(noHandIdx),
-                            -1);
+                            -1,
+                            pendingSelectPlay.maxCount);
+                        ui.set_card_select_active(true);
+                    }
+                } else if (id == "secret_technique" || id == "secret_technique+") {
+                    const auto& drawPile = cardSystem_.get_draw_pile();
+                    std::vector<std::string> candidates;
+                    std::vector<InstanceId> candidateIids;
+                    for (const auto& c : drawPile) {
+                        const CardData* candidateData = get_card_by_id(c.id);
+                        if (!candidateData || candidateData->cardType != CardType::Skill) continue;
+                        candidates.push_back(c.id);
+                        candidateIids.push_back(c.instanceId);
+                    }
+                    if (candidates.empty()) {
+                        ui.showTip(L"参悟堆中没有秘籍牌", 1.5f);
+                    } else {
+                        pendingSelectPlay.active = true;
+                        pendingSelectPlay.playHandIndex = handIndex;
+                        pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
+                        pendingSelectPlay.requiredCount = 1;
+                        pendingSelectPlay.maxCount = 1;
+                        pendingSelectPlay.title = L"选择一张秘籍牌加入手牌";
+                        pendingSelectPlay.candidateInstanceIds = candidateIids;
+                        pendingSelectPlay.selectedInstanceIds.clear();
+                        std::vector<int> noHandIdx;
+                        ui.set_card_select_data(
+                            pendingSelectPlay.title,
+                            std::move(candidates),
+                            true,
+                            false,
+                            std::vector<InstanceId>(pendingSelectPlay.candidateInstanceIds),
+                            1,
+                            std::move(noHandIdx),
+                            -1,
+                            pendingSelectPlay.maxCount);
                         ui.set_card_select_active(true);
                     }
                 } else {
@@ -1331,8 +1368,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                                        id == "true_grit+" ||
                                        id == "burning_pact" || id == "burning_pact+" ||
                                        id == "concentrate" || id == "concentrate+" ||
-                                       id == "all_out_attack" || id == "all_out_attack+" ||
                                        id == "acrobatics" || id == "acrobatics+" ||
+                                       id == "purity" || id == "purity+" ||
                                        id == "prepared" || id == "prepared+");
                     if (needSelect) {
                         std::vector<std::string> candidates;
@@ -1349,13 +1386,20 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                             pendingSelectPlay.playHandIndex = handIndex;
                             pendingSelectPlay.playTargetMonsterIndex = targetMonsterIndex;
                             pendingSelectPlay.requiredCount =
+                                (id == "purity" || id == "purity+") ? 0 :
                                 (id == "concentrate+") ? 2 :
                                 (id == "concentrate") ? 3 :
                                 (id == "prepared+") ? 2 :
                                 (id == "prepared") ? 1 :
                                 1;
+                            pendingSelectPlay.maxCount =
+                                (id == "purity+") ? 5 :
+                                (id == "purity") ? 3 :
+                                pendingSelectPlay.requiredCount;
                             if (pendingSelectPlay.requiredCount > static_cast<int>(candidates.size()))
                                 pendingSelectPlay.requiredCount = static_cast<int>(candidates.size());
+                            if (pendingSelectPlay.maxCount > static_cast<int>(candidates.size()))
+                                pendingSelectPlay.maxCount = static_cast<int>(candidates.size());
                             if (pendingSelectPlay.requiredCount <= 0) {
                                 battleEngine_.play_card(handIndex, targetMonsterIndex);
                                 continue;
@@ -1366,6 +1410,8 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                             } else if (id == "true_grit+" ||
                                 id == "burning_pact" || id == "burning_pact+") {
                                 pendingSelectPlay.title = L"选择要消耗的手牌";
+                            } else if (id == "purity" || id == "purity+") {
+                                pendingSelectPlay.title = L"选择要焚毁的手牌";
                             } else {
                                 pendingSelectPlay.title = L"选择要丢弃的手牌";
                             }
@@ -1373,7 +1419,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                             ui.set_card_select_data(
                                 pendingSelectPlay.title,
                                 std::move(candidates), true, true, std::move(candidateIids), pendingSelectPlay.requiredCount, std::move(candidateHandIdx),
-                                handIndex);
+                                handIndex, pendingSelectPlay.maxCount);
                             ui.set_card_select_active(true);
                         } else {
                             battleEngine_.play_card(handIndex, targetMonsterIndex);
@@ -1406,9 +1452,9 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                 if (!pendingSelectPlay.active) {
                     // cancelled
                 } else if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) >= pendingSelectPlay.requiredCount) {
-                    // 只取前 requiredCount 个，避免异常多选
-                    if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.requiredCount) {
-                        pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.requiredCount));
+                    // 最多只取前 maxCount 个，避免异常多选
+                    if (static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()) > pendingSelectPlay.maxCount) {
+                        pendingSelectPlay.selectedInstanceIds.resize(static_cast<size_t>(pendingSelectPlay.maxCount));
                     }
                     ui.set_pending_select_ui_pile_fly(static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()));
                     battleEngine_.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);

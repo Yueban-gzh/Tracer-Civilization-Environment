@@ -1,4 +1,4 @@
-#include "Common/MusicManager.hpp"
+﻿#include "Common/MusicManager.hpp"
 #include "Common/UserSettings.hpp"
 
 #include <SFML/Audio/Listener.hpp>

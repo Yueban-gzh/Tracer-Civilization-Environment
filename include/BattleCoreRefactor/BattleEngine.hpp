@@ -51,6 +51,8 @@ public:
     int draw_random_attack_cards_from_draw_pile(int max_count);
     /** 秘密技法：从抽牌堆随机取技能牌入手。 */
     int draw_random_skill_cards_from_draw_pile(int max_count);
+    /** 按预选实例将抽牌堆中的牌移入手牌（秘密技法）。 */
+    int add_draw_selected_to_hand(int n);
     /** 仪式匕首：本局累计加伤（跨战斗）。 */
     int get_ritual_dagger_run_bonus() const;
     void add_ritual_dagger_run_bonus(int amount);
@@ -248,6 +250,7 @@ public:
     int upgrade_all_cards_in_hand_impl();
     int upgrade_all_cards_in_combat_impl();
     int add_exhaust_selected_to_hand_impl(int n);
+    int add_draw_selected_to_hand_impl(int n);
     bool any_monster_intends_attack_impl() const;
     /** 指定下标的存活怪物当前意图是否为攻击。 */
     bool monster_intends_attack_impl(int monster_index) const;

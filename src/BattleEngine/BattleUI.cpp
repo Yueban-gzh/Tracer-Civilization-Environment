@@ -97,12 +97,64 @@ static bool monster_intent_shows_attack_value_on_icon(MonsterIntentKind k) {
     switch (k) {
     case MonsterIntentKind::Attack:
     case MonsterIntentKind::Mul_Attack:
+    case MonsterIntentKind::Attack_And_Block:
     case MonsterIntentKind::Attack_And_Weak:
     case MonsterIntentKind::Attack_And_Vulnerable:
         return true;
     default:
         return false;
     }
+}
+
+static std::string monster_intent_attack_tier_stem(int hitDamage) {
+    if (hitDamage <= 4) return "small_knife";
+    if (hitDamage <= 9) return "shortsword";
+    if (hitDamage <= 14) return "longsword";
+    if (hitDamage <= 19) return "scythe";
+    if (hitDamage <= 24) return "axe";
+    if (hitDamage <= 29) return "chopper";
+    return "cleaver";
+}
+
+static bool monster_intent_asset_exists(const std::string& stem) {
+    return !stem.empty() && !resolve_image_path("assets/intention/" + stem).empty();
+}
+
+static std::string monster_intent_attack_icon_lookup(MonsterIntentKind kind, int hitDamage, int attackTimes = 1) {
+    int tierDamage = hitDamage;
+    if (kind == MonsterIntentKind::Mul_Attack)
+        tierDamage = std::max(1, hitDamage) * std::max(1, attackTimes);
+    const std::string baseStem = monster_intent_attack_tier_stem(tierDamage);
+    std::vector<std::string> candidates;
+    switch (kind) {
+    case MonsterIntentKind::Attack:
+    case MonsterIntentKind::Mul_Attack:
+        candidates.push_back(baseStem);
+        candidates.push_back("Attack");
+        break;
+    case MonsterIntentKind::Attack_And_Block:
+        candidates.push_back(baseStem + "_guard");
+        candidates.push_back("AttackBlock");
+        candidates.push_back("empower_guard");
+        candidates.push_back("guard");
+        break;
+    case MonsterIntentKind::Attack_And_Weak:
+    case MonsterIntentKind::Attack_And_Vulnerable:
+        candidates.push_back(baseStem + "_debuff");
+        candidates.push_back("AttackVulnerable");
+        candidates.push_back("guard_debuff");
+        candidates.push_back("Debuff");
+        break;
+    default:
+        return {};
+    }
+    for (const std::string& candidate : candidates) {
+        if (monster_intent_asset_exists(candidate) || candidate == "Attack" || candidate == "AttackBlock"
+            || candidate == "AttackVulnerable" || candidate == "Debuff" || candidate == "guard") {
+            return candidate;
+        }
+    }
+    return candidates.empty() ? std::string{} : candidates.front();
 }
 
 /** 扫描 assets/status，用绝对 path 建立主名(小写)→路径（含 Icon *.png 扫出的主名键，作次要回退）。 */
@@ -226,6 +278,53 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             if (st.id == statusId) t += st.stacks;
         }
         return t;
+    }
+
+    inline int snapshot_status_stacks(const std::vector<StatusInstance>& statuses, const std::string& statusId) {
+        int t = 0;
+        for (const auto& st : statuses) {
+            if (st.id == statusId) t += st.stacks;
+        }
+        return t;
+    }
+
+    /** UI 中怪物意图显示单段伤害：尽量贴近真实结算，至少同步玩家易伤/无实体与怪物力量/虚弱。 */
+    inline int snapshot_effective_monster_intent_hit_damage(const BattleStateSnapshot& s, const MonsterInBattle& m) {
+        switch (m.currentIntent.kind) {
+        case MonsterIntentKind::Attack:
+        case MonsterIntentKind::Mul_Attack:
+        case MonsterIntentKind::Attack_And_Block:
+        case MonsterIntentKind::Attack_And_Weak:
+        case MonsterIntentKind::Attack_And_Vulnerable:
+            break;
+        default:
+            return m.currentIntent.value;
+        }
+
+        int dmg = m.currentIntent.baseValue > 0 ? m.currentIntent.baseValue : m.currentIntent.value;
+        if (dmg <= 0) return dmg;
+
+        // 当前意图值来自行为脚本的基础展示值；这里补上战斗态修正。
+        dmg += snapshot_status_stacks(m.statuses, "strength");
+        dmg -= snapshot_status_stacks(m.statuses, "strength_down");
+        if (dmg < 0) dmg = 0;
+
+        if (snapshot_status_stacks(m.statuses, "weak") > 0)
+            dmg = dmg * 3 / 4;
+        if (snapshot_player_status_stacks(s, "vulnerable") > 0)
+            dmg = dmg * 3 / 2;
+        if (snapshot_player_status_stacks(s, "intangible") > 0 && dmg > 1)
+            dmg = 1;
+        return dmg;
+    }
+
+    inline std::string snapshot_effective_monster_intent_display_text(const BattleStateSnapshot& s, const MonsterInBattle& m) {
+        const int hitDamage = snapshot_effective_monster_intent_hit_damage(s, m);
+        if (m.currentIntent.kind == MonsterIntentKind::Mul_Attack) {
+            const int times = std::max(1, m.currentIntent.times);
+            return std::to_string(hitDamage) + "x" + std::to_string(times);
+        }
+        return std::to_string(hitDamage);
     }
 
     /** 手牌/战斗 UI：基础费与实例本场减费、免费攻击、腐化/结茧/内脏切除等与引擎一致 */
@@ -1414,7 +1513,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                     break;
                                 }
                             }
-                            const int cap = card_select_required_pick_count_;
+                            const int cap = card_select_max_pick_count_;
                             // 已达上限：不能再增加张数，点击另一张候选则替换「最后选中的那一项」
                             if (cap > 0 && static_cast<int>(card_select_selected_indices_.size()) >= cap) {
                                 const int oldLast = card_select_selected_indices_.back();
@@ -1488,7 +1587,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             if (it != card_select_selected_indices_.end()) {
                                 card_select_selected_indices_.erase(it);
                             } else {
-                                const int cap = card_select_required_pick_count_;
+                                const int cap = card_select_max_pick_count_;
                                 if (cap > 0 && static_cast<int>(card_select_selected_indices_.size()) >= cap)
                                     card_select_selected_indices_.back() = static_cast<int>(i);
                                 else
@@ -2333,14 +2432,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
     }
 
-    void BattleUI::set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel, bool use_hand_area, std::vector<InstanceId> candidate_instance_ids, int required_pick_count, std::vector<int> candidate_hand_indices, int hide_played_hand_index) {
+    void BattleUI::set_card_select_data(std::wstring title, std::vector<std::string> card_ids, bool allow_cancel, bool use_hand_area, std::vector<InstanceId> candidate_instance_ids, int required_pick_count, std::vector<int> candidate_hand_indices, int hide_played_hand_index, int max_pick_count) {
         card_select_title_ = std::move(title);
         card_select_ids_ = std::move(card_ids);
         card_select_candidate_instance_ids_ = std::move(candidate_instance_ids);
         card_select_candidate_hand_indices_ = std::move(candidate_hand_indices);
         card_select_allow_cancel_ = allow_cancel;
         card_select_use_hand_area_ = use_hand_area;
-        card_select_required_pick_count_ = std::max(1, required_pick_count);
+        card_select_required_pick_count_ = std::max(0, required_pick_count);
+        card_select_max_pick_count_ = std::max(card_select_required_pick_count_, max_pick_count > 0 ? max_pick_count : card_select_required_pick_count_);
         card_select_hide_hand_index_ = (use_hand_area && hide_played_hand_index >= 0) ? hide_played_hand_index : -1;
         card_select_rects_.clear();
         card_select_selected_indices_.clear();
@@ -2803,8 +2903,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const float panelW = 760.f;
         float panelH = settings_panel_active_ ? 520.f : 420.f;
         if (!settings_panel_active_ && pause_save_slot_panel_active_) panelH += 86.f;
+        panelH = std::min(panelH, std::max(260.f, viewHeight - 24.f));
         const float panelX = (static_cast<float>(width_) - panelW) * 0.5f;
-        const float panelY = (static_cast<float>(height_) - panelH) * 0.5f;
+        const float panelY = viewTop + (viewHeight - panelH) * 0.5f;
 
         sf::RectangleShape panel(sf::Vector2f(panelW, panelH));
         panel.setPosition(sf::Vector2f(panelX, panelY));
@@ -2824,9 +2925,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!settings_panel_active_) {
             const float btnW = 320.f;
             const float btnH = 60.f;
-            const float firstY = panelY + 120.f;
-            const float gap = 24.f;
             const float centerX = panelX + panelW * 0.5f;
+            const float titleBottom = titleY + 34.f;
+            const float buttonsTop = titleBottom + 34.f;
+            const float bottomPadding = pause_save_slot_panel_active_ ? 150.f : 34.f;
+            const float availableH = std::max(btnH * 4.f, panelY + panelH - bottomPadding - buttonsTop);
+            const float gap = std::max(8.f, (availableH - btnH * 4.f) / 3.f);
+            const float buttonsBlockH = btnH * 4.f + gap * 3.f;
+            const float firstY = buttonsTop + std::max(0.f, (availableH - buttonsBlockH) * 0.5f);
 
             auto drawPauseBtn = [&](const std::wstring& label, float y, sf::FloatRect& outRect) {
                 const float x = centerX - btnW * 0.5f;
@@ -4298,8 +4404,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                                    sf::Color(100, 220, 120), 4.f);
             }
 
-            std::wstring prog = L"已选 " + std::to_wstring(static_cast<int>(n)) + L" / "
-                + std::to_wstring(card_select_required_pick_count_) + L" 张 · 点手牌加入或移回";
+            std::wstring prog;
+            if (card_select_required_pick_count_ == card_select_max_pick_count_) {
+                prog = L"已选 " + std::to_wstring(static_cast<int>(n)) + L" / "
+                    + std::to_wstring(card_select_required_pick_count_) + L" 张 · 点手牌加入或移回";
+            } else {
+                prog = L"已选 " + std::to_wstring(static_cast<int>(n)) + L" 张 · 至少 "
+                    + std::to_wstring(card_select_required_pick_count_) + L" 张，至多 "
+                    + std::to_wstring(card_select_max_pick_count_) + L" 张";
+            }
             sf::Text progText(fontForChinese(), sf::String(prog), 22);
             progText.setFillColor(sf::Color(255, 245, 200));
             const sf::FloatRect pb = progText.getLocalBounds();
@@ -4881,17 +4994,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             std::string iconLookup;
             if (!m.currentIntent.ui_icon_key.empty())
                 iconLookup = m.currentIntent.ui_icon_key;
-            else if (m.currentIntent.kind == MonsterIntentKind::Attack) iconLookup = "Attack";
-            else if (m.currentIntent.kind == MonsterIntentKind::Mul_Attack) iconLookup = "Attack";
+            else if (monster_intent_shows_attack_value_on_icon(m.currentIntent.kind))
+                iconLookup = monster_intent_attack_icon_lookup(
+                    m.currentIntent.kind,
+                    snapshot_effective_monster_intent_hit_damage(s, m),
+                    m.currentIntent.times);
             else if (m.currentIntent.kind == MonsterIntentKind::Block) iconLookup = "Block";
-            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Block) iconLookup = "AttackBlock";
             else if (m.currentIntent.kind == MonsterIntentKind::Ritual) iconLookup = "Ritual";
             else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Weak) iconLookup = "Strategy";
-            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Block) iconLookup = "AttackBlock";
+            else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Block) iconLookup = "empower_guard";
             else if (m.currentIntent.kind == MonsterIntentKind::Strength_And_Player_Frail) iconLookup = "Strategy";
             else if (m.currentIntent.kind == MonsterIntentKind::Player_Dexterity_Down) iconLookup = "Debuff";
-            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak) iconLookup = "SmallKnife"; // 兼容旧资源名，可用 ui_icon 覆盖
-            else if (m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable) iconLookup = "AttackVulnerable";
             else if (m.currentIntent.kind == MonsterIntentKind::Buff) iconLookup = "Strategy";
             else if (m.currentIntent.kind == MonsterIntentKind::Debuff) iconLookup = "Debuff";
             else if (m.currentIntent.kind == MonsterIntentKind::Sleep) iconLookup = "Sleep";
@@ -4921,12 +5034,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 window.draw(intentOrb);
             }
             // 攻击类意图：在图标中心略偏左下叠画伤害数字（连击总伤 / 单段攻击等共用 value）
-            if (monster_intent_shows_attack_value_on_icon(m.currentIntent.kind) && m.currentIntent.value != 0 && fontLoaded_) {
+            const int displayedIntentValue = snapshot_effective_monster_intent_hit_damage(s, m);
+            const std::string displayedIntentText = snapshot_effective_monster_intent_display_text(s, m);
+            if (monster_intent_shows_attack_value_on_icon(m.currentIntent.kind) && displayedIntentValue != 0 && fontLoaded_) {
                 const float cx = intentLeft + intentSz * 0.5f;
                 const float cy = intentTop + intentSz * 0.5f;
                 const unsigned valFontSz = static_cast<unsigned>(std::lround(std::clamp(intentSz * 0.30f, 15.f, 22.f)));
                 char vbuf[32];
-                std::snprintf(vbuf, sizeof(vbuf), "%d", m.currentIntent.value);
+                std::snprintf(vbuf, sizeof(vbuf), "%s", displayedIntentText.c_str());
                 sf::Text valText(font_, vbuf, valFontSz);
                 valText.setStyle(sf::Text::Bold);
                 valText.setFillColor(sf::Color(255, 252, 245));
@@ -4945,32 +5060,33 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     const bool appendVal =
                         (m.currentIntent.kind == MonsterIntentKind::Attack
                             || m.currentIntent.kind == MonsterIntentKind::Mul_Attack
+                            || m.currentIntent.kind == MonsterIntentKind::Attack_And_Block
                             || m.currentIntent.kind == MonsterIntentKind::Attack_And_Weak
                             || m.currentIntent.kind == MonsterIntentKind::Attack_And_Vulnerable
                             || (m.currentIntent.kind == MonsterIntentKind::Ritual && m.currentIntent.value > 0)
                             || (m.currentIntent.kind == MonsterIntentKind::Debuff && m.currentIntent.value > 0))
-                        && m.currentIntent.value != 0;
+                        && displayedIntentValue != 0;
                     if (appendVal)
-                        intentStr += sf::String(L" ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        intentStr += sf::String(L" ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                 } else {
                     switch (m.currentIntent.kind) {
                     case MonsterIntentKind::Attack:
-                        intentStr = sf::String(L"攻击 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        intentStr = sf::String(L"攻击 ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                         break;
                     case MonsterIntentKind::Mul_Attack:
-                        intentStr = sf::String(L"连击总伤害 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        intentStr = sf::String(L"连击 ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                         break;
                     case MonsterIntentKind::Block:
                         intentStr = sf::String(L"防御");
                         break;
                     case MonsterIntentKind::Attack_And_Block:
-                        intentStr = sf::String(L"攻击并防御");
+                        intentStr = sf::String(L"攻击并防御 ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                         break;
                     case MonsterIntentKind::Attack_And_Weak:
-                        intentStr = sf::String(L"小刀 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        intentStr = sf::String(L"小刀 ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                         break;
                     case MonsterIntentKind::Attack_And_Vulnerable:
-                        intentStr = sf::String(L"攻击+易伤 ") + sf::String(std::to_wstring(m.currentIntent.value));
+                        intentStr = sf::String(L"攻击+易伤 ") + sf::String::fromUtf8(displayedIntentText.begin(), displayedIntentText.end());
                         break;
                     case MonsterIntentKind::Ritual:
                         intentStr = (m.currentIntent.value > 0)
