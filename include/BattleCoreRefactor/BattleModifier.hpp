@@ -131,7 +131,7 @@ public:
     }
     virtual void on_can_play_card(CanPlayCardContext& ctx) { (void)ctx; }  // 打出卡牌前：缠身等可禁止打出攻击牌
     virtual void on_battle_start(BattleState& state) { (void)state; }  // 战斗开始时：弹珠袋给全体敌人易伤等
-    virtual void on_potion_used(BattleState& state, PotionId /*id*/) { (void)state; }  // 使用药水后：玩具扑翼飞机回复生命等
+    virtual void on_potion_used(BattleState& state, PotionId /*id*/) { (void)state; }  // 使用灵液后：玩具扑翼飞机回复生命等
 };
 
 /**
@@ -218,7 +218,7 @@ public:
         for (auto& p : modifiers_) p.second->on_battle_start(state);  // 广播：战斗开始时（弹珠袋等）
     }
     void on_potion_used(BattleState& state, PotionId id) {
-        for (auto& p : modifiers_) p.second->on_potion_used(state, id);  // 广播：使用药水后（玩具扑翼飞机等）
+        for (auto& p : modifiers_) p.second->on_potion_used(state, id);  // 广播：使用灵液后（玩具扑翼飞机等）
     }
 
 private:

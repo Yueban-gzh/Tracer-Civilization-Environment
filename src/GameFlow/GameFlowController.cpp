@@ -48,6 +48,29 @@ int randomIndex(RunRng& rng, int boundExclusive) {
     return rng.uniform_int(0, boundExclusive - 1);
 }
 
+bool is_curse_card_id(const CardId& id) {
+    const CardData* cd = get_card_by_id(id);
+    if (!cd) return false;
+    return (cd->cardType == CardType::Curse || cd->color == CardColor::Curse);
+}
+
+std::vector<CardId> event_curse_base_pool() {
+    std::vector<CardId> out;
+    std::unordered_set<CardId> dedup;
+    for (const CardId& id : get_all_card_ids()) {
+        if (id.empty() || id.back() == '+') continue;
+        if (!is_curse_card_id(id)) continue;
+        if (dedup.insert(id).second) out.push_back(id);
+    }
+    return out;
+}
+
+CardId event_pick_random_curse(RunRng& rng) {
+    std::vector<CardId> pool = event_curse_base_pool();
+    if (pool.empty()) return "parasite"; // 极端兜底：数据缺失时仍可继续流程
+    return pool[static_cast<size_t>(randomIndex(rng, static_cast<int>(pool.size())))];
+}
+
 bool shop_card_buyable_base(const CardData* cd) {
     if (!cd) return false;
     if (!cd->id.empty() && cd->id.back() == '+') return false;
@@ -230,7 +253,7 @@ std::string relic_name_cn(const std::string& id) {
     if (id == "red_skull") return "红头骨";
     if (id == "snake_skull") return "异蛇头骨";
     if (id == "strawberry") return "草莓";
-    if (id == "potion_belt") return "药水腰带";
+    if (id == "potion_belt") return "灵液腰带";
     if (id == "vajra") return "金刚杵";
     if (id == "nunchaku") return "双截棍";
     if (id == "ceramic_fish") return "陶瓷小鱼";
@@ -310,7 +333,7 @@ static bool preload_intention_icons_from_data_map(BattleUI& ui) {
     return n > 0;
 }
 
-/** 预加载战斗 UI：玩家立绘、遗物/药水、怪物意图图标（支持 .png / .jpg / .jpeg）。 */
+/** 预加载战斗 UI：玩家立绘、遗物/灵液、怪物意图图标（支持 .png / .jpg / .jpeg）。 */
 void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
     if (const std::string playerPath = resolve_image_path("assets/player/" + character_id); !playerPath.empty()) {
         ui.loadPlayerTexture(character_id, playerPath);
@@ -414,6 +437,8 @@ void runPostBattleExitOverlay(sf::RenderWindow& window,
 
         const float t = clock.getElapsedTime().asSeconds();
         if (t >= kAutoReturnSec) leaving = true;
+        const sf::Vector2f mouseWorld = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        const bool hoverBack = (t >= kShowButtonAfterSec) && backRect.contains(mouseWorld);
 
         window.clear(sf::Color(12, 10, 18));
 
@@ -423,47 +448,87 @@ void runPostBattleExitOverlay(sf::RenderWindow& window,
         ui.draw(window, adapter);
 
         float a01 = (kFadeInSec <= 0.f) ? 1.f : std::min(1.f, std::max(0.f, t / kFadeInSec));
-        const std::uint8_t a = static_cast<std::uint8_t>(220.f * a01);
+        const std::uint8_t a = static_cast<std::uint8_t>((victory ? 220.f : 196.f) * a01);
         sf::RectangleShape dim(sf::Vector2f(w, h));
         dim.setPosition(sf::Vector2f(0.f, 0.f));
         dim.setFillColor(sf::Color(0, 0, 0, a));
         window.draw(dim);
 
+        if (!victory) {
+            // 失败页：弱面板 + 细金线，强调庄重收束而非高亮刺激。
+            sf::RectangleShape centerMist(sf::Vector2f(w * 0.44f, h * 0.42f));
+            centerMist.setOrigin(sf::Vector2f(centerMist.getSize().x * 0.5f, centerMist.getSize().y * 0.5f));
+            centerMist.setPosition(sf::Vector2f(center.x, center.y - 18.f));
+            centerMist.setFillColor(sf::Color(14, 16, 24, static_cast<std::uint8_t>(76.f * a01)));
+            window.draw(centerMist);
+
+            sf::RectangleShape topLine(sf::Vector2f(250.f, 1.f));
+            topLine.setOrigin(sf::Vector2f(topLine.getSize().x * 0.5f, 0.f));
+            topLine.setPosition(sf::Vector2f(center.x, center.y - 86.f));
+            topLine.setFillColor(sf::Color(176, 144, 92, static_cast<std::uint8_t>(150.f * a01)));
+            window.draw(topLine);
+        }
+
         if (hudFontLoaded) {
             if (victory) {
-                sf::Text title(hudFont, sf::String(L"通关成功"), 72);
-                title.setFillColor(sf::Color(220, 200, 90, static_cast<std::uint8_t>(255.f * a01)));
+                sf::RectangleShape centerMist(sf::Vector2f(w * 0.44f, h * 0.42f));
+                centerMist.setOrigin(sf::Vector2f(centerMist.getSize().x * 0.5f, centerMist.getSize().y * 0.5f));
+                centerMist.setPosition(sf::Vector2f(center.x, center.y - 18.f));
+                centerMist.setFillColor(sf::Color(14, 16, 24, static_cast<std::uint8_t>(74.f * a01)));
+                window.draw(centerMist);
+
+                sf::RectangleShape topLine(sf::Vector2f(250.f, 1.f));
+                topLine.setOrigin(sf::Vector2f(topLine.getSize().x * 0.5f, 0.f));
+                topLine.setPosition(sf::Vector2f(center.x, center.y - 86.f));
+                topLine.setFillColor(sf::Color(176, 150, 96, static_cast<std::uint8_t>(155.f * a01)));
+                window.draw(topLine);
+
+                sf::Text title(hudFont, sf::String(L"通关成功"), 78);
+                title.setLetterSpacing(1.1f);
+                title.setFillColor(sf::Color(236, 220, 178, static_cast<std::uint8_t>(255.f * a01)));
+                title.setOutlineColor(sf::Color(28, 24, 16, static_cast<std::uint8_t>(224.f * a01)));
+                title.setOutlineThickness(2.f);
                 const sf::FloatRect tb = title.getLocalBounds();
                 title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-                title.setPosition(sf::Vector2f(center.x, center.y - 90.f));
+                title.setPosition(sf::Vector2f(center.x, center.y - 106.f));
                 window.draw(title);
 
-                sf::Text line2(hudFont, sf::String(L"三图 Boss 已全部击败"), 26);
-                line2.setFillColor(sf::Color(200, 220, 180, static_cast<std::uint8_t>(210.f * a01)));
+                sf::Text line2(hudFont, sf::String(L"三图 Boss 已全部击败"), 30);
+                line2.setFillColor(sf::Color(212, 204, 178, static_cast<std::uint8_t>(225.f * a01)));
                 const sf::FloatRect l2 = line2.getLocalBounds();
                 line2.setOrigin(sf::Vector2f(l2.position.x + l2.size.x * 0.5f, l2.position.y + l2.size.y * 0.5f));
-                line2.setPosition(sf::Vector2f(center.x, center.y - 35.f));
+                line2.setPosition(sf::Vector2f(center.x, center.y - 34.f));
                 window.draw(line2);
 
-                sf::Text sub(hudFont, sf::String(L"点击返回主界面"), 26);
-                sub.setFillColor(sf::Color(230, 220, 210, static_cast<std::uint8_t>(210.f * a01)));
+                sf::Text sub(hudFont, sf::String(L"按 Esc 或点击下方返回主界面"), 23);
+                sub.setFillColor(sf::Color(196, 186, 164, static_cast<std::uint8_t>(206.f * a01)));
                 const sf::FloatRect sb = sub.getLocalBounds();
                 sub.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
-                sub.setPosition(sf::Vector2f(center.x, center.y + 5.f));
+                sub.setPosition(sf::Vector2f(center.x, center.y + 8.f));
                 window.draw(sub);
             } else {
-                sf::Text title(hudFont, sf::String(L"战斗失败"), 72);
-                title.setFillColor(sf::Color(230, 80, 80, static_cast<std::uint8_t>(255.f * a01)));
+                sf::Text title(hudFont, sf::String(L"战斗失败"), 78);
+                title.setLetterSpacing(1.12f);
+                title.setFillColor(sf::Color(224, 206, 170, static_cast<std::uint8_t>(252.f * a01)));
+                title.setOutlineColor(sf::Color(30, 22, 16, static_cast<std::uint8_t>(224.f * a01)));
+                title.setOutlineThickness(2.f);
                 const sf::FloatRect tb = title.getLocalBounds();
                 title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-                title.setPosition(sf::Vector2f(center.x, center.y - 90.f));
+                title.setPosition(sf::Vector2f(center.x, center.y - 106.f));
                 window.draw(title);
 
-                sf::Text sub(hudFont, sf::String(L"点击返回主界面"), 26);
-                sub.setFillColor(sf::Color(230, 220, 210, static_cast<std::uint8_t>(210.f * a01)));
+                sf::Text line1(hudFont, sf::String(L"此卷暂止，文脉未绝"), 30);
+                line1.setFillColor(sf::Color(210, 198, 176, static_cast<std::uint8_t>(224.f * a01)));
+                const sf::FloatRect l1 = line1.getLocalBounds();
+                line1.setOrigin(sf::Vector2f(l1.position.x + l1.size.x * 0.5f, l1.position.y + l1.size.y * 0.5f));
+                line1.setPosition(sf::Vector2f(center.x, center.y - 34.f));
+                window.draw(line1);
+
+                sf::Text sub(hudFont, sf::String(L"按 Esc 或点击下方返回主界面"), 23);
+                sub.setFillColor(sf::Color(196, 184, 166, static_cast<std::uint8_t>(205.f * a01)));
                 const sf::FloatRect sb = sub.getLocalBounds();
                 sub.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
-                sub.setPosition(sf::Vector2f(center.x, center.y - 20.f));
+                sub.setPosition(sf::Vector2f(center.x, center.y + 8.f));
                 window.draw(sub);
             }
         }
@@ -472,18 +537,26 @@ void runPostBattleExitOverlay(sf::RenderWindow& window,
             sf::RectangleShape btn(sf::Vector2f(backRect.size.x, backRect.size.y));
             btn.setPosition(backRect.position);
             if (victory) {
-                btn.setFillColor(sf::Color(45, 95, 60, 240));
-                btn.setOutlineColor(sf::Color(130, 210, 140, 255));
+                btn.setFillColor(hoverBack ? sf::Color(44, 56, 78, 236) : sf::Color(34, 42, 62, 228));
+                btn.setOutlineColor(hoverBack ? sf::Color(224, 190, 120, 240) : sf::Color(170, 140, 92, 220));
             } else {
-                btn.setFillColor(sf::Color(120, 50, 50, 240));
-                btn.setOutlineColor(sf::Color(210, 95, 95, 255));
+                btn.setFillColor(hoverBack ? sf::Color(42, 52, 76, 235) : sf::Color(34, 42, 62, 228));
+                btn.setOutlineColor(hoverBack ? sf::Color(222, 186, 118, 240) : sf::Color(164, 136, 90, 220));
             }
-            btn.setOutlineThickness(2.f);
+            btn.setOutlineThickness(hoverBack ? 2.6f : 2.1f);
             window.draw(btn);
+
+            {
+                sf::RectangleShape hl(sf::Vector2f(backRect.size.x - 18.f, backRect.size.y * 0.44f));
+                hl.setOrigin(sf::Vector2f(hl.getSize().x * 0.5f, 0.f));
+                hl.setPosition(sf::Vector2f(backRect.position.x + backRect.size.x * 0.5f, backRect.position.y + 4.f));
+                hl.setFillColor(sf::Color(255, 255, 255, hoverBack ? 22 : 14));
+                window.draw(hl);
+            }
 
             if (hudFontLoaded) {
                 sf::Text label(hudFont, sf::String(L"返回主界面"), 26);
-                label.setFillColor(sf::Color::White);
+                label.setFillColor(hoverBack ? sf::Color(245, 236, 216) : sf::Color(230, 222, 204));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
                 label.setPosition(sf::Vector2f(backRect.position.x + backRect.size.x * 0.5f,
@@ -613,8 +686,12 @@ bool GameFlowController::initialize(CharacterClass cc) {
     mapUI_.setCurrentLayer(0);
     mapUI_.set_allow_any_node_click(false);
 
-    if (hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
-        hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf")) {
+    // 战斗结果页/全局 HUD 字体：与其它界面统一，优先使用项目内字体。
+    if (hudFont_.openFromFile("assets/fonts/Sanji.ttf") ||
+        hudFont_.openFromFile("data/font.ttf") ||
+        hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") ||
+        hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf") ||
+        hudFont_.openFromFile("C:/Windows/Fonts/simsun.ttc")) {
         hudFontLoaded_ = true;
     }
 
@@ -1412,7 +1489,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
 
                     reward_relic_offers.clear();
                     reward_potion_offers.clear();
-                    // 遗物/药水按掉落概率“生成候选”，点击才真正领取
+                    // 遗物/灵液按掉落概率“生成候选”，点击才真正领取
                     if (runRng_.uniform_int(0, 99) < 40) {
                         const RelicId r = battleEngine_.roll_reward_relic();
                         if (!r.empty()) reward_relic_offers.push_back(r);
@@ -1691,7 +1768,7 @@ void GameFlowController::resolveEvent(const std::string& contentId) {
         } else if (type == "add_curse") {
             const int count = std::max(0, value);
             for (int i = 0; i < count; ++i) {
-                cardSystem_.add_to_master_deck("parasite");
+                cardSystem_.add_to_master_deck(event_pick_random_curse(runRng_));
             }
         } else if (type == "remove_card") {
             const int count = std::max(0, value);
@@ -1718,12 +1795,9 @@ void GameFlowController::resolveEvent(const std::string& contentId) {
 
                 std::vector<InstanceId> candidates;
                 for (const auto& inst : deck) {
-                    if (inst.id == "parasite" || inst.id == "parasite+") candidates.push_back(inst.instanceId);
+                    if (is_curse_card_id(inst.id)) candidates.push_back(inst.instanceId);
                 }
-                if (candidates.empty()) {
-                    const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
-                    candidates.push_back(deck[static_cast<size_t>(idx)].instanceId);
-                }
+                if (candidates.empty()) break; // 无诅咒则本次效果不移除任何牌
                 const InstanceId picked = candidates[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(candidates.size())))];
                 eventEngine_.remove_card_from_master_deck(picked);
             }
@@ -1889,10 +1963,10 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
         }
         if (eff.type == "card_reward") return std::string("获得了 ") + std::to_string(v) + " 张新卡牌。";
         if (eff.type == "card_reward_choose") return std::string("可选获得 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
-        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "add_curse") return std::string("获得了 ") + std::to_string(v) + " 张诅咒牌。";
         if (eff.type == "remove_card") return std::string("移除了牌组中的 ") + std::to_string(v) + " 张卡牌。";
         if (eff.type == "remove_card_choose") return std::string("自选移除牌组中的 ") + std::to_string(std::max(1, v)) + " 张卡牌。";
-        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒（寄生）牌。";
+        if (eff.type == "remove_curse") return std::string("移除了 ") + std::to_string(v) + " 张诅咒牌。";
         if (eff.type == "upgrade_random") return std::string("升级了 ") + std::to_string(v) + " 张卡牌。";
         if (eff.type == "relic") return std::string("获得了 ") + std::to_string(v) + " 个遗物。";
         if (eff.type == "none") return std::string("无事发生。");
@@ -2133,11 +2207,15 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                 pushDetail("自选获得卡牌：" + join_names_cn(chosenNames));
                             } else if (type == "add_curse") {
                                 const int count = std::min(4, std::max(0, value));
+                                std::vector<std::string> gainedNames;
                                 for (int i = 0; i < count; ++i) {
-                                    cardSystem_.add_to_master_deck("parasite");
-                                    pushCardPreview("parasite");
+                                    const CardId gainedCurse = event_pick_random_curse(runRng_);
+                                    cardSystem_.add_to_master_deck(gainedCurse);
+                                    pushCardPreview(gainedCurse);
+                                    const CardData* cd = get_card_by_id(gainedCurse);
+                                    gainedNames.push_back(cd ? cd->name : gainedCurse);
                                 }
-                                pushDetail("获得诅咒牌：寄生 x" + std::to_string(count));
+                                pushDetail("获得诅咒牌：" + join_names_cn(gainedNames));
                             } else if (type == "remove_card") {
                                 const int count = std::min(4, std::max(0, value));
                                 std::vector<std::string> removedNames;
@@ -2205,12 +2283,9 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
 
                                     std::vector<InstanceId> candidates;
                                     for (const auto& inst : deck) {
-                                        if (inst.id == "parasite" || inst.id == "parasite+") candidates.push_back(inst.instanceId);
+                                        if (is_curse_card_id(inst.id)) candidates.push_back(inst.instanceId);
                                     }
-                                    if (candidates.empty()) {
-                                        const int idx = randomIndex(runRng_, static_cast<int>(deck.size()));
-                                        candidates.push_back(deck[static_cast<size_t>(idx)].instanceId);
-                                    }
+                                    if (candidates.empty()) break; // 无诅咒则本次效果不移除任何牌
                                     const InstanceId picked = candidates[static_cast<size_t>(randomIndex(runRng_, static_cast<int>(candidates.size())))];
                                     for (const auto& inst : deck) {
                                         if (inst.instanceId == picked) {
@@ -2222,7 +2297,10 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                     }
                                     eventEngine_.remove_card_from_master_deck(picked);
                                 }
-                                pushDetail("移除诅咒相关卡牌：" + join_names_cn(removedNames));
+                                if (removedNames.empty())
+                                    pushDetail("未找到诅咒牌，未移除任何卡牌。");
+                                else
+                                    pushDetail("移除诅咒牌：" + join_names_cn(removedNames));
                             } else if (type == "upgrade_random") {
                                 const int attempts = std::min(4, std::max(0, value));
                                 std::vector<std::string> upgradedNames;

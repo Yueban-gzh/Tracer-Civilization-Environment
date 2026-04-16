@@ -44,7 +44,7 @@ void EventShopRestUI::drawRestScreen(sf::RenderWindow& window) {
         drawMasterDeckCardPickGrid(window, restData_.deckForUpgrade, sf::String(), false, gridLeft, contentW,
             gridTop + kGridPadTop, gridBottom - kGridPadBottom, gridTop, gridBottom, scale, bodySize, lw, lh,
             restDeckPickScrollOffset_, restDeckPickScrollMax_, eventCardScrollStep_, restUpgradeRects_,
-            restForgeListViewportRect_, restForgeViewUpgrade_, true, true);
+            restForgeListViewportRect_, restForgeViewUpgrade_, true, true, 5);
 
         const float vTop = restForgeListViewportRect_.position.y;
         const float vH = restForgeListViewportRect_.size.y;

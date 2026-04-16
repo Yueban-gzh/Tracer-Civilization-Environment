@@ -149,7 +149,7 @@ public:
     }
 };
 
-class ToyOrnithopterRelic : public IBattleModifier {  // 玩具扑翼飞机：每使用一瓶药水，回复 5 点生命
+class ToyOrnithopterRelic : public IBattleModifier {  // 玩具扑翼飞机：每使用一瓶灵液，回复 5 点生命
 public:
     void on_potion_used(BattleState& state, PotionId /*id*/) override {
         if (state.player.currentHp <= 0) return;   // 玩家已死则跳过

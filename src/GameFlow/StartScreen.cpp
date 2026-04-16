@@ -1,4 +1,8 @@
 #include <SFML/Graphics.hpp>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -51,6 +55,221 @@ std::filesystem::path resolve_save_path(const std::string& path) {
 
 bool saveFileExists(const std::string& path) {
     return std::filesystem::exists(resolve_save_path(path));
+}
+
+bool tryLoadTexture(sf::Texture& tex, const std::initializer_list<std::string>& paths) {
+    for (const auto& p : paths) {
+        if (tex.loadFromFile(p)) return true;
+    }
+    return false;
+}
+
+void drawTextureCover(sf::RenderWindow& window, const sf::Texture& tex) {
+    const sf::Vector2u ws = window.getSize();
+    const sf::Vector2u ts = tex.getSize();
+    if (ws.x == 0 || ws.y == 0 || ts.x == 0 || ts.y == 0) return;
+    sf::Sprite sp(tex);
+    const float sx = static_cast<float>(ws.x) / static_cast<float>(ts.x);
+    const float sy = static_cast<float>(ws.y) / static_cast<float>(ts.y);
+    const float s = std::max(sx, sy);
+    sp.setScale(sf::Vector2f(s, s));
+    sp.setOrigin(sf::Vector2f(ts.x * 0.5f, ts.y * 0.5f));
+    sp.setPosition(sf::Vector2f(static_cast<float>(ws.x) * 0.5f, static_cast<float>(ws.y) * 0.5f));
+    window.draw(sp);
+}
+
+struct MainMenuLayout {
+    std::array<sf::FloatRect, 7> rows{};
+    float titleY = 0.f;
+    float subtitleY = 0.f;
+    float hintY = 0.f;
+};
+
+MainMenuLayout buildMainMenuLayout(float ww, float hh) {
+    MainMenuLayout L;
+    const float centerX = ww * 0.5f;
+    const float titleBaseY = hh * 0.185f;
+    L.titleY = titleBaseY;
+    L.subtitleY = titleBaseY + 78.f;
+    L.hintY = titleBaseY + 118.f;
+
+    const float startY = hh * 0.345f;
+    const std::array<float, 7> heights = {60.f, 60.f, 52.f, 52.f, 52.f, 52.f, 52.f};
+    const std::array<float, 7> widths = {392.f, 392.f, 350.f, 350.f, 350.f, 350.f, 350.f};
+    const std::array<float, 7> gaps = {14.f, 22.f, 18.f, 10.f, 10.f, 14.f, 0.f};
+
+    float y = startY;
+    for (int i = 0; i < 7; ++i) {
+        const float w = widths[static_cast<std::size_t>(i)];
+        const float h = heights[static_cast<std::size_t>(i)];
+        L.rows[static_cast<std::size_t>(i)] =
+            sf::FloatRect(sf::Vector2f(centerX - w * 0.5f, y), sf::Vector2f(w, h));
+        y += h + gaps[static_cast<std::size_t>(i)];
+    }
+    return L;
+}
+
+void drawInkMistBackdrop(sf::RenderWindow& window, float ww, float hh) {
+    sf::RectangleShape v(sf::Vector2f(ww, hh));
+    v.setPosition(sf::Vector2f(0.f, 0.f));
+    v.setFillColor(sf::Color(8, 10, 16, 74));
+    window.draw(v);
+
+    sf::RectangleShape centerBand(sf::Vector2f(ww * 0.44f, hh * 0.64f));
+    centerBand.setOrigin(sf::Vector2f(centerBand.getSize().x * 0.5f, centerBand.getSize().y * 0.5f));
+    centerBand.setPosition(sf::Vector2f(ww * 0.5f, hh * 0.44f));
+    centerBand.setFillColor(sf::Color(12, 14, 22, 54));
+    centerBand.setOutlineThickness(0.f);
+    window.draw(centerBand);
+
+    const sf::Color markColor(178, 150, 96, 48);
+    const float markW = 26.f;
+    const float markH = 1.f;
+    const float markOffsetX = centerBand.getSize().x * 0.5f - 28.f;
+    const float markTopY = centerBand.getPosition().y - centerBand.getSize().y * 0.5f + 24.f;
+    const float markBotY = centerBand.getPosition().y + centerBand.getSize().y * 0.5f - 24.f;
+    sf::RectangleShape mark(sf::Vector2f(markW, markH));
+    mark.setFillColor(markColor);
+    mark.setPosition(sf::Vector2f(centerBand.getPosition().x - markOffsetX, markTopY));
+    window.draw(mark);
+    mark.setPosition(sf::Vector2f(centerBand.getPosition().x + markOffsetX - markW, markTopY));
+    window.draw(mark);
+    mark.setPosition(sf::Vector2f(centerBand.getPosition().x - markOffsetX, markBotY));
+    window.draw(mark);
+    mark.setPosition(sf::Vector2f(centerBand.getPosition().x + markOffsetX - markW, markBotY));
+    window.draw(mark);
+}
+
+void drawMainTitle(sf::RenderWindow& window, const sf::Font& font, float ww, const MainMenuLayout& L, float t) {
+    const float pulse = 0.5f + 0.5f * std::sin(t * 1.2f);
+
+    sf::Text titleGlow(font, sf::String(L"溯源者"), 80u);
+    titleGlow.setFillColor(sf::Color(214, 182, 112, static_cast<std::uint8_t>(24 + 20 * pulse)));
+    const sf::FloatRect gb = titleGlow.getLocalBounds();
+    titleGlow.setOrigin(sf::Vector2f(gb.position.x + gb.size.x * 0.5f, gb.position.y + gb.size.y * 0.5f));
+    titleGlow.setPosition(sf::Vector2f(ww * 0.5f, L.titleY + 2.f));
+    window.draw(titleGlow);
+
+    sf::Text title(font, sf::String(L"溯源者"), 75u);
+    title.setLetterSpacing(1.2f);
+    title.setFillColor(sf::Color(240, 231, 210));
+    title.setOutlineColor(sf::Color(34, 28, 18, 228));
+    title.setOutlineThickness(2.2f);
+    const sf::FloatRect tb = title.getLocalBounds();
+    title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+    title.setPosition(sf::Vector2f(ww * 0.5f, L.titleY));
+    window.draw(title);
+
+    sf::RectangleShape sep(sf::Vector2f(220.f, 1.f));
+    sep.setOrigin(sf::Vector2f(sep.getSize().x * 0.5f, 0.f));
+    sep.setPosition(sf::Vector2f(ww * 0.5f, L.titleY + 47.f));
+    sep.setFillColor(sf::Color(182, 154, 98, 162));
+    window.draw(sep);
+
+    sf::Text subtitle(font, sf::String(L"文明环境"), 31u);
+    subtitle.setLetterSpacing(1.26f);
+    subtitle.setFillColor(sf::Color(208, 199, 182));
+    subtitle.setOutlineColor(sf::Color(20, 18, 24, 180));
+    subtitle.setOutlineThickness(1.f);
+    const sf::FloatRect sb = subtitle.getLocalBounds();
+    subtitle.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
+    subtitle.setPosition(sf::Vector2f(ww * 0.5f, L.subtitleY));
+    window.draw(subtitle);
+}
+
+void drawMenuButton(sf::RenderWindow& window, const sf::Font& font, const sf::FloatRect& r, const std::wstring& label,
+                    bool enabled, float hover01, float press01, bool primary, bool subdued) {
+    const float lift = hover01 * 2.2f - press01 * 1.8f;
+    sf::ConvexShape shape(6);
+    const float bevel = 16.f;
+    shape.setPoint(0, sf::Vector2f(r.position.x + bevel, r.position.y + lift));
+    shape.setPoint(1, sf::Vector2f(r.position.x + r.size.x - bevel, r.position.y + lift));
+    shape.setPoint(2, sf::Vector2f(r.position.x + r.size.x, r.position.y + r.size.y * 0.5f + lift));
+    shape.setPoint(3, sf::Vector2f(r.position.x + r.size.x - bevel, r.position.y + r.size.y + lift));
+    shape.setPoint(4, sf::Vector2f(r.position.x + bevel, r.position.y + r.size.y + lift));
+    shape.setPoint(5, sf::Vector2f(r.position.x, r.position.y + r.size.y * 0.5f + lift));
+
+    const sf::Color fillBase = primary ? sf::Color(34, 42, 62, 198)
+                                       : (subdued ? sf::Color(26, 32, 48, 182) : sf::Color(30, 36, 54, 190));
+    const sf::Color fillHover = primary ? sf::Color(42, 52, 76, 214)
+                                        : (subdued ? sf::Color(34, 42, 62, 196) : sf::Color(38, 46, 68, 204));
+    const sf::Color lineBase = enabled ? (subdued ? sf::Color(132, 112, 78, 166) : sf::Color(150, 125, 82, 184))
+                                       : sf::Color(96, 94, 92, 150);
+    const sf::Color lineHover = enabled ? (subdued ? sf::Color(188, 162, 108, 212) : sf::Color(214, 182, 116, 232))
+                                        : sf::Color(116, 114, 112, 168);
+
+    const auto lerpColor = [](const sf::Color& a, const sf::Color& b, float t) {
+        auto ch = [t](std::uint8_t x, std::uint8_t y) -> std::uint8_t {
+            return static_cast<std::uint8_t>(x + (y - x) * std::clamp(t, 0.f, 1.f));
+        };
+        return sf::Color(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a));
+    };
+
+    shape.setFillColor(lerpColor(fillBase, fillHover, hover01));
+    shape.setOutlineColor(lerpColor(lineBase, lineHover, hover01));
+    shape.setOutlineThickness(1.55f + hover01 * 0.75f);
+    window.draw(shape);
+
+    sf::RectangleShape inner(sf::Vector2f(r.size.x - 24.f, std::max(6.f, r.size.y * 0.45f)));
+    inner.setOrigin(sf::Vector2f(inner.getSize().x * 0.5f, 0.f));
+    inner.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + 5.f + lift));
+    inner.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(8 + 14 * hover01)));
+    window.draw(inner);
+
+    const unsigned fontSize = primary ? 31u : (subdued ? 24u : 26u);
+    sf::Text txt(font, sf::String(label), fontSize);
+    txt.setFillColor(enabled ? (subdued ? sf::Color(214, 206, 190) : sf::Color(236, 228, 208)) : sf::Color(136, 136, 142));
+    txt.setOutlineColor(sf::Color(16, 14, 20, 190));
+    txt.setOutlineThickness(1.f);
+    const sf::FloatRect tb = txt.getLocalBounds();
+    txt.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+    txt.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f + lift));
+    window.draw(txt);
+}
+
+void drawLoadSlotButton(sf::RenderWindow& window, const sf::Font& font, const sf::FloatRect& r, const std::wstring& label,
+                        bool enabled, float hover01) {
+    sf::ConvexShape shape(6);
+    const float bevel = 18.f;
+    shape.setPoint(0, sf::Vector2f(r.position.x + bevel, r.position.y));
+    shape.setPoint(1, sf::Vector2f(r.position.x + r.size.x - bevel, r.position.y));
+    shape.setPoint(2, sf::Vector2f(r.position.x + r.size.x, r.position.y + r.size.y * 0.5f));
+    shape.setPoint(3, sf::Vector2f(r.position.x + r.size.x - bevel, r.position.y + r.size.y));
+    shape.setPoint(4, sf::Vector2f(r.position.x + bevel, r.position.y + r.size.y));
+    shape.setPoint(5, sf::Vector2f(r.position.x, r.position.y + r.size.y * 0.5f));
+
+    const sf::Color fillBase = enabled ? sf::Color(34, 42, 62, 202) : sf::Color(28, 32, 46, 178);
+    const sf::Color fillHover = enabled ? sf::Color(46, 56, 82, 218) : sf::Color(32, 38, 54, 188);
+    const sf::Color edgeBase = enabled ? sf::Color(160, 132, 86, 188) : sf::Color(108, 104, 100, 150);
+    const sf::Color edgeHover = enabled ? sf::Color(222, 186, 118, 232) : sf::Color(126, 120, 114, 164);
+
+    const auto lerpColor = [](const sf::Color& a, const sf::Color& b, float t) {
+        const float k = std::clamp(t, 0.f, 1.f);
+        auto ch = [k](std::uint8_t x, std::uint8_t y) -> std::uint8_t {
+            return static_cast<std::uint8_t>(x + (y - x) * k);
+        };
+        return sf::Color(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a));
+    };
+
+    shape.setFillColor(lerpColor(fillBase, fillHover, hover01));
+    shape.setOutlineColor(lerpColor(edgeBase, edgeHover, hover01));
+    shape.setOutlineThickness(1.7f + hover01 * 0.8f);
+    window.draw(shape);
+
+    sf::RectangleShape hl(sf::Vector2f(r.size.x - 28.f, std::max(8.f, r.size.y * 0.42f)));
+    hl.setOrigin(sf::Vector2f(hl.getSize().x * 0.5f, 0.f));
+    hl.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + 5.f));
+    hl.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(10 + 18 * hover01)));
+    window.draw(hl);
+
+    sf::Text txt(font, sf::String(label), 27u);
+    txt.setFillColor(enabled ? sf::Color(236, 228, 208) : sf::Color(140, 140, 146));
+    txt.setOutlineColor(sf::Color(16, 14, 20, 190));
+    txt.setOutlineThickness(1.f);
+    const sf::FloatRect tb = txt.getLocalBounds();
+    txt.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+    txt.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f));
+    window.draw(txt);
 }
 
 struct StartSettingsLayout {
@@ -200,11 +419,21 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
     sf::ContextSettings ctx;
     ctx.antiAliasingLevel = 2u;
 
+    sf::Texture mainBgTex;
+    const bool mainBgLoaded = tryLoadTexture(mainBgTex, {
+        "assets/backgrounds/main_bg.png",
+        "./assets/backgrounds/main_bg.png",
+    });
+
     bool        running              = true;
     bool        requestedContinue    = false;
     std::string requestedLoadPath;
     bool        inStartSettings      = false;
     int         startSettingsPreview = 0;
+    std::array<float, 7> hoverAnim{};
+    std::array<float, 7> pressAnim{};
+    sf::Clock frameClock;
+    sf::Clock animClock;
 
     while (window.isOpen() && running) {
         controller.applyPendingVideoAndHudResize(ctx);
@@ -253,24 +482,17 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     continue;
                 }
 
-                const float btnW  = 360.f;
-                const float btnH  = 68.f;
-                const float gapY  = 16.f;
-                const float startY = cy - 105.f;
-                auto        rectAt = [&](int idx) -> sf::FloatRect {
-                    const float centerY = startY + idx * (btnH + gapY);
-                    return sf::FloatRect(sf::Vector2f(cx - btnW * 0.5f, centerY - btnH * 0.5f), sf::Vector2f(btnW, btnH));
-                };
-
-                const sf::FloatRect newGameRect       = rectAt(0);
-                const sf::FloatRect contRect          = rectAt(1);
-                const sf::FloatRect loadRect          = rectAt(2);
-                const sf::FloatRect catalogRect       = rectAt(3);
-                const sf::FloatRect potionCatalogRect = rectAt(4);
-                const sf::FloatRect relicCatalogRect  = rectAt(5);
-                const sf::FloatRect settingsRect      = rectAt(6);
+                const MainMenuLayout menuL = buildMainMenuLayout(static_cast<float>(sz.x), static_cast<float>(sz.y));
+                const sf::FloatRect& newGameRect       = menuL.rows[0];
+                const sf::FloatRect& contRect          = menuL.rows[1];
+                const sf::FloatRect& loadRect          = menuL.rows[2];
+                const sf::FloatRect& catalogRect       = menuL.rows[3];
+                const sf::FloatRect& potionCatalogRect = menuL.rows[4];
+                const sf::FloatRect& relicCatalogRect  = menuL.rows[5];
+                const sf::FloatRect& settingsRect      = menuL.rows[6];
 
                 if (newGameRect.contains(mp)) {
+                    pressAnim[0] = 1.f;
                     if (const auto chosen = runCharacterSelectScreen(window); chosen.has_value()) {
                         (void)controller.initialize(*chosen);
                         running = false;
@@ -279,11 +501,13 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                     break;
                 }
                 if (hasSave && contRect.contains(mp)) {
+                    pressAnim[1] = 1.f;
                     requestedContinue = true;
                     running           = false;
                     break;
                 }
                 if (loadRect.contains(mp)) {
+                    pressAnim[2] = 1.f;
                     bool picking = true;
                     while (window.isOpen() && picking) {
                         controller.applyPendingVideoAndHudResize(ctx);
@@ -301,8 +525,8 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                             if (const auto* m2 = ev2->getIf<sf::Event::MouseButtonPressed>()) {
                                 if (m2->button != sf::Mouse::Button::Left) continue;
                                 const sf::Vector2f p = window.mapPixelToCoords(m2->position);
-                                const float        subW = 420.f, subH = 70.f, subGap = 22.f;
-                                const float        baseY = cy - (subH + subGap);
+                                const float        subW = 428.f, subH = 74.f, subGap = 19.f;
+                                const float        baseY = cy - 72.f;
                                 for (int s = 1; s <= 3; ++s) {
                                     sf::FloatRect r(sf::Vector2f(cx - subW * 0.5f, baseY + (s - 1) * (subH + subGap)),
                                                     sf::Vector2f(subW, subH));
@@ -319,56 +543,83 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
                             }
                         }
                         if (!picking || !window.isOpen()) break;
-                        window.clear(sf::Color(18, 16, 24));
-                        sf::Text title2(font, L"选择存档槽", 38);
-                        title2.setFillColor(sf::Color(245, 240, 230));
+                        if (mainBgLoaded) {
+                            drawTextureCover(window, mainBgTex);
+                        } else {
+                            window.clear(sf::Color(18, 16, 24));
+                        }
+                        drawInkMistBackdrop(window, static_cast<float>(sz.x), static_cast<float>(sz.y));
+
+                        sf::RectangleShape panel(sf::Vector2f(560.f, 430.f));
+                        panel.setOrigin(sf::Vector2f(panel.getSize().x * 0.5f, panel.getSize().y * 0.5f));
+                        panel.setPosition(sf::Vector2f(cx, cy + 10.f));
+                        panel.setFillColor(sf::Color(12, 16, 24, 132));
+                        panel.setOutlineThickness(1.f);
+                        panel.setOutlineColor(sf::Color(180, 150, 92, 42));
+                        window.draw(panel);
+
+                        sf::Text title2(font, L"读档", 52);
+                        title2.setFillColor(sf::Color(238, 228, 205));
+                        title2.setOutlineColor(sf::Color(22, 18, 16, 212));
+                        title2.setOutlineThickness(2.f);
                         sf::FloatRect tb2 = title2.getLocalBounds();
                         title2.setOrigin(
                             sf::Vector2f(tb2.position.x + tb2.size.x * 0.5f, tb2.position.y + tb2.size.y * 0.5f));
-                        title2.setPosition(sf::Vector2f(cx, cy - 170.f));
+                        title2.setPosition(sf::Vector2f(cx, cy - 188.f));
                         window.draw(title2);
-                        const float subW = 420.f, subH = 70.f, subGap = 22.f;
-                        const float baseY = cy - (subH + subGap);
+
+                        sf::Text subline(font, L"选择存档槽位", 23);
+                        subline.setFillColor(sf::Color(194, 184, 166, 206));
+                        const sf::FloatRect slb = subline.getLocalBounds();
+                        subline.setOrigin(sf::Vector2f(slb.position.x + slb.size.x * 0.5f, slb.position.y + slb.size.y * 0.5f));
+                        subline.setPosition(sf::Vector2f(cx, cy - 138.f));
+                        window.draw(subline);
+
+                        sf::RectangleShape sep(sf::Vector2f(220.f, 1.f));
+                        sep.setOrigin(sf::Vector2f(sep.getSize().x * 0.5f, 0.f));
+                        sep.setPosition(sf::Vector2f(cx, cy - 116.f));
+                        sep.setFillColor(sf::Color(182, 154, 98, 148));
+                        window.draw(sep);
+
+                        const float subW = 428.f, subH = 74.f, subGap = 19.f;
+                        const float baseY = cy - 72.f;
+                        const sf::Vector2f mouseP = window.mapPixelToCoords(sf::Mouse::getPosition(window));
                         for (int s = 1; s <= 3; ++s) {
                             const bool ok = saveFileExists(slot_path(s));
-                            sf::RectangleShape b(sf::Vector2f(subW, subH));
-                            b.setPosition(sf::Vector2f(cx - subW * 0.5f, baseY + (s - 1) * (subH + subGap)));
-                            b.setFillColor(ok ? sf::Color(80, 70, 110) : sf::Color(50, 50, 70));
-                            b.setOutlineColor(sf::Color(200, 190, 150));
-                            b.setOutlineThickness(2.f);
-                            window.draw(b);
-                            std::wstring label = L"槽位 " + std::to_wstring(s) + (ok ? L"（可用）" : L"（空）");
-                            sf::Text t(font, label, 26);
-                            t.setFillColor(ok ? sf::Color(245, 240, 235) : sf::Color(130, 130, 150));
-                            sf::FloatRect rb = t.getLocalBounds();
-                            t.setOrigin(sf::Vector2f(rb.position.x + rb.size.x * 0.5f, rb.position.y + rb.size.y * 0.5f));
-                            t.setPosition(sf::Vector2f(cx, b.getPosition().y + subH * 0.5f));
-                            window.draw(t);
+                            sf::FloatRect r(sf::Vector2f(cx - subW * 0.5f, baseY + (s - 1) * (subH + subGap)),
+                                            sf::Vector2f(subW, subH));
+                            const bool hover = r.contains(mouseP);
+                            std::wstring label = L"槽位 " + std::to_wstring(s) + (ok ? L" · 可读取" : L" · 空");
+                            drawLoadSlotButton(window, font, r, label, ok, hover ? 1.f : 0.f);
                         }
-                        sf::Text hint(font, L"Esc 返回", 20);
-                        hint.setFillColor(sf::Color(200, 190, 170));
-                        hint.setPosition(sf::Vector2f(24.f, static_cast<float>(sz.y) - 46.f));
+                        sf::Text hint(font, L"Esc 返回主菜单", 18);
+                        hint.setFillColor(sf::Color(182, 172, 154, 176));
+                        hint.setPosition(sf::Vector2f(24.f, static_cast<float>(sz.y) - 42.f));
                         window.draw(hint);
                         window.display();
                     }
                     break;
                 }
                 if (catalogRect.contains(mp)) {
+                    pressAnim[3] = 1.f;
                     runCardCatalogScreen(window);
                     hasSave = saveFileExists(savePath);
                     break;
                 }
                 if (potionCatalogRect.contains(mp)) {
+                    pressAnim[4] = 1.f;
                     runPotionCatalogScreen(window);
                     hasSave = saveFileExists(savePath);
                     break;
                 }
                 if (relicCatalogRect.contains(mp)) {
+                    pressAnim[5] = 1.f;
                     runRelicCatalogScreen(window);
                     hasSave = saveFileExists(savePath);
                     break;
                 }
                 if (settingsRect.contains(mp)) {
+                    pressAnim[6] = 1.f;
                     inStartSettings      = true;
                     startSettingsPreview = UserSettings::instance().videoPreset();
                     break;
@@ -376,14 +627,19 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
             }
         }
 
-        window.clear(sf::Color(18, 16, 24));
+        const float dt = std::min(0.05f, frameClock.restart().asSeconds());
+        const float t = animClock.getElapsedTime().asSeconds();
 
         const sf::Vector2u szu = window.getSize();
         const float        cx  = static_cast<float>(szu.x) * 0.5f;
-        const float        cy  = static_cast<float>(szu.y) * 0.5f;
         const sf::Vector2f mouseWorld = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
         if (inStartSettings) {
+            if (mainBgLoaded) {
+                drawTextureCover(window, mainBgTex);
+            } else {
+                window.clear(sf::Color(18, 16, 24));
+            }
             StartSettingsLayout L;
             L.build(static_cast<float>(szu.x), static_cast<float>(szu.y));
             drawStartSettingsOverlay(window, font, mouseWorld, L, startSettingsPreview);
@@ -391,48 +647,46 @@ void runStartScreen(sf::RenderWindow& window, GameFlowController& controller) {
             continue;
         }
 
-        sf::Text title(font, L"溯源者：文明环境", 46);
-        title.setFillColor(sf::Color(245, 240, 230));
-        sf::FloatRect tb = title.getLocalBounds();
-        title.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-        title.setPosition(sf::Vector2f(cx, cy - 210.f));
-        window.draw(title);
+        if (mainBgLoaded) {
+            drawTextureCover(window, mainBgTex);
+        } else {
+            window.clear(sf::Color(18, 16, 24));
+        }
+        drawInkMistBackdrop(window, static_cast<float>(szu.x), static_cast<float>(szu.y));
 
-        sf::Text subtitle(font, L"按下按钮开始旅程", 24);
-        subtitle.setFillColor(sf::Color(200, 190, 170));
-        sf::FloatRect sb = subtitle.getLocalBounds();
-        subtitle.setOrigin(sf::Vector2f(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f));
-        subtitle.setPosition(sf::Vector2f(cx, cy - 155.f));
-        window.draw(subtitle);
+        const MainMenuLayout menuL = buildMainMenuLayout(static_cast<float>(szu.x), static_cast<float>(szu.y));
+        drawMainTitle(window, font, static_cast<float>(szu.x), menuL, t);
 
-        const float btnW  = 360.f;
-        const float btnH  = 68.f;
-        const float gapY  = 16.f;
-        const float startY = cy - 105.f;
+        sf::Text hint(font, sf::String(L"溯文明遗痕，辨失序真相"), 18);
+        hint.setFillColor(sf::Color(196, 188, 170, 186));
+        const sf::FloatRect hb = hint.getLocalBounds();
+        hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+        hint.setPosition(sf::Vector2f(cx, menuL.hintY));
+        window.draw(hint);
 
-        auto drawButton = [&](const std::wstring& text, float centerY, bool enabled) {
-            sf::RectangleShape btn(sf::Vector2f(btnW, btnH));
-            btn.setPosition(sf::Vector2f(cx - btnW * 0.5f, centerY - btnH * 0.5f));
-            btn.setFillColor(enabled ? sf::Color(78, 70, 110) : sf::Color(46, 46, 62));
-            btn.setOutlineColor(sf::Color(200, 190, 150));
-            btn.setOutlineThickness(2.f);
-            window.draw(btn);
+        const std::array<std::wstring, 7> labels = {
+            L"开始新游戏", L"继续游戏", L"读档", L"卡牌总览", L"灵液总览", L"遗物总览", L"设置"};
+        const std::array<bool, 7> enabled = {true, hasSave, true, true, true, true, true};
+        const std::array<bool, 7> primary = {true, true, false, false, false, false, false};
+        const std::array<bool, 7> subdued = {false, false, false, false, false, false, true};
 
-            sf::Text t(font, text, 28);
-            t.setFillColor(enabled ? sf::Color(245, 240, 235) : sf::Color(130, 130, 150));
-            sf::FloatRect rb = t.getLocalBounds();
-            t.setOrigin(sf::Vector2f(rb.position.x + rb.size.x * 0.5f, rb.position.y + rb.size.y * 0.5f));
-            t.setPosition(sf::Vector2f(cx, centerY));
-            window.draw(t);
-        };
+        for (int i = 0; i < 7; ++i) {
+            const bool hover = menuL.rows[static_cast<std::size_t>(i)].contains(mouseWorld) && enabled[static_cast<std::size_t>(i)];
+            const float hoverSpeed = hover ? 8.5f : 7.5f;
+            hoverAnim[static_cast<std::size_t>(i)] =
+                std::clamp(hoverAnim[static_cast<std::size_t>(i)] + (hover ? 1.f : -1.f) * hoverSpeed * dt, 0.f, 1.f);
+            pressAnim[static_cast<std::size_t>(i)] =
+                std::max(0.f, pressAnim[static_cast<std::size_t>(i)] - 4.6f * dt);
+            drawMenuButton(window, font, menuL.rows[static_cast<std::size_t>(i)], labels[static_cast<std::size_t>(i)],
+                           enabled[static_cast<std::size_t>(i)], hoverAnim[static_cast<std::size_t>(i)],
+                           pressAnim[static_cast<std::size_t>(i)], primary[static_cast<std::size_t>(i)],
+                           subdued[static_cast<std::size_t>(i)]);
+        }
 
-        drawButton(L"开始新游戏", startY + 0.f * (btnH + gapY), true);
-        drawButton(L"继续游戏", startY + 1.f * (btnH + gapY), hasSave);
-        drawButton(L"读档", startY + 2.f * (btnH + gapY), true);
-        drawButton(L"卡牌总览", startY + 3.f * (btnH + gapY), true);
-        drawButton(L"药水总览", startY + 4.f * (btnH + gapY), true);
-        drawButton(L"遗物总览", startY + 5.f * (btnH + gapY), true);
-        drawButton(L"设置", startY + 6.f * (btnH + gapY), true);
+        sf::Text footer(font, sf::String(L"Build 0.1.0  |  文脉崩坏档案"), 16);
+        footer.setFillColor(sf::Color(172, 164, 148, 150));
+        footer.setPosition(sf::Vector2f(24.f, static_cast<float>(szu.y) - 34.f));
+        window.draw(footer);
 
         window.display();
     }

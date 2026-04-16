@@ -4,7 +4,7 @@
 #include "BattleEngine/BattleUI.hpp"               // BattleUI 类声明
 #include "BattleEngine/BattleStateSnapshot.hpp"    // 战斗状态快照结构
 #include "CardSystem/CardSystem.hpp"               // CardInstance（本场减费展示）
-#include "BattleCoreRefactor/PotionEffects.hpp"    // 药水需目标判断
+#include "BattleCoreRefactor/PotionEffects.hpp"    // 灵液需目标判断
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
 #include "Common/ImagePath.hpp"
 #include "Common/UserSettings.hpp"
@@ -424,13 +424,13 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 {"red_skull", {L"红头骨", L"生命≤50%时攻击伤害+3"}},
                 {"snake_skull", {L"异蛇头骨", L"给予敌人中毒时额外+1层"}},
                 {"strawberry", {L"草莓", L"拾起时最大生命+7"}},
-                {"potion_belt", {L"药水腰带", L"拾起时药水槽位+2"}},
+                {"potion_belt", {L"灵液腰带", L"拾起时灵液槽位+2"}},
                 {"vajra", {L"金刚杵", L"战斗开始时获得 1 点力量"}},
                 {"nunchaku", {L"双截棍", L"每打出10张攻击牌获得1点能量"}},
                 {"ceramic_fish", {L"陶瓷小鱼", L"每次往牌组加牌时获得9金币"}},
                 {"hand_drum", {L"手摇鼓", L"回合开始时获得1层真言"}},
                 {"pen_nib", {L"钢笔尖", L"每打出的第10张攻击牌造成双倍伤害"}},
-                {"toy_ornithopter", {L"玩具扑翼飞机", L"每使用一瓶药水回复5点生命"}},
+                {"toy_ornithopter", {L"玩具扑翼飞机", L"每使用一瓶灵液回复5点生命"}},
                 {"preparation_pack", {L"准备背包", L"战斗开始时额外抽2张牌"}},
                 {"anchor", {L"锚", L"战斗开始时获得10点格挡"}},
                 {"art_of_war", {L"孙子兵法", L"回合中未打出攻击牌时，下一回合获得1点能量"}},
@@ -440,23 +440,23 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             if (it != m.end()) return it->second;
             return {L"未知遗物", L""};
         }
-        // 药水名称与效果（悬停提示用）：返回 (名称, 描述) 或 (未知药水, 空)
+        // 灵液名称与效果（悬停提示用）：返回 (名称, 描述) 或 (未知灵液, 空)
         inline std::pair<std::wstring, std::wstring> get_potion_display_info(const std::string& id) {
             static const std::unordered_map<std::string, std::pair<std::wstring, std::wstring>> m = {
-                {"strength_potion", {L"力量药水", L"获得 2 层力量"}},
-                {"block_potion", {L"格挡药水", L"获得 12 点格挡"}},
-                {"energy_potion", {L"能量药水", L"获得 2 点能量"}},
-                {"poison_potion", {L"毒药水", L"对目标施加 6 层中毒"}},
-                {"weak_potion", {L"虚弱药水", L"对目标施加 3 层虚弱"}},
-                {"fear_potion", {L"恐惧药水", L"对目标施加 3 层易伤"}},
-                {"explosion_potion", {L"爆炸药水", L"对所有敌人造成 10 点伤害"}},
-                {"swift_potion", {L"迅捷药水", L"抽 3 张牌"}},
-                {"blood_potion", {L"鲜血药水", L"回复最大生命值 20%"}},
-                {"fire_potion", {L"火焰药水", L"对目标造成 20 点伤害"}},
+                {"strength_potion", {L"力量灵液", L"获得 2 层力量"}},
+                {"block_potion", {L"格挡灵液", L"获得 12 点格挡"}},
+                {"energy_potion", {L"能量灵液", L"获得 2 点能量"}},
+                {"poison_potion", {L"毒灵液", L"对目标施加 6 层中毒"}},
+                {"weak_potion", {L"虚弱灵液", L"对目标施加 3 层虚弱"}},
+                {"fear_potion", {L"恐惧灵液", L"对目标施加 3 层易伤"}},
+                {"explosion_potion", {L"爆炸灵液", L"对所有敌人造成 10 点伤害"}},
+                {"swift_potion", {L"迅捷灵液", L"抽 3 张牌"}},
+                {"blood_potion", {L"鲜血灵液", L"回复最大生命值 20%"}},
+                {"fire_potion", {L"火焰灵液", L"对目标造成 20 点伤害"}},
             };
             auto it = m.find(id);
             if (it != m.end()) return it->second;
-            return {L"未知药水", L""};
+            return {L"未知灵液", L""};
         }
 
         // 判断该手牌是否需要敌人目标：打击/重击等攻击牌需要，防御/能力等默认自选玩家
@@ -1032,7 +1032,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             hover_discard_pile_ = ui_hover_lerp(hover_discard_pile_, 0.f, dt);
             hover_exhaust_pile_ = ui_hover_lerp(hover_exhaust_pile_, 0.f, dt);
             hover_end_turn_     = ui_hover_lerp(hover_end_turn_, 0.f, dt);
-            return;  // 药水悬停已在上方更新
+            return;  // 灵液悬停已在上方更新
         }
 
         const float drawPileX = SIDE_MARGIN + PILE_CENTER_OFFSET - 4.f;
@@ -1817,7 +1817,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             if (ev.is<sf::Event::MouseButtonPressed>()) {
                 auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
                 if (btn && btn->button == sf::Mouse::Button::Left) {
-                    // 槽满领取药水：弹窗中选择要丢弃的旧药水
+                    // 槽满领取灵液：弹窗中选择要丢弃的旧灵液
                     if (reward_potion_replace_active_) {
                         if (reward_potion_replace_cancel_rect_.contains(mousePos)) {
                             reward_potion_replace_active_ = false;
@@ -1829,7 +1829,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         }
                         for (size_t i = 0; i < reward_potion_replace_slot_rects_.size(); ++i) {
                             if (reward_potion_replace_slot_rects_[i].contains(mousePos)) {
-                                // 用 i 槽的旧药水替换为 pending_reward_potion_id_
+                                // 用 i 槽的旧灵液替换为 pending_reward_potion_id_
                                 if (!pending_reward_potion_id_.empty()) {
                                     pending_reward_potion_replace_slot_ = static_cast<int>(i);
                                 }
@@ -1841,7 +1841,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         return false;
                     }
 
-                    // 遗物/药水：点击领取（选项制）——不依赖是否已选卡牌
+                    // 遗物/灵液：点击领取（选项制）——不依赖是否已选卡牌
                     for (size_t i = 0; i < reward_relic_rects_.size() && i < reward_relic_ids_.size(); ++i) {
                         if (reward_relic_rects_[i].contains(mousePos)) {
                             pending_reward_relic_id_ = reward_relic_ids_[i];
@@ -1922,9 +1922,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             auto const& btn = ev.getIf<sf::Event::MouseButtonPressed>();
             if (!btn) return false;
 
-            // 左键：先处理打牌逻辑，其次药水逻辑，再判断结束回合按钮
+            // 左键：先处理打牌逻辑，其次灵液逻辑，再判断结束回合按钮
             if (btn->button == sf::Mouse::Button::Left) {
-                // 若当前正在瞄准药水，点击怪物则确认使用
+                // 若当前正在瞄准灵液，点击怪物则确认使用
                 if (selectedPotionSlotIndex_ >= 0 && isAimingPotion_) {
                     for (size_t i = 0; i < monsterModelRects_.size(); ++i) {
                         if (monsterModelRects_[i].contains(mousePos) && lastSnapshot_ && i < lastSnapshot_->monsters.size()) {
@@ -1995,7 +1995,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
 
                 // 若尚未选中牌，则检查是否点中了某张手牌以开始选中/瞄准（在 drawBottomBar 中处理左键按下）
-                // 若未选中牌，检查是否点击药水槽
+                // 若未选中牌，检查是否点击灵液槽
                 if (selectedHandIndex_ < 0 && lastSnapshot_) {
                     for (size_t i = 0; i < potionSlotRects_.size() && i < lastSnapshot_->potions.size(); ++i) {
                         if (potionSlotRects_[i].contains(mousePos)) {
@@ -2018,7 +2018,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
             }
 
-            // 右键：取消当前选中的牌/药水或瞄准状态
+            // 右键：取消当前选中的牌/灵液或瞄准状态
             if (btn->button == sf::Mouse::Button::Right) {
                 selectedHandIndex_ = -1;
                 isAimingCard_ = false;
@@ -2202,7 +2202,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float CONTINUE_BTN_H = 56.f;
         reward_continue_rect_ = sf::FloatRect(sf::Vector2f(0.f, 0.f), sf::Vector2f(CONTINUE_BTN_W, CONTINUE_BTN_H));
 
-        // 遗物/药水选项点击区域也由 drawRewardScreen 统一刷新
+        // 遗物/灵液选项点击区域也由 drawRewardScreen 统一刷新
         reward_relic_rects_.clear();
         reward_potion_rects_.clear();
     }
@@ -2667,18 +2667,18 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         topBg.setFillColor(TOP_BAR_BG_COLOR);
         window.draw(topBg);
 
-        drawTopBar(window, s);                      // 顶栏：钥匙槽、名字、职业、HP、金币、药水、层数
+        drawTopBar(window, s);                      // 顶栏：钥匙槽、名字、职业、HP、金币、灵液、层数
         drawRelicsRow(window, s);                   // 遗物行：顶栏下方，最多 12 个遗物图标
 
         if (deck_view_active_) {                    // 牌组界面打开时只画牌组网格+返回按钮
             drawDeckView(window, s);
             drawTopRight(window, s);
-            drawRelicPotionTooltip(window, s);      // 顶栏遗物/药水仍可悬停查看
+            drawRelicPotionTooltip(window, s);      // 顶栏遗物/灵液仍可悬停查看
             draw_center_tip(window);
             return;
         }
 
-        if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利标题+金币+遗物/药水+三选一卡牌+跳过/继续
+        if (reward_screen_active_) {                 // 奖励界面：半透明遮罩+胜利标题+金币+遗物/灵液+三选一卡牌+跳过/继续
             drawBattleCenter(window, s);             // 底层仍画战场（模糊背景感）
             flushPendingBattleStatusIcons_(window);
             drawBottomBar(window, s);
@@ -2702,7 +2702,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         drawBattleCenter(window, s);                 // 战场中央：玩家区（模型+血条+状态）、怪物区（意图+模型+血条+状态）、伤害数字
 
-        drawRelicPotionTooltip(window, s);           // 遗物/药水悬停提示（顶栏药水槽、遗物行图标）
+        drawRelicPotionTooltip(window, s);           // 遗物/灵液悬停提示（顶栏灵液槽、遗物行图标）
 
         // 不再铺手牌区整宽纯色底条，避免挡住战斗背景；手牌与底栏控件直接叠在背景上。
 
@@ -2722,7 +2722,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!fontLoaded_) return;
         const bool potionSlotsInteractive = !pause_menu_active_ && !settings_panel_active_
             && !map_overlay_blocks_world_input_ && !deck_view_active_;
-        update_interactive_hover_(false, potionSlotsInteractive);  // 无底栏牌堆；药水与右上角可悬停
+        update_interactive_hover_(false, potionSlotsInteractive);  // 无底栏牌堆；灵液与右上角可悬停
         // 顶栏背景色块与战斗界面保持一致
         sf::RectangleShape topBg(sf::Vector2f(static_cast<float>(width_), TOP_BAR_BG_H));
         topBg.setPosition(sf::Vector2f(0.f, 0.f));
@@ -2734,7 +2734,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         drawRelicsRow(window, s);
         drawTopRight(window, s, false);
 
-        // 在地图/事件/商店/休息/宝箱等界面上，同样支持顶栏遗物/药水的悬停提示
+        // 在地图/事件/商店/休息/宝箱等界面上，同样支持顶栏遗物/灵液的悬停提示
         drawRelicPotionTooltip(window, s);
 
         // 在地图/事件/商店/休息等界面上叠加牌组视图（含遮罩）
@@ -2931,7 +2931,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
     }
 
-    // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、药水槽（1~5 槽）、当前层数（由 set_top_bar_map_floor 驱动）
+    // 顶栏从左到右：钥匙槽、名字、职业、HP、金币、灵液槽（1~5 槽）、当前层数（由 set_top_bar_map_floor 驱动）
     void BattleUI::drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         const float left = 28.f;              // 左侧起始
         const float rowY = TOP_ROW_Y + 8.f;   // 统一基线高度
@@ -2996,7 +2996,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         hpText.setFillColor(sf::Color(230, 80, 80));
         hpText.setPosition(sf::Vector2f(hpTextX, rowY));
         window.draw(hpText);
-        x += 96.f + itemGap + 50.f;           // 金钱再往右
+        x += 96.f + itemGap + 50.f;           // 金币再往右
 
         // 5. 金币
         ensure_topbar_icon("assets/images/gold", topbarGoldIconTex_, topbarGoldIconLoaded_);
@@ -3018,9 +3018,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         goldText.setFillColor(sf::Color(255, 200, 80));
         goldText.setPosition(sf::Vector2f(goldTextX, rowY));
         window.draw(goldText);
-        x += 44.f + itemGap + 12.f;          // 药水栏再往右，金钱与药水栏间隙缩小
+        x += 44.f + itemGap + 12.f;          // 灵液栏再往右，金币与灵液栏间隙缩小
 
-        // 6. 药水栏：槽位矩形保持未动画（供点击/提示命中）；绘制时按 hover_potion_slot_ 插值放大上移
+        // 6. 灵液栏：槽位矩形保持未动画（供点击/提示命中）；绘制时按 hover_potion_slot_ 插值放大上移
         const int potionSlotCount = std::max(1, std::min(5, s.potionSlotCount));  // 1~5 槽
         const float potionW = 56.f;
         const float potionH = 46.f;
@@ -3090,7 +3090,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 window.draw(fill);
             }
         }
-        x += 16.f;                              // 药水栏后留空
+        x += 16.f;                              // 灵液栏后留空
 
         // 7. 当前层数（与地图当前节点层同步，由 GameFlow 每帧/进入节点时刷新）
         const float floorX = width_ * 0.62f;
@@ -3141,7 +3141,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const unsigned fontSize = 20;
         const float maxTooltipW = 320.f;
 
-        // 优先检测遗物（遗物行在左上，先于药水）
+        // 优先检测遗物（遗物行在左上，先于灵液）
         for (size_t i = 0; i < relicSlotRects_.size() && i < s.relics.size(); ++i) {
             if (!relicSlotRects_[i].contains(mousePos_)) continue;
             auto [name, desc] = get_relic_display_info(s.relics[i]);
@@ -3172,7 +3172,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             return;  // 只显示一个提示框，避免重叠
         }
 
-        // 再检测药水（顶栏药水槽）
+        // 再检测灵液（顶栏灵液槽）
         for (size_t i = 0; i < potionSlotRects_.size() && i < s.potions.size(); ++i) {
             if (!potionSlotRects_[i].contains(mousePos_)) continue;
             auto [name, desc] = get_potion_display_info(s.potions[i]);
@@ -3222,7 +3222,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         overlay.setFillColor(sf::Color(0, 0, 0, 160));
         window.draw(overlay);
 
-        // 悬停插值（遗物/药水奖励）
+        // 悬停插值（遗物/灵液奖励）
         float dtHover = reward_hover_clock_.restart().asSeconds();
         if (dtHover > 0.08f) dtHover = 0.08f;
         if (dtHover < 0.f) dtHover = 0.f;
@@ -3267,7 +3267,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             rewardRowY += 54.f;
         }
 
-        // 遗物与药水奖励（显示在金币下方，各 40% 概率，互不冲突）
+        // 遗物与灵液奖励（显示在金币下方，各 40% 概率，互不冲突）
         rewardRowY = (reward_gold_ > 0) ? (panelY + 168.f) : (panelY + 120.f);
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
             constexpr float REWARD_RELIC_ICON_SZ = 48.f;
@@ -3363,7 +3363,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     icon.setOutlineThickness(2.f);
                     window.draw(icon);
                 }
-                sf::Text label(fontForChinese(), sf::String(L"药水"), 16);
+                sf::Text label(fontForChinese(), sf::String(L"灵液"), 16);
                 label.setFillColor(sf::Color(200, 210, 230));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
@@ -3374,7 +3374,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             rewardRowY += std::max(REWARD_RELIC_ICON_SZ, REWARD_POTION_ICON_SZ) + 28.f;
         }
 
-        // 奖励区整体下移：避免卡牌/提示与遗物/药水行发生重叠
+        // 奖励区整体下移：避免卡牌/提示与遗物/灵液行发生重叠
         const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
         const float rewardDown = hasIcons ? 58.f : 26.f;
         const float cardY = !hasIcons
@@ -3401,7 +3401,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!reward_card_picked_) {
             // 三选一提示（更明显）
             {
-                // 避免与遗物/药水行重叠：有图标时提示再下移一些
+                // 避免与遗物/灵液行重叠：有图标时提示再下移一些
                 const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
                 // 提示条靠近卡牌区上沿，比“图标行”更靠下，避免重叠
                 const float hintY = cardY - (hasIcons ? 35.f : 50.f);
@@ -3495,7 +3495,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             window.draw(contLabel);
         }
 
-        // 悬停提示（遗物/药水）
+        // 悬停提示（遗物/灵液）
         if (!reward_potion_replace_active_) {
             auto drawTip = [&](const std::wstring& text) {
                 if (text.empty()) return;
@@ -3544,7 +3544,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
-        // 槽满领取药水：选择要丢弃的旧药水（弹窗）
+        // 槽满领取灵液：选择要丢弃的旧灵液（弹窗）
         if (reward_potion_replace_active_ && lastSnapshot_) {
             const float W = static_cast<float>(width_);
             const float H = static_cast<float>(height_);
@@ -3565,14 +3565,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             box.setOutlineThickness(2.25f);
             window.draw(box);
 
-            sf::Text t(fontForChinese(), sf::String(L"药水槽已满：选择要丢弃的药水"), 24);
+            sf::Text t(fontForChinese(), sf::String(L"灵液槽已满：选择要丢弃的灵液"), 24);
             t.setFillColor(sf::Color(235, 230, 220));
             const sf::FloatRect tb2 = t.getLocalBounds();
             t.setOrigin(sf::Vector2f(tb2.position.x + tb2.size.x * 0.5f, tb2.position.y + tb2.size.y * 0.5f));
             t.setPosition(sf::Vector2f(boxX + boxW * 0.5f, boxY + 40.f));
             window.draw(t);
 
-            // 当前药水槽
+            // 当前灵液槽
             for (size_t i = 0; i < reward_potion_replace_slot_rects_.size()
                  && i < lastSnapshot_->potions.size(); ++i) {
                 const sf::FloatRect r = reward_potion_replace_slot_rects_[i];

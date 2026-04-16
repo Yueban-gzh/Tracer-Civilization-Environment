@@ -1,5 +1,5 @@
 /**
- * Battle UI - 严格按照参考图：顶栏(名字/HP/金币/药水/球槽)、遗物行、战场、底栏(能量/抽牌/手牌/结束回合/弃牌)
+ * Battle UI - 严格按照参考图：顶栏(名字/HP/金币/灵液/球槽)、遗物行、战场、底栏(能量/抽牌/手牌/结束回合/弃牌)
  * 牌组界面：顶栏+遗物栏不变，中间展示牌堆网格，支持滚轮滚动、返回按钮关闭。
  */
 #pragma once                                    // 防止头文件重复包含
@@ -28,7 +28,7 @@ public:
     bool loadMonsterTexture(const std::string& monster_id, const std::string& path);
     /** 加载遗物图标：path 如 assets/relics/burning_blood.png，按 id 缓存 */
     bool loadRelicTexture(const std::string& relic_id, const std::string& path);
-    /** 加载药水图标：path 如 assets/potions/strength_potion.png，按 id 缓存 */
+    /** 加载灵液图标：path 如 assets/potions/strength_potion.png，按 id 缓存 */
     bool loadPotionTexture(const std::string& potion_id, const std::string& path);
     /** 加载玩家角色图片：path 如 assets/player/Ironclad.png，按 character id 缓存供绘制使用 */
     bool loadPlayerTexture(const std::string& character_id, const std::string& path);
@@ -58,7 +58,7 @@ public:
     /** 轮询一次是否有“打出牌”的请求，若有则返回手牌下标与目标怪物下标 */
     bool pollPlayCardRequest(int& outHandIndex, int& outTargetMonsterIndex);
 
-    /** 轮询一次是否有"使用药水"的请求，若有则返回药水槽下标与目标怪物下标（-1 表示无需目标） */
+    /** 轮询一次是否有"使用灵液"的请求，若有则返回灵液槽下标与目标怪物下标（-1 表示无需目标） */
     bool pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex);
 
     /** 牌组界面：设置要展示的牌列表（手牌+抽牌堆+弃牌堆+消耗堆合并），并打开/关闭牌组界面 */
@@ -82,7 +82,7 @@ public:
     /** 屏幕中央短时提示（如“抽牌堆为空”），seconds 为显示秒数 */
     void showTip(std::wstring text, float seconds = 1.2f);
 
-    /** 奖励界面：战斗胜利后显示（金币、遗物、药水、三选一卡牌、跳过、继续），参考杀戮尖塔 */
+    /** 奖励界面：战斗胜利后显示（金币、遗物、灵液、三选一卡牌、跳过、继续），参考杀戮尖塔 */
     void set_reward_screen_active(bool active);
     void set_reward_data(int gold, std::vector<std::string> card_ids,
                         std::vector<std::string> relic_ids = {},
@@ -95,9 +95,9 @@ public:
     /** 轮询：用户点击领取遗物奖励（返回遗物 id） */
     bool pollRewardRelicTake(std::string& outRelicId);
     /**
-     * 轮询：用户点击领取药水奖励
+     * 轮询：用户点击领取灵液奖励
      * - outReplaceSlot=-1：直接加入（有空槽才会触发）
-     * - outReplaceSlot>=0：替换该槽位的旧药水
+     * - outReplaceSlot>=0：替换该槽位的旧灵液
      */
     bool pollRewardPotionTake(std::string& outPotionId, int& outReplaceSlot);
     /** 获取奖励卡牌列表中指定下标的卡牌 id（0~2），越界返回空串 */
@@ -119,7 +119,7 @@ public:
     /** 在确认选牌并即将打出触发牌前调用：接下来若干张「离手进入弃牌/消耗」的飞牌从屏幕中央选牌区飞出并走弧线（与 main/GameFlow 中 play_card 配对） */
     void set_pending_select_ui_pile_fly(int discard_or_exhaust_count);
 
-    /** 仅绘制战斗顶栏（名字/HP/金币/药水）与遗物栏，用于地图/事件等全局 HUD 复用 */
+    /** 仅绘制战斗顶栏（名字/HP/金币/灵液）与遗物栏，用于地图/事件等全局 HUD 复用 */
     void drawGlobalHud(sf::RenderWindow& window, const BattleStateSnapshot& s);
     /** 仅绘制牌组/卡牌网格（不含顶栏/遗物栏），用于开始界面等外部复用 */
     void drawDeckViewOnly(sf::RenderWindow& window, const BattleStateSnapshot& s);
@@ -147,7 +147,7 @@ private:
     /** 牌组网格 contentTop / 首行牌中心 Y / 裁剪顶边（与绘制一致，供命中与滚轮） */
     void deck_view_grid_layout_(float& outContentTop, float& outFirstRowCenterY, float& outViewTop) const;
     void updateDeckViewDetailLayout_();  // 牌组大图详情：更新卡牌、「查看升级」与左右翻牌箭头命中矩形
-    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、药水、层数
+    void drawTopBar(sf::RenderWindow& window, const BattleStateSnapshot& s);    // 顶部栏：名字、HP、金币、灵液、层数
     void drawRelicsRow(sf::RenderWindow& window, const BattleStateSnapshot& s); // 遗物行
     void drawRewardScreen(sf::RenderWindow& window);  // 奖励界面：胜利、金币、卡牌、继续
     void drawCardSelectScreen(sf::RenderWindow& window);  // 选牌弹窗
@@ -169,7 +169,7 @@ private:
     bool center_tip_active_() const;
     void enqueue_center_tip_(std::wstring text, float seconds);
     void tick_center_tip_queue_();
-    void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/药水悬停提示
+    void drawRelicPotionTooltip(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 遗物/灵液悬停提示
     /** 大预览手牌时：在牌侧（不压牌面）绘制名词解释小框，框随文案收紧 */
     void draw_card_glossary_beside_preview_(sf::RenderWindow& window, const sf::FloatRect& cardScreenAabb,
                                             const std::vector<CardGlossaryEntry>& entries);
@@ -184,7 +184,7 @@ private:
     void tick_pile_card_anims_();
     void detect_pile_card_anims_(const BattleStateSnapshot& s);
     void draw_pile_card_anims_(sf::RenderWindow& window);
-    /** 底栏牌堆 / 结束回合、右上角按钮、顶栏药水槽的悬停插值（每帧调用一次） */
+    /** 底栏牌堆 / 结束回合、右上角按钮、顶栏灵液槽的悬停插值（每帧调用一次） */
     void update_interactive_hover_(bool bottom_bar_interactive, bool potion_slots_interactive);
     sf::Vector2f hand_fan_card_center_(size_t hand_index, size_t hand_count) const;
     void pile_pile_screen_centers_(sf::Vector2f& out_draw, sf::Vector2f& out_discard, sf::Vector2f& out_exhaust) const;
@@ -232,7 +232,7 @@ private:
     float                               hover_btn_map_      = 0.f;
     float                               hover_btn_deck_     = 0.f;
     float                               hover_btn_settings_ = 0.f;
-    std::array<float, 5>                hover_potion_slot_{};  // 顶栏药水槽悬停 0~1（最多 5 槽）
+    std::array<float, 5>                hover_potion_slot_{};  // 顶栏灵液槽悬停 0~1（最多 5 槽）
 
     int top_bar_map_layer_ = -1;   // 地图当前层（无当前节点时为 -1）
     int top_bar_map_total_  = 0;   // 总层数；0 表示顶栏不显示「/ 总层」
@@ -267,12 +267,12 @@ private:
     int pendingPlayHandIndex_ = -1;            // 待打出的手牌下标
     int pendingPlayTargetMonsterIndex_ = -1;   // 待打出的目标怪物下标，-1 表示玩家自身
 
-    // 药水使用：选中槽位、瞄准状态、待执行的请求
-    int  selectedPotionSlotIndex_ = -1;         // 当前选中的药水槽下标
-    bool isAimingPotion_ = false;               // 是否正在瞄准药水目标（需目标的药水）
-    int  pendingPotionSlotIndex_ = -1;         // 待使用的药水槽下标
-    int  pendingPotionTargetIndex_ = -1;       // 药水目标怪物下标，-1 表示无需目标
-    std::vector<sf::FloatRect> potionSlotRects_;  // 药水槽矩形列表（用于点击检测）
+    // 灵液使用：选中槽位、瞄准状态、待执行的请求
+    int  selectedPotionSlotIndex_ = -1;         // 当前选中的灵液槽下标
+    bool isAimingPotion_ = false;               // 是否正在瞄准灵液目标（需目标的灵液）
+    int  pendingPotionSlotIndex_ = -1;         // 待使用的灵液槽下标
+    int  pendingPotionTargetIndex_ = -1;       // 灵液目标怪物下标，-1 表示无需目标
+    std::vector<sf::FloatRect> potionSlotRects_;  // 灵液槽矩形列表（用于点击检测）
     std::vector<sf::FloatRect> relicSlotRects_;   // 遗物槽矩形列表（用于悬停提示）
 
     // 选中牌“原位矩形”与跟随状态
@@ -312,7 +312,7 @@ private:
     std::unordered_map<std::string, sf::Texture> monsterTextures_;
     // 遗物图标缓存（relic_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> relicTextures_;
-    // 药水图标缓存（potion_id -> texture），无图时用紫色占位矩形
+    // 灵液图标缓存（potion_id -> texture），无图时用紫色占位矩形
     std::unordered_map<std::string, sf::Texture> potionTextures_;
     // 玩家角色图片缓存（character_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> playerTextures_;
@@ -395,7 +395,7 @@ private:
     int                           reward_gold_ = 0;
     std::vector<std::string>      reward_card_ids_;             // 三张可选卡牌 id
     std::vector<std::string>      reward_relic_ids_;             // 本场获得的遗物 id
-    std::vector<std::string>      reward_potion_ids_;            // 本场获得的药水 id
+    std::vector<std::string>      reward_potion_ids_;            // 本场获得的灵液 id
     bool                          reward_card_picked_ = false;  // 已选一张或跳过
     std::vector<sf::FloatRect>   reward_card_rects_;           // 卡牌点击区域
     sf::FloatRect                 reward_skip_rect_;           // 跳过按钮
@@ -403,7 +403,7 @@ private:
     bool                          pending_continue_to_next_battle_ = false;
     int                           pending_reward_card_index_ = -2;  // -2 无，-1 跳过，0~2 选中的卡
 
-    // 遗物/药水奖励：点击领取（选项制）
+    // 遗物/灵液奖励：点击领取（选项制）
     std::vector<sf::FloatRect>    reward_relic_rects_;
     std::vector<sf::FloatRect>    reward_potion_rects_;
     std::string                   pending_reward_relic_id_{};
@@ -412,7 +412,7 @@ private:
     bool                          reward_potion_replace_active_ = false;
     std::vector<sf::FloatRect>    reward_potion_replace_slot_rects_;
     sf::FloatRect                 reward_potion_replace_cancel_rect_{};
-    // 悬停插值（奖励界面遗物/药水）
+    // 悬停插值（奖励界面遗物/灵液）
     sf::Clock                     reward_hover_clock_{};
     std::vector<float>            hover_reward_card_;
     std::vector<float>            hover_reward_relic_;
@@ -450,10 +450,10 @@ private:
     sf::Clock                       card_select_confirm_pulse_clock_{};
 };
 
-/** 药水/遗物总览等界面复用：返回已知条目的 id 列表（用于总览展示） */
+/** 灵液/遗物总览等界面复用：返回已知条目的 id 列表（用于总览展示） */
 std::vector<std::string> ui_get_all_known_potion_ids();
 std::vector<std::string> ui_get_all_known_relic_ids();
-/** 药水/遗物总览等界面复用：返回 (名称, 描述)，未知则返回 (未知*, 空) */
+/** 灵液/遗物总览等界面复用：返回 (名称, 描述)，未知则返回 (未知*, 空) */
 std::pair<std::wstring, std::wstring> ui_get_potion_display_info(const std::string& id);
 std::pair<std::wstring, std::wstring> ui_get_relic_display_info(const std::string& id);
 

@@ -2,7 +2,7 @@
  * B - 战斗引擎实现（BattleCoreRefactor）
  */
 #include "../../include/BattleCoreRefactor/BattleEngine.hpp"           // 战斗引擎头文件
-#include "../../include/BattleCoreRefactor/PotionEffects.hpp"          // 药水效果
+#include "../../include/BattleCoreRefactor/PotionEffects.hpp"          // 灵液效果
 #include "../../include/BattleCoreRefactor/RelicModifiers.hpp"         // 遗物 modifier
 #include "../../include/BattleCoreRefactor/StatusModifiers.hpp"        // 状态 modifier
 #include "../../include/CardSystem/CardSystem.hpp"                      // 卡牌系统
@@ -313,13 +313,13 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
  }
 
  namespace {
-     void apply_relic_pickup_effect(PlayerBattleState& p, const RelicId& id) {  // 遗物拾起时的效果（草莓、药水腰带等）
+     void apply_relic_pickup_effect(PlayerBattleState& p, const RelicId& id) {  // 遗物拾起时的效果（草莓、灵液腰带等）
          if (id == "strawberry") {                                     // 草莓：拾起时，最大生命值 +7
              p.maxHp += 7;                                             // 提升 7 点最大生命
              p.currentHp += 7;                                         // 同时回复 7 点当前生命（杀戮尖塔规则）
              if (p.currentHp > p.maxHp) p.currentHp = p.maxHp;          // 不超过最大生命
-         } else if (id == "potion_belt") {                             // 药水腰带：拾起时，获得 2 个药水栏位
-             p.potionSlotCount += 2;                                   // 药水槽位 +2
+         } else if (id == "potion_belt") {                             // 灵液腰带：拾起时，获得 2 个灵液栏位
+             p.potionSlotCount += 2;                                   // 灵液槽位 +2
          }
      }
      void revert_relic_discard_effect(PlayerBattleState& p, const RelicId& id) {  // 遗物丢弃时回滚效果
@@ -327,10 +327,10 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
              p.maxHp -= 7;                                             // 回滚最大生命
              if (p.maxHp < 1) p.maxHp = 1;                             // 不低于 1
              if (p.currentHp > p.maxHp) p.currentHp = p.maxHp;         // 当前生命不超过新上限
-         } else if (id == "potion_belt") {                             // 药水腰带：丢弃时，药水槽位 -2
-             p.potionSlotCount -= 2;                                    // 回滚药水槽位
+         } else if (id == "potion_belt") {                             // 灵液腰带：丢弃时，灵液槽位 -2
+             p.potionSlotCount -= 2;                                    // 回滚灵液槽位
              if (p.potionSlotCount < 1) p.potionSlotCount = 1;         // 不低于 1
-             while (static_cast<int>(p.potions.size()) > p.potionSlotCount)  // 超出槽位的药水需丢弃
+             while (static_cast<int>(p.potions.size()) > p.potionSlotCount)  // 超出槽位的灵液需丢弃
                  p.potions.pop_back();                                  // 从末尾移除（可改为让玩家选择）
          }
      }
@@ -349,7 +349,7 @@ void BattleEngine::apply_exhaust_passives_from_hand(int count) {
      if (available.empty()) return {};
      RelicId id = available[run_rng_->uniform_size(0, available.size() - 1)];
      state_.player.relics.push_back(id);
-     apply_relic_pickup_effect(state_.player, id);                     // 统一处理拾起效果（草莓、药水腰带等）
+     apply_relic_pickup_effect(state_.player, id);                     // 统一处理拾起效果（草莓、灵液腰带等）
      return id;
  }
 
@@ -434,7 +434,7 @@ bool BattleEngine::take_reward_potion(const PotionId& id, int replace_slot) {
     const int slots = std::max(0, state_.player.potionSlotCount);
     if (slots <= 0) return false;
 
-    // 允许替换：槽满时 replace_slot 指定要丢弃的旧药水
+    // 允许替换：槽满时 replace_slot 指定要丢弃的旧灵液
     if (replace_slot >= 0) {
         if (replace_slot >= static_cast<int>(potions.size())) return false;
         potions[static_cast<size_t>(replace_slot)] = id;
@@ -571,21 +571,21 @@ bool BattleEngine::take_reward_potion(const PotionId& id, int replace_slot) {
      return gold;
  }
  
-bool BattleEngine::use_potion(int slot_index, int target_monster_index) {  // 使用药水
+bool BattleEngine::use_potion(int slot_index, int target_monster_index) {  // 使用灵液
     if (slot_index < 0 || slot_index >= state_.player.potionSlotCount) return false;  // 槽位无效
-    if (static_cast<size_t>(slot_index) >= state_.player.potions.size()) return false;  // 该槽无药水
+    if (static_cast<size_t>(slot_index) >= state_.player.potions.size()) return false;  // 该槽无灵液
 
-    PotionId id = state_.player.potions[static_cast<size_t>(slot_index)];  // 药水 ID
-    // 需目标的药水：目标无效则不消耗、返回 false
+    PotionId id = state_.player.potions[static_cast<size_t>(slot_index)];  // 灵液 ID
+    // 需目标的灵液：目标无效则不消耗、返回 false
     if (potion_requires_monster_target(id)) {
         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state_.monsters.size())
             return false;
         if (state_.monsters[static_cast<size_t>(target_monster_index)].currentHp <= 0)
             return false;
     }
-    apply_potion_effect(id, state_, target_monster_index, card_system_);  // 执行药水效果
-    state_.player.potions.erase(state_.player.potions.begin() + slot_index);  // 移除药水
-    modifiers_.on_potion_used(state_, id);                             // 广播：使用药水后（玩具扑翼飞机回复生命等）
+    apply_potion_effect(id, state_, target_monster_index, card_system_);  // 执行灵液效果
+    state_.player.potions.erase(state_.player.potions.begin() + slot_index);  // 移除灵液
+    modifiers_.on_potion_used(state_, id);                             // 广播：使用灵液后（玩具扑翼飞机回复生命等）
     build_modifiers_from_state();                                      // 重建 modifier（状态可能变化）
     return true;                                                       // 使用成功
 }
