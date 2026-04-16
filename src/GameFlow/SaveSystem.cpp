@@ -279,6 +279,18 @@ bool GameFlowController::saveRun(const std::string& path) const {
     }
 }
 
+bool GameFlowController::deleteRunSave(const std::string& path) const {
+    namespace fs = std::filesystem;
+    try {
+        const fs::path savePath = resolve_save_path(path);
+        if (!fs::exists(savePath))
+            return true;
+        return fs::remove(savePath);
+    } catch (...) {
+        return false;
+    }
+}
+
 bool GameFlowController::loadRun(const std::string& path) {
     namespace fs = std::filesystem;
     try {

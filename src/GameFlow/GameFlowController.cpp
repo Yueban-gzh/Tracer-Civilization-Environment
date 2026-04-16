@@ -1635,6 +1635,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     BattleState state = battleEngine_.get_battle_state();
     playerState_ = state.player;
     if (playerState_.currentHp <= 0) gameOver_ = true;
+    (void)deleteRunSave();
     statusText_ = "战斗失败，爬塔结束。";
 
     close_map_browse_overlay(&ui);

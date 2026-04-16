@@ -50,6 +50,9 @@ public:
     /** 从存档文件读取 Run 状态并恢复到当前控制器，成功返回 true。 */
     bool loadRun(const std::string& path = "saves/run_auto_save.json");
 
+    /** 删除 Run 存档文件（默认：saves/run_auto_save.json）。成功删除或文件本就不存在时返回 true。 */
+    bool deleteRunSave(const std::string& path = "saves/run_auto_save.json") const;
+
     /** 存档用：当前 Run 伪随机状态（与抽牌/奖励等同源）。读档后 set 再继续游戏可复现序列。 */
     uint64_t get_run_rng_state() const { return runRng_.get_state(); }
     void     set_run_rng_state(uint64_t s) { runRng_.set_state(s); }
