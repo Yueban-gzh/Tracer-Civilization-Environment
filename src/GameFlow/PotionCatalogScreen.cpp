@@ -1,8 +1,6 @@
 #include "GameFlow/PotionCatalogScreen.hpp"
 
 #include <algorithm>
-#include <array>
-#include <filesystem>
 #include <unordered_map>
 
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -45,11 +43,10 @@ sf::Texture* get_potion_icon_texture(std::unordered_map<std::string, sf::Texture
     const std::string path = resolve_image_path("assets/potions/" + id);
     if (path.empty()) return nullptr;
     sf::Texture tex;
-    const std::filesystem::path p = std::filesystem::u8path(path);
-    if (!tex.loadFromFile(p)) return nullptr;
+    if (!tex.loadFromFile(path)) return nullptr;
     tex.setSmooth(true);
-    auto [iter, _] = cache.emplace(id, std::move(tex));
-    return &iter->second;
+    auto inserted = cache.emplace(id, std::move(tex));
+    return &inserted.first->second;
 }
 
 } // namespace

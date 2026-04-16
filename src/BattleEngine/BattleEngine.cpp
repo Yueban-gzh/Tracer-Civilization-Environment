@@ -13,6 +13,15 @@
 #include <cassert>
  
  namespace tce {
+
+namespace {
+
+CardColor reward_card_color_for_character(const std::string& character) {
+    if (character == "Silent") return CardColor::Green;
+    return CardColor::Red;
+}
+
+}
  
  BattleEngine::BattleEngine(CardSystem& card_system,                    // 构造函数
                             GetMonsterByIdFn get_monster,
@@ -510,10 +519,12 @@ bool BattleEngine::take_reward_potion(const PotionId& id, int replace_slot) {
      skl.reserve(reward_pool.size());
      pwr.reserve(reward_pool.size());
      oth.reserve(reward_pool.size());
-     for (const auto& id : reward_pool) {
+    const CardColor rewardColor = reward_card_color_for_character(state_.player.character);
+    for (const auto& id : reward_pool) {
          const CardData* cd = get_card_by_id_ ? get_card_by_id_(id) : nullptr;
          if (!cd) cd = get_card_by_id(id);
          if (!cd) continue;
+        if (cd->color != rewardColor) continue;
          switch (cd->cardType) {
          case CardType::Attack: atk.push_back(id); break;
          case CardType::Skill: skl.push_back(id); break;

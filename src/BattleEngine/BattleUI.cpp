@@ -1527,6 +1527,19 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             pause_menu_active_ = false;
                             return false;
                         }
+                        if (pauseSaveRect_.contains(mousePos)) {
+                            pause_save_slot_panel_active_ = !pause_save_slot_panel_active_;
+                            return false;
+                        }
+                        if (pause_save_slot_panel_active_) {
+                            for (int i = 0; i < 3; ++i) {
+                                if (pauseSaveSlotRects_[static_cast<size_t>(i)].contains(mousePos)) {
+                                    pending_pause_menu_choice_ = 41 + i;   // 存档到槽位 1~3
+                                    pause_save_slot_panel_active_ = false;
+                                    return false;
+                                }
+                            }
+                        }
                         if (pauseSaveQuitRect_.contains(mousePos)) {
                             pending_pause_menu_choice_ = 2;   // 保存并退出
                             // 保持菜单打开直到上层处理完关闭窗口
@@ -2144,6 +2157,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         pause_menu_active_ = active;
         if (!active) {
             settings_panel_active_ = false;
+            pause_save_slot_panel_active_ = false;
             pending_pause_menu_choice_ = 0;
         }
     }
@@ -2833,8 +2847,46 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             };
 
             drawPauseBtn(L"返回游戏", firstY, pauseResumeRect_);
-            drawPauseBtn(L"保存并退出", firstY + (btnH + gap), pauseSaveQuitRect_);
-            drawPauseBtn(L"设置", firstY + 2.f * (btnH + gap), pauseSettingsRect_);
+            drawPauseBtn(L"存档", firstY + (btnH + gap), pauseSaveRect_);
+            drawPauseBtn(L"保存并退出", firstY + 2.f * (btnH + gap), pauseSaveQuitRect_);
+            drawPauseBtn(L"设置", firstY + 3.f * (btnH + gap), pauseSettingsRect_);
+            if (pause_save_slot_panel_active_) {
+                const float slotW = 150.f;
+                const float slotH = 46.f;
+                const float slotGap = 18.f;
+                const float totalW = slotW * 3.f + slotGap * 2.f;
+                const float slotX = centerX - totalW * 0.5f;
+                const float slotY = firstY + (btnH + gap) + btnH + 16.f;
+
+                sf::Text tip(fontForChinese(), sf::String(L"选择存档槽位"), 20);
+                tip.setFillColor(sf::Color(208, 202, 188));
+                const sf::FloatRect tipBounds = tip.getLocalBounds();
+                tip.setOrigin(sf::Vector2f(tipBounds.position.x + tipBounds.size.x * 0.5f,
+                                           tipBounds.position.y + tipBounds.size.y * 0.5f));
+                tip.setPosition(sf::Vector2f(centerX, slotY - 18.f));
+                window.draw(tip);
+
+                for (int i = 0; i < 3; ++i) {
+                    const float x = slotX + static_cast<float>(i) * (slotW + slotGap);
+                    const sf::FloatRect r(sf::Vector2f(x, slotY), sf::Vector2f(slotW, slotH));
+                    pauseSaveSlotRects_[static_cast<size_t>(i)] = r;
+                    const bool hover = r.contains(mousePos_);
+
+                    sf::RectangleShape b(r.size);
+                    b.setPosition(r.position);
+                    b.setFillColor(hover ? sf::Color(86, 80, 104) : sf::Color(56, 52, 68));
+                    b.setOutlineColor(hover ? sf::Color(220, 205, 155) : sf::Color(170, 160, 130));
+                    b.setOutlineThickness(hover ? 2.5f : 2.f);
+                    window.draw(b);
+
+                    sf::Text tx(fontForChinese(), sf::String(L"槽位 " + std::to_wstring(i + 1)), 22);
+                    tx.setFillColor(sf::Color(235, 230, 220));
+                    const sf::FloatRect lb = tx.getLocalBounds();
+                    tx.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+                    tx.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f));
+                    window.draw(tx);
+                }
+            }
         } else {
             layout_pause_settings_controls_(panelX, panelY, panelW, panelH);
 
