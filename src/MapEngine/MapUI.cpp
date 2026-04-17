@@ -227,44 +227,91 @@ namespace MapEngine {
         return false;
     }
 
+    void MapUI::recompute_map_layout_metrics_() {
+        if (!m_mapEngine || !m_window) return;
+
+        auto snapshot = m_mapEngine->get_map_snapshot();
+        if (snapshot.all_nodes.empty()) {
+            m_mapWorldCenterX = 960.f;
+            m_minOffset = 0.f;
+            m_maxOffset = 0.f;
+            return;
+        }
+
+        float minY = 10000.0f, maxY = -10000.0f;
+        float minX = 10000.0f, maxX = -10000.0f;
+        for (const auto& node : snapshot.all_nodes) {
+            minY = std::min(minY, node.position.y);
+            maxY = std::max(maxY, node.position.y);
+            minX = std::min(minX, node.position.x);
+            maxX = std::max(maxX, node.position.x);
+        }
+        m_mapWorldCenterX = (minX < maxX) ? (minX + maxX) * 0.5f : 960.f;
+
+        const float mapHeight = maxY - minY;
+        const float windowHeight = static_cast<float>(m_window->getSize().y);
+        constexpr float kTopHudReserve = 110.0f;
+        constexpr float kBottomReserve = 24.0f;
+        const float visibleHeight = std::max(200.0f, windowHeight - kTopHudReserve - kBottomReserve);
+
+        if (mapHeight > visibleHeight) {
+            m_minOffset = -100.0f;
+            m_maxOffset = mapHeight - visibleHeight + 150.0f;
+        } else {
+            m_minOffset = -50.0f;
+            m_maxOffset = visibleHeight - mapHeight + 50.0f;
+        }
+    }
+
+    void MapUI::refresh_background_scale_for_window_() {
+        if (!m_window || !m_backgroundLoaded || !m_backgroundSprite) return;
+        const sf::Vector2u windowSize = m_window->getSize();
+        const sf::Vector2u textureSize = m_backgroundTexture.getSize();
+        if (textureSize.x == 0 || textureSize.y == 0 || windowSize.x == 0 || windowSize.y == 0) return;
+        const float scaleX = static_cast<float>(windowSize.x) / static_cast<float>(textureSize.x);
+        const float scaleY = static_cast<float>(windowSize.y) / static_cast<float>(textureSize.y);
+        const float scale = std::max(scaleX, scaleY);
+        m_backgroundSprite->setScale(sf::Vector2f(scale, scale));
+    }
+
+    void MapUI::sync_layout_to_window_size_if_changed_() {
+        if (!m_window) return;
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return;
+        if (wsu == m_cachedMapWindowSize_) return;
+        m_cachedMapWindowSize_ = wsu;
+        recompute_map_layout_metrics_();
+        m_viewOffset = std::max(m_minOffset, std::min(m_maxOffset, m_viewOffset));
+        refresh_background_scale_for_window_();
+    }
+
     // MapUI.cpp - setMap函数
     void MapUI::setMap(const MapEngine* engine) {
         m_mapEngine = engine;
 
         if (engine) {
+            recompute_map_layout_metrics_();
+            if (m_window)
+                m_cachedMapWindowSize_ = m_window->getSize();
+
+            constexpr float kMapInitialViewOffset = -240.0f;
+            m_viewOffset = kMapInitialViewOffset;
+            m_viewOffset = std::max(m_minOffset, std::min(m_maxOffset, m_viewOffset));
+
+            std::cout << "=== 地图滚动范围 ===" << std::endl;
             auto snapshot = engine->get_map_snapshot();
             float minY = 10000.0f, maxY = -10000.0f;
             for (const auto& node : snapshot.all_nodes) {
                 minY = std::min(minY, node.position.y);
                 maxY = std::max(maxY, node.position.y);
             }
-
             const float mapHeight = maxY - minY;
             const float windowHeight =
                 m_window ? static_cast<float>(m_window->getSize().y) : 1080.0f;
-            // 顶部状态栏会遮挡地图可见区域，需要预留滚动余量。
             constexpr float kTopHudReserve = 110.0f;
             constexpr float kBottomReserve = 24.0f;
             const float visibleHeight = std::max(200.0f, windowHeight - kTopHudReserve - kBottomReserve);
-
-            // 由于层间距增大到 120，12层总高度 = 11 * 120 = 1320 像素
-            // 加上起始偏移，总高度约 1400 像素
-            if (mapHeight > visibleHeight) {
-                // 允许向上滚动看到 Boss 层
-                m_minOffset = -100.0f;
-                // 允许向下滚动看到底部
-                m_maxOffset = mapHeight - visibleHeight + 150.0f;
-            }
-            else {
-                m_minOffset = -50.0f;
-                m_maxOffset = visibleHeight - mapHeight + 50.0f;
-            }
-
-            // 初始视口：略增大 m_viewOffset（相对原 -300 向 0 靠拢），地图在屏幕上会稍往下
-            constexpr float kMapInitialViewOffset = -240.0f;
-            m_viewOffset = kMapInitialViewOffset;
-
-            std::cout << "=== 地图滚动范围 ===" << std::endl;
+            std::cout << "地图水平中心(世界X): " << m_mapWorldCenterX << std::endl;
             std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
             std::cout << "地图高度: " << mapHeight << std::endl;
             std::cout << "窗口高度: " << windowHeight << " 可见高度: " << visibleHeight << std::endl;
@@ -603,9 +650,16 @@ namespace MapEngine {
     void MapUI::draw() {
         if (!m_window) return;
 
-        // 先绘制背景（在原视图，不滚动）
-        sf::View originalView = m_window->getView();
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return;
 
+        sync_layout_to_window_size_if_changed_();
+
+        const sf::Vector2f win(static_cast<float>(wsu.x), static_cast<float>(wsu.y));
+        sf::View uiView(sf::FloatRect(sf::Vector2f(0.f, 0.f), win));
+        m_window->setView(uiView);
+
+        // 先绘制背景（全窗口视图，不滚动）
         if (m_backgroundLoaded && m_backgroundSprite) {
             m_window->draw(*m_backgroundSprite);
         }
@@ -618,9 +672,9 @@ namespace MapEngine {
         m_lastAnimSec = nowSec;
         m_timeSec = nowSec;
 
-        // 创建滚动视图
-        sf::View scrollView = originalView;
-        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+        // 地图滚动视图：水平以节点分布中心对齐窗口，垂直随 m_viewOffset 滚动
+        sf::View scrollView(uiView);
+        scrollView.setCenter(sf::Vector2f(m_mapWorldCenterX, win.y * 0.5f - m_viewOffset));
         m_window->setView(scrollView);
 
         // ====== 悬停检测：在滚动视图下把鼠标转世界坐标 ======
@@ -685,8 +739,8 @@ namespace MapEngine {
             drawNodes();
         }
 
-        // 恢复原视图绘制图例
-        m_window->setView(originalView);
+        // 恢复全窗口视图绘制图例
+        m_window->setView(uiView);
         drawLegend();
     }
 
@@ -696,19 +750,19 @@ namespace MapEngine {
         if (!m_nodesClickable) return "";
         if (!m_mapEngine || !m_window) return "";
 
-        // 【关键】保存当前视图，设置滚动视图，转换坐标，然后恢复
-        sf::View originalView = m_window->getView();
+        sync_layout_to_window_size_if_changed_();
 
-        // 创建与 draw() 中相同的滚动视图
-        sf::View scrollView = originalView;
-        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return "";
+        const sf::Vector2f win(static_cast<float>(wsu.x), static_cast<float>(wsu.y));
+        sf::View uiView(sf::FloatRect(sf::Vector2f(0.f, 0.f), win));
+        sf::View scrollView(uiView);
+        scrollView.setCenter(sf::Vector2f(m_mapWorldCenterX, win.y * 0.5f - m_viewOffset));
 
-        // 使用滚动视图转换鼠标坐标
+        sf::View saved = m_window->getView();
         m_window->setView(scrollView);
         sf::Vector2f worldPos = m_window->mapPixelToCoords(sf::Vector2i(mouseX, mouseY));
-
-        // 立即恢复原始视图（不影响后续绘制）
-        m_window->setView(originalView);
+        m_window->setView(saved);
 
         // 获取当前是否有已选节点
         bool hasCurrent = m_mapEngine->hasCurrentNode();

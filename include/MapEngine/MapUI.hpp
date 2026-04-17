@@ -39,6 +39,9 @@ namespace MapEngine {
         bool allow_any_node_click() const { return m_allowAnyNodeClick; }
 
     private:
+        void recompute_map_layout_metrics_();
+        void refresh_background_scale_for_window_();
+        void sync_layout_to_window_size_if_changed_();
         void drawEdges();
         void drawNodes();
         void drawLegend();
@@ -91,6 +94,9 @@ namespace MapEngine {
         float m_viewOffset = 0.0f;
         float m_minOffset = 0.0f;
         float m_maxOffset = 0.0f;
+        /** 节点世界坐标水平中心，用于任意分辨率下地图在窗口内水平居中 */
+        float m_mapWorldCenterX = 960.f;
+        sf::Vector2u m_cachedMapWindowSize_{0u, 0u};
 
         // 【新增】已访问节点覆盖层
         sf::Texture m_visitedOverlayTexture;
