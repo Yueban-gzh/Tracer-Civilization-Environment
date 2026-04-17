@@ -638,6 +638,18 @@ bool GameFlowController::initialize(CharacterClass cc) {
     playerState_.playerName = "Telys";
     playerState_.potions.clear();
     playerState_.potionSlotCount = 3;
+    // Mock：开局随机 3 瓶灵液（可重复；池子与 PotionEffects 已实现效果一致）
+    {
+        static const std::vector<PotionId> kMockStarterPotionPool = {
+            "strength_potion", "block_potion", "energy_potion", "weak_potion", "poison_potion", "fear_potion",
+            "explosion_potion", "swift_potion", "blood_potion", "fire_potion"};
+        const int slots = std::max(0, playerState_.potionSlotCount);
+        const int n     = std::min(3, slots);
+        for (int i = 0; i < n; ++i) {
+            const int idx = runRng_.uniform_int(0, static_cast<int>(kMockStarterPotionPool.size()) - 1);
+            playerState_.potions.push_back(kMockStarterPotionPool[static_cast<size_t>(idx)]);
+        }
+    }
     if (cc == CharacterClass::Ironclad) {
         playerState_.character = "Ironclad";
         playerState_.currentHp = 80;
@@ -1475,6 +1487,10 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         int potionTargetIndex = -1;
         if (ui.pollPotionRequest(potionSlotIndex, potionTargetIndex)) {
             battleEngine_.use_potion(potionSlotIndex, potionTargetIndex);
+        }
+        int potionDiscardSlot = -1;
+        if (ui.pollPotionDiscardRequest(potionDiscardSlot)) {
+            battleEngine_.discard_potion(potionDiscardSlot);
         }
 
         int deckViewMode = 0;

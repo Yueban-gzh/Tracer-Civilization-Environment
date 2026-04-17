@@ -1857,6 +1857,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             settings_panel_active_ = false;
                             pending_pause_menu_choice_ = 0;
                         } else {
+                            dismiss_potion_action_menu_();
                             pause_menu_active_ = true;
                             settings_panel_active_ = false;
                         }
@@ -1895,6 +1896,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         settings_panel_active_   = false;
                         pending_pause_menu_choice_ = 0;
                     } else {
+                        dismiss_potion_action_menu_();
                         pause_menu_active_ = true;
                         settings_panel_active_ = false;
                     }
@@ -2048,6 +2050,49 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         }
                     }
                 }
+                // 结束回合优先：关闭灵液二级菜单并取消灵液瞄准
+                if (endTurnButton_.contains(mousePos)) {
+                    dismiss_potion_action_menu_();
+                    selectedPotionSlotIndex_ = -1;
+                    isAimingPotion_ = false;
+                    return true;
+                }
+                // 灵液二级菜单：饮用/扔出、丢弃、切换槽位、点空白关闭
+                if (potion_action_menu_active_ && lastSnapshot_) {
+                    if (potion_action_use_rect_.contains(mousePos)) {
+                        const int slot = potion_action_menu_slot_;
+                        dismiss_potion_action_menu_();
+                        if (slot >= 0 && static_cast<size_t>(slot) < lastSnapshot_->potions.size()) {
+                            const PotionId& pid = lastSnapshot_->potions[static_cast<size_t>(slot)];
+                            if (potion_requires_monster_target(pid)) {
+                                selectedPotionSlotIndex_ = slot;
+                                isAimingPotion_ = true;
+                            } else {
+                                pendingPotionSlotIndex_ = slot;
+                                pendingPotionTargetIndex_ = -1;
+                            }
+                        }
+                        return false;
+                    }
+                    if (potion_action_discard_rect_.contains(mousePos)) {
+                        const int slot = potion_action_menu_slot_;
+                        dismiss_potion_action_menu_();
+                        if (slot >= 0)
+                            pendingPotionDiscardSlot_ = slot;
+                        return false;
+                    }
+                    for (size_t i = 0; i < potionSlotRects_.size() && i < lastSnapshot_->potions.size(); ++i) {
+                        if (!potionSlotRects_[i].contains(mousePos))
+                            continue;
+                        if (static_cast<int>(i) == potion_action_menu_slot_)
+                            dismiss_potion_action_menu_();
+                        else
+                            potion_action_menu_slot_ = static_cast<int>(i);
+                        return false;
+                    }
+                    dismiss_potion_action_menu_();
+                    return false;
+                }
                 // 若当前正在瞄准牌，根据目标类型决定出牌逻辑
                 else if (selectedHandIndex_ >= 0 && isAimingCard_) {
                     if (selectedCardTargetsEnemy_) {
@@ -2107,26 +2152,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
 
                 // 若尚未选中牌，则检查是否点中了某张手牌以开始选中/瞄准（在 drawBottomBar 中处理左键按下）
-                // 若未选中牌，检查是否点击灵液槽
+                // 若未选中牌，检查是否点击灵液槽 → 弹出「饮用/扔出」与「丢弃」
                 if (selectedHandIndex_ < 0 && lastSnapshot_) {
                     for (size_t i = 0; i < potionSlotRects_.size() && i < lastSnapshot_->potions.size(); ++i) {
                         if (potionSlotRects_[i].contains(mousePos)) {
-                            const PotionId& pid = lastSnapshot_->potions[i];
-                            if (potion_requires_monster_target(pid)) {
-                                selectedPotionSlotIndex_ = static_cast<int>(i);
-                                isAimingPotion_ = true;
-                            } else {
-                                pendingPotionSlotIndex_ = static_cast<int>(i);
-                                pendingPotionTargetIndex_ = -1;
-                            }
+                            potion_action_menu_active_ = true;
+                            potion_action_menu_slot_ = static_cast<int>(i);
+                            selectedPotionSlotIndex_ = -1;
+                            isAimingPotion_ = false;
                             return false;
                         }
                     }
-                }
-
-                // 点击结束回合按钮
-                if (endTurnButton_.contains(mousePos)) {
-                    return true;                     // 返回 true 表示主循环应调用 engine.end_turn() 结束回合
                 }
             }
 
@@ -2136,6 +2172,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 isAimingCard_ = false;
                 selectedPotionSlotIndex_ = -1;
                 isAimingPotion_ = false;
+                dismiss_potion_action_menu_();
                 return false;
             }
         }
@@ -2151,12 +2188,26 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         return true;
     }
 
+    void BattleUI::dismiss_potion_action_menu_() {
+        potion_action_menu_active_ = false;
+        potion_action_menu_slot_ = -1;
+        potion_action_use_rect_ = {};
+        potion_action_discard_rect_ = {};
+    }
+
     bool BattleUI::pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex) {
         if (pendingPotionSlotIndex_ < 0) return false;
         outSlotIndex = pendingPotionSlotIndex_;
         outTargetMonsterIndex = pendingPotionTargetIndex_;
         pendingPotionSlotIndex_ = -1;
         pendingPotionTargetIndex_ = -1;
+        return true;
+    }
+
+    bool BattleUI::pollPotionDiscardRequest(int& outSlotIndex) {
+        if (pendingPotionDiscardSlot_ < 0) return false;
+        outSlotIndex = pendingPotionDiscardSlot_;
+        pendingPotionDiscardSlot_ = -1;
         return true;
     }
 
@@ -2185,6 +2236,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     void BattleUI::set_deck_view_active(bool active) {
         deck_view_active_ = active;
         if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
             pile_anim_snapshot_ready_ = false;
             prev_discard_ids_for_anim_.clear();
             pile_card_flights_.clear();
@@ -2254,6 +2308,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_pause_menu_active(bool active) {
         pause_menu_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         if (!active) {
             settings_panel_active_ = false;
             pause_save_slot_panel_active_ = false;
@@ -2270,6 +2329,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_reward_screen_active(bool active) {
         reward_screen_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         pile_anim_snapshot_ready_ = false;
         prev_discard_ids_for_anim_.clear();
         pile_card_flights_.clear();
@@ -2367,6 +2431,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_card_select_active(bool active) {
         card_select_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         if (!active) {
             card_select_rects_.clear();
             card_select_selected_indices_.clear();
@@ -3198,9 +3267,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         for (int i = 0; i < potionSlotCount; ++i) {
             const float slotX = potionStartX + i * (potionW + potionGap);
             const float baseY = rowY - 4.f;
-            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(slotX, baseY), sf::Vector2f(potionW, potionH)));
+            // 命中框与绘制一致：图标会随悬停放大上移，若仍用固定槽位矩形会导致「看得到点不到」
             const float hov = hover_potion_slot_[static_cast<size_t>(i)];
             const auto g = potion_slot_anim_box(slotX, baseY, potionW, potionH, hov);
+            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(g[0], g[1]), sf::Vector2f(g[2], g[3])));
             sf::RectangleShape slot(sf::Vector2f(g[2], g[3]));
             slot.setPosition(sf::Vector2f(g[0], g[1]));
             slot.setFillColor(sf::Color(0, 0, 0, 0));
@@ -3248,6 +3318,52 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 window.draw(fill);
             }
         }
+
+        if (potion_action_menu_active_ &&
+            (potion_action_menu_slot_ < 0 || potion_action_menu_slot_ >= potionSlotCount ||
+             static_cast<size_t>(potion_action_menu_slot_) >= s.potions.size())) {
+            dismiss_potion_action_menu_();
+        }
+        if (potion_action_menu_active_ && potion_action_menu_slot_ >= 0 &&
+            static_cast<size_t>(potion_action_menu_slot_) < potionSlotRects_.size() &&
+            static_cast<size_t>(potion_action_menu_slot_) < s.potions.size()) {
+            const int mi = potion_action_menu_slot_;
+            const float btnW = 124.f, btnH = 44.f, vGap = 10.f;
+            const auto& pr = potionSlotRects_[static_cast<size_t>(mi)];
+            float menuX = pr.position.x + pr.size.x * 0.5f - btnW * 0.5f;
+            const float stackH = btnH * 2.f + vGap;
+            float menuY = pr.position.y + pr.size.y + 8.f;
+            if (menuX + btnW > static_cast<float>(width_) - 8.f)
+                menuX = static_cast<float>(width_) - btnW - 8.f;
+            if (menuX < 8.f) menuX = 8.f;
+            if (menuY + stackH > static_cast<float>(height_) - 8.f)
+                menuY = pr.position.y - stackH - 8.f;
+            if (menuY < 8.f) menuY = 8.f;
+            potion_action_use_rect_ = sf::FloatRect(sf::Vector2f(menuX, menuY), sf::Vector2f(btnW, btnH));
+            potion_action_discard_rect_ =
+                sf::FloatRect(sf::Vector2f(menuX, menuY + btnH + vGap), sf::Vector2f(btnW, btnH));
+            auto drawMiniBtn = [&](const sf::FloatRect& r, const std::wstring& label) {
+                sf::RectangleShape sh(sf::Vector2f(r.size.x, r.size.y));
+                sh.setPosition(r.position);
+                sh.setFillColor(sf::Color(55, 50, 65, 230));
+                sh.setOutlineColor(sf::Color(140, 130, 160));
+                sh.setOutlineThickness(1.f);
+                window.draw(sh);
+                sf::Text t(fontForChinese(), sf::String(label), 22);
+                t.setFillColor(sf::Color::White);
+                const sf::FloatRect tb = t.getLocalBounds();
+                t.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+                t.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f));
+                window.draw(t);
+            };
+            const bool needEnemy = potion_requires_monster_target(s.potions[static_cast<size_t>(mi)]);
+            drawMiniBtn(potion_action_use_rect_, needEnemy ? L"扔出" : L"饮用");
+            drawMiniBtn(potion_action_discard_rect_, L"丢弃");
+        } else {
+            potion_action_use_rect_ = {};
+            potion_action_discard_rect_ = {};
+        }
+
         x += 16.f;                              // 灵液栏后留空
 
         // 7. 当前层数（与地图当前节点层同步，由 GameFlow 每帧/进入节点时刷新）
@@ -3428,16 +3544,33 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 遗物与灵液奖励（显示在金币下方，各 40% 概率，互不冲突）
         rewardRowY = (reward_gold_ > 0) ? (panelY + 168.f) : (panelY + 120.f);
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
-            constexpr float REWARD_RELIC_ICON_SZ = 48.f;
-            constexpr float REWARD_POTION_ICON_SZ = 56.f;
+            // 遗物与灵液槽位统一尺寸（点击区域与底板一致）
+            constexpr float REWARD_EXTRA_PICK_SZ = 60.f;
             constexpr float REWARD_ICON_GAP = 12.f;
             const size_t nr = reward_relic_ids_.size();
             const size_t np = reward_potion_ids_.size();
-            const float rowW =
-                static_cast<float>(nr) * (REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP)
-                + static_cast<float>(np) * (REWARD_POTION_ICON_SZ + REWARD_ICON_GAP);
-            float x = panelX + panelW * 0.5f
-                - ((nr + np) > 0 ? (rowW - REWARD_ICON_GAP) * 0.5f : 0.f);
+            const size_t nslots = nr + np;
+            const float rowW = nslots > 0
+                ? static_cast<float>(nslots) * REWARD_EXTRA_PICK_SZ + static_cast<float>(nslots - 1) * REWARD_ICON_GAP
+                : 0.f;
+            float x = panelX + panelW * 0.5f - rowW * 0.5f;
+
+            std::wstring pickHint;
+            if (nr > 0 && np > 0)
+                pickHint = L"点击获得遗物或药水";
+            else if (nr > 0)
+                pickHint = L"点击获得遗物";
+            else
+                pickHint = L"点击获得药水";
+            {
+                sf::Text pickHintText(fontForChinese(), sf::String(pickHint), 20);
+                pickHintText.setFillColor(sf::Color(215, 205, 185));
+                const sf::FloatRect hb = pickHintText.getLocalBounds();
+                pickHintText.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+                pickHintText.setPosition(sf::Vector2f(panelX + panelW * 0.5f, rewardRowY + 14.f));
+                window.draw(pickHintText);
+            }
+            rewardRowY += 34.f;
 
             // 刷新点击矩形 + hover 容器
             reward_relic_rects_.clear();
@@ -3448,7 +3581,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             for (const auto& rid : reward_relic_ids_) {
                 const size_t idx = reward_relic_rects_.size();
                 const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
-                    sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
+                    sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                 reward_relic_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_relic_[idx] = ui_hover_lerp(hover_reward_relic_[idx], over ? 1.f : 0.f, dtHover);
@@ -3458,7 +3591,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 // 图标底板
                 {
                     sf::RectangleShape back(sf::Vector2f(
-                        REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f, REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f));
+                        REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f, REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(230, 210, 150, 245) : sf::Color(160, 140, 110, 220));
@@ -3469,11 +3602,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 if (rit != relicTextures_.end()) {
                     sf::Sprite spr(rit->second);
                     spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_RELIC_ICON_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
+                    float scale = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
                     spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(120, 80, 100));
                     icon.setOutlineColor(sf::Color(180, 100, 120));
@@ -3484,14 +3617,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(220, 200, 210));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_RELIC_ICON_SZ * 0.5f, rewardRowY + REWARD_RELIC_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_EXTRA_PICK_SZ + REWARD_ICON_GAP;
             }
             for (const auto& pid : reward_potion_ids_) {
                 const size_t idx = reward_potion_rects_.size();
                 const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
-                    sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
+                    sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                 reward_potion_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_potion_[idx] = ui_hover_lerp(hover_reward_potion_[idx], over ? 1.f : 0.f, dtHover);
@@ -3499,7 +3632,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 const float grow = 3.f * h01;
                 {
                     sf::RectangleShape back(sf::Vector2f(
-                        REWARD_POTION_ICON_SZ + 10.f + grow * 2.f, REWARD_POTION_ICON_SZ + 10.f + grow * 2.f));
+                        REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f, REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(190, 220, 255, 245) : sf::Color(110, 140, 180, 220));
@@ -3510,11 +3643,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 if (pit != potionTextures_.end()) {
                     sf::Sprite spr(pit->second);
                     spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_POTION_ICON_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
+                    float scale = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
                     spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(80, 100, 140));
                     icon.setOutlineColor(sf::Color(120, 150, 200));
@@ -3525,11 +3658,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(200, 210, 230));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_POTION_ICON_SZ * 0.5f, rewardRowY + REWARD_POTION_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_POTION_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_EXTRA_PICK_SZ + REWARD_ICON_GAP;
             }
-            rewardRowY += std::max(REWARD_RELIC_ICON_SZ, REWARD_POTION_ICON_SZ) + 28.f;
+            rewardRowY += REWARD_EXTRA_PICK_SZ + 28.f;
         }
 
         // 奖励区整体下移：避免卡牌/提示与遗物/灵液行发生重叠
@@ -3710,6 +3843,34 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float boxH = 210.f;
             const float boxX = (W - boxW) * 0.5f;
             const float boxY = (H - boxH) * 0.5f;
+            auto drawReplacePotionTip = [&](const std::wstring& text) {
+                if (text.empty()) return;
+                constexpr float paddingX = 12.f;
+                constexpr float paddingY = 10.f;
+                constexpr float maxW = 380.f;
+                const int fontSize = 19;
+                sf::Text tip(fontForChinese(), sf::String(text), fontSize);
+                tip.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect tbx = tip.getLocalBounds();
+                const float boxTipW = std::min(tbx.size.x + paddingX * 2.f, maxW);
+                const float boxTipH = tbx.size.y + paddingY * 2.f;
+
+                float boxLeft = mousePos_.x + 18.f;
+                float boxTop  = mousePos_.y + 10.f;
+                if (boxLeft + boxTipW > boxX + boxW - 8.f) boxLeft = mousePos_.x - boxTipW - 18.f;
+                if (boxLeft < boxX + 8.f) boxLeft = boxX + 8.f;
+                if (boxTop + boxTipH > boxY + boxH - 8.f) boxTop = boxY + boxH - boxTipH - 8.f;
+                if (boxTop < boxY + 8.f) boxTop = boxY + 8.f;
+
+                sf::RectangleShape bg(sf::Vector2f(boxTipW, boxTipH));
+                bg.setPosition(sf::Vector2f(boxLeft, boxTop));
+                bg.setFillColor(sf::Color(40, 35, 45, 240));
+                bg.setOutlineColor(sf::Color(150, 140, 120));
+                bg.setOutlineThickness(1.f);
+                window.draw(bg);
+                tip.setPosition(sf::Vector2f(boxLeft + paddingX - tbx.position.x, boxTop + paddingY - tbx.position.y));
+                window.draw(tip);
+            };
 
             sf::RectangleShape shadow(sf::Vector2f(boxW, boxH));
             shadow.setPosition(sf::Vector2f(boxX + 6.f, boxY + 8.f));
@@ -3755,6 +3916,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     icon.setPosition(r.position);
                     icon.setFillColor(sf::Color(80, 100, 140));
                     window.draw(icon);
+                }
+                if (hover) {
+                    auto [name, desc] = get_potion_display_info(pid);
+                    std::wstring tip = name;
+                    if (!desc.empty()) tip += L"\n" + desc;
+                    drawReplacePotionTip(tip);
                 }
             }
 
@@ -6161,37 +6328,47 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         bool aimingAtMonster = false;               // 鼠标是否在怪物上（决定箭头颜色：红=可攻击，蓝=不可）
 
-        // 瞄准状态且需要敌人目标：从选中牌中心到鼠标绘制弧形箭头；跟随阶段不显示
-        if (selectedHandIndex_ >= 0 && isAimingCard_ && selectedCardTargetsEnemy_) {
-            // 跟随阶段不显示箭头（仍在原位矩形内）
-            if (selectedCardIsFollowing_) {
+        const bool cardEnemyAim = selectedHandIndex_ >= 0 && isAimingCard_ && selectedCardTargetsEnemy_;
+        const bool potionEnemyAim = selectedPotionSlotIndex_ >= 0 && isAimingPotion_;
+
+        // 需敌人目标：从选中牌中心或灵液槽中心到鼠标绘制弧形箭头；牌「跟随阶段」不显示箭头
+        if (cardEnemyAim || potionEnemyAim) {
+            if (cardEnemyAim && selectedCardIsFollowing_) {
                 // 仍在原位矩形内跟随鼠标，仅展示预览牌本身
-            }
-            else {
+            } else {
                 sf::Vector2f start = selectedCardScreenPos_;
+                if (potionEnemyAim) {
+                    if (static_cast<size_t>(selectedPotionSlotIndex_) < potionSlotRects_.size()) {
+                        const auto& pr = potionSlotRects_[static_cast<size_t>(selectedPotionSlotIndex_)];
+                        start = sf::Vector2f(pr.position.x + pr.size.x * 0.5f, pr.position.y + pr.size.y * 0.5f);
+                    } else {
+                        start = mousePos_;
+                    }
+                }
                 sf::Vector2f end = mousePos_;
                 sf::Vector2f mid = (start + end) * 0.5f;
-                // 向上抬一点，形成弧形
                 mid.y -= 60.f;
 
-                for (const auto& r : monsterModelRects_) { if (r.contains(end)) { aimingAtMonster = true; break; } }
+                for (const auto& r : monsterModelRects_) {
+                    if (r.contains(end)) {
+                        aimingAtMonster = true;
+                        break;
+                    }
+                }
                 sf::Color arrowColor = aimingAtMonster ? sf::Color(240, 90, 90) : sf::Color(200, 230, 255);
 
-                // 用多条弧线叠加成更粗的实线箭头（只画到三角形基底，避免出现“两条线”）
                 const int segments = 20;
 
-                // 箭头三角形，线段不超过三角形基底
                 sf::Vector2f dir = end - mid;
                 float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
                 if (len > 0.001f) {
                     dir /= len;
                     sf::Vector2f n(-dir.y, dir.x);
-                    const float headLen = 40.f;     // 箭头长度
-                    const float headWidth = 26.f;   // 箭头宽度
+                    const float headLen = 40.f;
+                    const float headWidth = 26.f;
                     sf::Vector2f tip = end;
                     sf::Vector2f base = end - dir * headLen;
 
-                    // 重新绘制一遍主线，让其只到达三角形基底（不伸出三角形外）
                     auto drawMainCurveToBase = [&](float offset) {
                         sf::VertexArray curve(sf::PrimitiveType::LineStrip, static_cast<size_t>(segments + 1));
                         sf::Vector2f dirSB = base - start;
@@ -6210,16 +6387,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             curve[static_cast<size_t>(i)].color = arrowColor;
                         }
                         window.draw(curve);
-                        };
+                    };
 
-                    // 粗主线（到达基底，整体更粗）
                     drawMainCurveToBase(0.f);
                     drawMainCurveToBase(3.f);
                     drawMainCurveToBase(-3.f);
                     drawMainCurveToBase(6.f);
                     drawMainCurveToBase(-6.f);
 
-                    // 三角形本体
                     sf::Vector2f left = base + n * headWidth;
                     sf::Vector2f right = base - n * headWidth;
                     sf::VertexArray arrow(sf::PrimitiveType::Triangles, 3);
@@ -6230,18 +6405,18 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     window.draw(arrow);
                 }
             }
-            if (aimingAtMonster) {                 // 瞄准怪物时画黄色目标框
-                for (const auto& r : monsterModelRects_) {
-                    if (r.contains(mousePos_)) {
-                        sf::RectangleShape targetRect;
-                        targetRect.setPosition(r.position);
-                        targetRect.setSize(r.size);
-                        targetRect.setFillColor(sf::Color(0, 0, 0, 0));
-                        targetRect.setOutlineColor(sf::Color(255, 230, 120));
-                        targetRect.setOutlineThickness(3.f);
-                        window.draw(targetRect);
-                        break;
-                    }
+        }
+        if (aimingAtMonster && (potionEnemyAim || (cardEnemyAim && !selectedCardIsFollowing_))) {
+            for (const auto& r : monsterModelRects_) {
+                if (r.contains(mousePos_)) {
+                    sf::RectangleShape targetRect;
+                    targetRect.setPosition(r.position);
+                    targetRect.setSize(r.size);
+                    targetRect.setFillColor(sf::Color(0, 0, 0, 0));
+                    targetRect.setOutlineColor(sf::Color(255, 230, 120));
+                    targetRect.setOutlineThickness(3.f);
+                    window.draw(targetRect);
+                    break;
                 }
             }
         }

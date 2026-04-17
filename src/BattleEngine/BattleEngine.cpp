@@ -602,8 +602,14 @@ bool BattleEngine::use_potion(int slot_index, int target_monster_index) {  // �
     apply_potion_effect(id, state_, target_monster_index, card_system_);  // 执行灵液效果
     state_.player.potions.erase(state_.player.potions.begin() + slot_index);  // 移除灵液
     modifiers_.on_potion_used(state_, id);                             // 广播：使用灵液后（玩具扑翼飞机回复生命等）
-    build_modifiers_from_state();                                      // 重建 modifier（状态可能变化）
-    return true;                                                       // 使用成功
+    return true;
+}
+
+bool BattleEngine::discard_potion(int slot_index) {
+    if (slot_index < 0 || static_cast<size_t>(slot_index) >= state_.player.potions.size())
+        return false;
+    state_.player.potions.erase(state_.player.potions.begin() + slot_index);
+    return true;
 }
  
  void BattleEngine::step_turn_phase() {                                 // 推进回合阶段

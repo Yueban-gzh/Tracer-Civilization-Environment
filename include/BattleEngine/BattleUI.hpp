@@ -60,6 +60,8 @@ public:
 
     /** 轮询一次是否有"使用灵液"的请求，若有则返回灵液槽下标与目标怪物下标（-1 表示无需目标） */
     bool pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex);
+    /** 轮询一次是否有「丢弃灵液」请求（仅从背包移除，不触发效果） */
+    bool pollPotionDiscardRequest(int& outSlotIndex);
 
     /** 牌组界面：设置要展示的牌列表（手牌+抽牌堆+弃牌堆+消耗堆合并），并打开/关闭牌组界面 */
     void set_deck_view_cards(std::vector<CardInstance> cards);  // 设置牌组视图要展示的牌
@@ -140,6 +142,7 @@ public:
     };
 
 private:
+    void dismiss_potion_action_menu_();
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH);
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
@@ -272,6 +275,11 @@ private:
     bool isAimingPotion_ = false;               // 是否正在瞄准灵液目标（需目标的灵液）
     int  pendingPotionSlotIndex_ = -1;         // 待使用的灵液槽下标
     int  pendingPotionTargetIndex_ = -1;       // 灵液目标怪物下标，-1 表示无需目标
+    int  pendingPotionDiscardSlot_ = -1;       // 待丢弃的灵液槽下标（不触发效果）
+    bool potion_action_menu_active_ = false;   // 顶栏灵液：点击后弹出「饮用/扔出」与「丢弃」
+    int  potion_action_menu_slot_ = -1;
+    sf::FloatRect potion_action_use_rect_{};   // 饮用 / 扔出
+    sf::FloatRect potion_action_discard_rect_{};
     std::vector<sf::FloatRect> potionSlotRects_;  // 灵液槽矩形列表（用于点击检测）
     std::vector<sf::FloatRect> relicSlotRects_;   // 遗物槽矩形列表（用于悬停提示）
 
