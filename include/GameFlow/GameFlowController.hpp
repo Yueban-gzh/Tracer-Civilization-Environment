@@ -71,6 +71,9 @@ private:
     void resolveRest();
     void resolveMerchant();
     bool runTreasureScene();
+    void runBattleEntryAnimation();
+    void runCinematicDialog(const std::vector<std::wstring>& lines, const std::string& backgroundPath = "assets/backgrounds/dialog_bg.png");
+    void playCinematicVideoIfAvailable(const std::string& videoPath);
 
     int firstAliveMonsterIndex(const BattleState& state) const;
     void drawHud();

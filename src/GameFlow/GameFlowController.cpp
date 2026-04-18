@@ -1,6 +1,7 @@
 #include "GameFlow/GameFlowController.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -46,6 +47,100 @@ const std::unordered_map<std::string, std::string> kMonsterImageFileAliases = {
 int randomIndex(RunRng& rng, int boundExclusive) {
     if (boundExclusive <= 0) return 0;
     return rng.uniform_int(0, boundExclusive - 1);
+}
+
+std::string resolve_video_path(const std::string& relPath) {
+    namespace fs = std::filesystem;
+    const fs::path rel(relPath);
+    std::error_code ec;
+    if (fs::exists(rel, ec)) return rel.string();
+
+    const fs::path exeDir(get_executable_directory_utf8());
+    const fs::path p1 = exeDir / rel;
+    if (fs::exists(p1, ec)) return p1.string();
+
+    const fs::path p2 = exeDir / ".." / rel;
+    if (fs::exists(p2, ec)) return fs::weakly_canonical(p2, ec).string();
+
+    const fs::path p3 = exeDir / ".." / ".." / rel;
+    if (fs::exists(p3, ec)) return fs::weakly_canonical(p3, ec).string();
+
+    return {};
+}
+
+std::string quote_cmd_arg(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('"');
+    for (char ch : s) {
+        if (ch == '"') out.push_back('\\');
+        out.push_back(ch);
+    }
+    out.push_back('"');
+    return out;
+}
+
+bool has_ffplay_in_path() {
+#ifdef _WIN32
+    return std::system("ffplay -version >nul 2>&1") == 0;
+#else
+    return std::system("ffplay -version >/dev/null 2>&1") == 0;
+#endif
+}
+
+std::wstring map_idx_to_label(int mapIdx) {
+    switch (mapIdx) {
+    case 0: return L"第一张地图";
+    case 1: return L"第二张地图";
+    case 2: return L"第三张地图";
+    default: return L"新地图";
+    }
+}
+
+std::vector<std::wstring> make_boss_victory_dialog_lines(int mapIdx) {
+    if (mapIdx == 0) {
+        return {
+            L"溯源者，你已涤荡先秦之浊，重燃礼乐之火。",
+            L"青铜器上的纹路，再次闪耀着智慧的光芒。",
+            L"但你不可停歇，文明的长河，仍在向前奔涌。"
+        };
+    }
+    if (mapIdx == 1) {
+        return {
+            L"溯源者，你已驱散汉唐之阴霾，让盛世的辉煌再次照耀大地。",
+            L"唐诗的韵律，汉赋的华章，皆因你而重获新生。",
+            L"但文明的长河，仍在向前奔涌。"
+        };
+    }
+    return {
+        L"溯源者，你已净化宋明之浊，让文化的芬芳再次弥漫于世。",
+        L"青花瓷的纹路，宋词的意境，皆因你而重焕光彩。",
+        L"你已走过中华文明的长河，从先秦到宋明，每一步皆是传承。",
+        L"你不仅是溯源者，更是文明的守护者。"
+    };
+}
+
+std::vector<std::wstring> make_enter_new_map_dialog_lines(int mapIdx) {
+    if (mapIdx == 1) {
+        return {
+            L"溯源者，你已踏入汉唐盛世，这是中华文明最璀璨的篇章。",
+            L"丝绸之路的驼铃，长安城的繁华，皆在你眼前展开。",
+            L"然异灵亦潜藏于盛世之下，你需以卡牌为笔，书写净化之章。"
+        };
+    }
+    if (mapIdx == 2) {
+        return {
+            L"溯源者，你已来到宋明之世，这是文化与科技并重的时代。",
+            L"活字印刷的墨香，青花瓷的雅致，皆在你眼前展现。",
+            L"然异灵亦侵蚀于此，你需以卡牌为舟，渡文明之河。"
+        };
+    }
+    return {
+        L"溯源者，你自未来而来，当知华夏文明之根，始于先秦。",
+        L"然此世之灵，已为异气所染，山河失色，礼乐蒙尘。",
+        L"你需以卡牌为剑，以智慧为盾，净化异灵，重铸文明之光。",
+        L"记住，每一步选择，皆是命运之轮。"
+    };
 }
 
 bool is_curse_card_id(const CardId& id) {
@@ -877,6 +972,9 @@ void GameFlowController::run() {
         }
     }
 
+    playCinematicVideoIfAvailable("assets/introduce/1.mp4");
+    runBattleEntryAnimation();
+
     while (window_.isOpen()) {
         applyPendingVideoAndHudResize(kGameUiContext);
         hudBattleUi_.set_hide_top_right_map_button(true);
@@ -1015,6 +1113,24 @@ void GameFlowController::run() {
             return;  // 结束本次 run，回到 main 逻辑（开始界面）
         }
     }
+}
+
+void GameFlowController::playCinematicVideoIfAvailable(const std::string& videoPath) {
+    static bool ffplayChecked = false;
+    static bool ffplayAvailable = false;
+    if (!ffplayChecked) {
+        ffplayAvailable = has_ffplay_in_path();
+        ffplayChecked = true;
+    }
+    if (!ffplayAvailable) return;
+
+    const std::string resolved = resolve_video_path(videoPath);
+    if (resolved.empty()) return;
+
+    // -autoexit: 播放完自动关闭；-fs: 全屏；无 ffplay 时静默跳过
+    const std::string cmd =
+        "ffplay -hide_banner -loglevel error -nostats -autoexit -fs " + quote_cmd_arg(resolved);
+    (void)std::system(cmd.c_str());
 }
 
 bool GameFlowController::tryMoveToNode(const std::string& nodeId) {
@@ -1608,6 +1724,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             const int mapIdx     = mapConfigManager_.getCurrentIndex();
             const int mapCount   = static_cast<int>(mapConfigManager_.getMapCount());
             const int lastMapIdx = mapCount > 0 ? mapCount - 1 : 0;
+            runCinematicDialog(make_boss_victory_dialog_lines(mapIdx));
             if (mapIdx >= lastMapIdx) {
                 // 最后一页 Boss：通关界面后返回主菜单
                 captureCheckpointForCurrentNode();
@@ -1623,6 +1740,17 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                 seenEventRootsByLayer_.clear();
                 mapUI_.setMap(&mapEngine_);
                 mapUI_.setCurrentLayer(0);
+                const int enteredMapIdx = mapConfigManager_.getCurrentIndex();
+                if (enteredMapIdx == 1 || enteredMapIdx == 2) {
+                    if (enteredMapIdx == 1) {
+                        // 先秦胜利 -> 2.mp4 -> 汉唐导语
+                        playCinematicVideoIfAvailable("assets/introduce/2.mp4");
+                    } else {
+                        // 汉唐胜利 -> 3.mp4 -> 宋明导语
+                        playCinematicVideoIfAvailable("assets/introduce/3.mp4");
+                    }
+                    runCinematicDialog(make_enter_new_map_dialog_lines(enteredMapIdx));
+                }
                 captureCheckpointForCurrentNode();
                 statusText_ = "Boss 已击败，进入「" + mapConfigManager_.getCurrentMapName() + "」。请从本图起点继续。";
             }

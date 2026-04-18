@@ -190,6 +190,7 @@ xcopy /Y /D /E /I "$(ProjectDir)assets\*.*" "$(OutDir)assets\" 2&gt;nul || echo 
     <ClCompile Include="src\GameFlow\PotionCatalogScreen.cpp" />
     <ClCompile Include="src\GameFlow\RelicCatalogScreen.cpp" />
     <ClCompile Include="src\GameFlow\CharacterSelectScreen.cpp" />
+    <ClCompile Include="src\GameFlow\BattleEntryAnimation.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BattleEngine\BattleEngine.hpp" />
