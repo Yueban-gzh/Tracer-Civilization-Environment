@@ -38,6 +38,9 @@ struct BattleStateSnapshot {
     int                      turnNumber     = 0;
     std::wstring             phaseDebugLabel;
     std::vector<DamageDisplayEvent> pendingDamageDisplays;  // 受击伤害数字（玩家左、怪物右）
+    std::vector<PlayerBlockVfxSignal> pendingPlayerBlockVfx; // 玩家格挡技能序列帧触发
+    std::vector<MonsterPoisonVfxSignal> pendingMonsterPoisonVfx; // 怪物中毒施加序列帧
+    std::vector<StrengthVfxSignal>    pendingStrengthVfx;      // 玩家/怪物获得力量：脚下序列帧
 };
 
 } // namespace tce

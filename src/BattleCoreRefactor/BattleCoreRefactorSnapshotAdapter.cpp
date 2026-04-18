@@ -67,6 +67,9 @@
      }
 
      s.pendingDamageDisplays = state.pendingDamageDisplays;  // 受击伤害数字
+     s.pendingPlayerBlockVfx = state.pendingPlayerBlockVfx;
+     s.pendingMonsterPoisonVfx = state.pendingMonsterPoisonVfx;
+     s.pendingStrengthVfx      = state.pendingStrengthVfx;
 
      return s;                                           // 返回完整快照
  }

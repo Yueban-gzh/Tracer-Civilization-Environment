@@ -180,6 +180,8 @@ public:
 
     /** target_monster_index: 需指定目标的灵液（如毒灵液）传入怪物下标；无需目标的传 -1 */
     bool use_potion(int slot_index, int target_monster_index = -1);
+    /** 丢弃灵液：从槽位移除且不触发使用效果（与 use 不同，不触发玩具扑翼飞机等「使用」回调） */
+    bool discard_potion(int slot_index);
     void step_turn_phase();
 
     // --- 金手指接口（CheatEngine 直接修改状态）---

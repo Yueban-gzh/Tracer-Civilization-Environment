@@ -7,11 +7,20 @@
 #include <SFML/Graphics.hpp>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "Common/ImagePath.hpp"
 #include "Common/UserSettings.hpp"
 #include "GameFlow/GameFlowController.hpp"
 
 int main() {
+#ifdef _WIN32
+    // 便于 PowerShell/重定向到文件时按 UTF-8 查看中文；与 MapEngine 等处的 UTF-8 字符串一致
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+#endif
     try {
         tce::setup_asset_working_directory();
         tce::UserSettings::instance().load();

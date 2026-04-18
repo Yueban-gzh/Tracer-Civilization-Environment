@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <filesystem>
+#include <exception>
 
 namespace MapEngine {
 
@@ -61,35 +62,40 @@ namespace MapEngine {
 
     // 加载图例图片
     bool MapUI::loadLegendTexture(const std::string& filePath) {
-        std::cout << "===== 加载图例 =====" << std::endl;
-        std::cout << "文件路径: " << filePath << std::endl;
-
         if (!m_legendTexture.loadFromFile(filePath)) {
             std::cerr << "图例加载失败！" << std::endl;
             m_legendLoaded = false;
             return false;
         }
 
-        sf::Vector2u texSize = m_legendTexture.getSize();
-        std::cout << "纹理加载成功，大小: " << texSize.x << "x" << texSize.y << std::endl;
-
         // 关键：重新创建 Sprite 并设置纹理
         // 注意：不能直接赋值，需要重新构造
         m_legendSprite = sf::Sprite(m_legendTexture);
 
         m_legendLoaded = true;
-        std::cout << "图例加载完成" << std::endl;
-        std::cout << "===== 加载结束 =====\n" << std::endl;
 
         return true;
     }
 
     bool MapUI::loadBackgroundTexture(const std::string& filePath) {
-        std::cout << "加载背景: " << filePath << std::endl;
-
         if (!m_backgroundTexture.loadFromFile(filePath)) {
             std::cerr << "背景加载失败！" << std::endl;
             m_backgroundLoaded = false;
+            if (m_backgroundSprite) {
+                delete m_backgroundSprite;
+                m_backgroundSprite = nullptr;
+            }
+            return false;
+        }
+
+        const sf::Vector2u textureSize = m_backgroundTexture.getSize();
+        if (textureSize.x == 0u || textureSize.y == 0u) {
+            std::cerr << "背景纹理尺寸无效！" << std::endl;
+            m_backgroundLoaded = false;
+            if (m_backgroundSprite) {
+                delete m_backgroundSprite;
+                m_backgroundSprite = nullptr;
+            }
             return false;
         }
 
@@ -104,51 +110,64 @@ namespace MapEngine {
         // 缩放背景以适应窗口
         if (m_window && m_backgroundSprite) {
             sf::Vector2u windowSize = m_window->getSize();
-            sf::Vector2u textureSize = m_backgroundTexture.getSize();
-
-            float scaleX = static_cast<float>(windowSize.x) / textureSize.x;
-            float scaleY = static_cast<float>(windowSize.y) / textureSize.y;
-            float scale = std::max(scaleX, scaleY);
-
-            m_backgroundSprite->setScale(sf::Vector2f(scale, scale));
+            if (windowSize.x == 0u || windowSize.y == 0u) {
+                m_backgroundSprite->setScale(sf::Vector2f(1.f, 1.f));
+            } else {
+                const float scaleX = static_cast<float>(windowSize.x) / static_cast<float>(textureSize.x);
+                const float scaleY = static_cast<float>(windowSize.y) / static_cast<float>(textureSize.y);
+                const float scale    = std::max(scaleX, scaleY);
+                m_backgroundSprite->setScale(sf::Vector2f(scale, scale));
+            }
         }
 
         m_backgroundLoaded = true;
-        std::cout << "背景加载成功，大小: "
-            << m_backgroundTexture.getSize().x << "x"
-            << m_backgroundTexture.getSize().y << std::endl;
         return true;
+    }
+
+    void MapUI::reloadGraphicsAfterWindowRecreate() {
+        try {
+            loadAllNodeTextures();
+            {
+                const std::string path = resolve_asset_path_fallback("assets/images/visited_overlay.png");
+                if (!path.empty() && m_visitedOverlayTexture.loadFromFile(path))
+                    m_visitedOverlayLoaded = true;
+                else {
+                    std::cerr << "警告：无法加载已访问节点覆盖层图片 assets/images/visited_overlay.png\n";
+                    m_visitedOverlayLoaded = false;
+                }
+            }
+            const std::string menuPath = resolve_asset_path_fallback("assets/images/menu.png");
+            if (!menuPath.empty())
+                (void)loadLegendTexture(menuPath);
+            const std::string bgPath = resolve_asset_path_fallback("assets/images/background.png");
+            if (!bgPath.empty())
+                (void)loadBackgroundTexture(bgPath);
+            m_cachedMapWindowSize_ = sf::Vector2u(0u, 0u);
+            refresh_background_scale_for_window_();
+        } catch (const std::exception& e) {
+            std::cerr << "[MapUI] reloadGraphicsAfterWindowRecreate: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[MapUI] reloadGraphicsAfterWindowRecreate: unknown exception\n";
+        }
     }
 
     // 绘制图例
     void MapUI::drawLegend() {
-        if (!m_window) {
-            std::cout << "drawLegend: m_window为空" << std::endl;
+        if (!m_window)
             return;
-        }
 
-        if (!m_legendLoaded) {
-            std::cout << "drawLegend: m_legendLoaded = false" << std::endl;
+        if (!m_legendLoaded)
             return;
-        }
 
         sf::Vector2u texSize = m_legendTexture.getSize();
-        if (texSize.x == 0 || texSize.y == 0) {
-            std::cout << "drawLegend: 纹理无效，大小: " << texSize.x << "x" << texSize.y << std::endl;
+        if (texSize.x == 0 || texSize.y == 0)
             return;
-        }
-
-        std::cout << "drawLegend: 开始绘制" << std::endl;
-        std::cout << "  纹理大小: " << texSize.x << "x" << texSize.y << std::endl;
-        std::cout << "  位置: (" << m_legendPosition.x << ", " << m_legendPosition.y << ")" << std::endl;
-        std::cout << "  缩放: " << m_legendScale << std::endl;
 
         // 确保 Sprite 使用的是最新的纹理
         m_legendSprite.setPosition(sf::Vector2f(m_legendPosition.x, m_legendPosition.y));
         m_legendSprite.setScale(sf::Vector2f(m_legendScale, m_legendScale));
 
         m_window->draw(m_legendSprite);
-        std::cout << "drawLegend: 绘制完成" << std::endl;
     }
 
     bool MapUI::loadNodeTexture(NodeType type, const std::string& filePath) {
@@ -162,7 +181,6 @@ namespace MapEngine {
 
         m_nodeTextures[type] = texture;
         m_textureLoaded[type] = true;
-        std::cout << "成功加载图片: " << resolved << std::endl;
         return true;
     }
 
@@ -201,11 +219,9 @@ namespace MapEngine {
             const std::string path = resolve_asset_path_fallback("assets/images/visited_overlay.png");
             if (!m_visitedOverlayTexture.loadFromFile(path)) {
                 std::cerr << "警告：无法加载已访问节点覆盖层图片 assets/images/visited_overlay.png" << std::endl;
-            m_visitedOverlayLoaded = false;
-            }
-            else {
+                m_visitedOverlayLoaded = false;
+            } else {
                 m_visitedOverlayLoaded = true;
-                std::cout << "成功加载已访问节点覆盖层图片: " << path << std::endl;
             }
         }
 
@@ -227,49 +243,76 @@ namespace MapEngine {
         return false;
     }
 
+    void MapUI::recompute_map_layout_metrics_() {
+        if (!m_mapEngine || !m_window) return;
+
+        auto snapshot = m_mapEngine->get_map_snapshot();
+        if (snapshot.all_nodes.empty()) {
+            m_mapWorldCenterX = 960.f;
+            m_minOffset = 0.f;
+            m_maxOffset = 0.f;
+            return;
+        }
+
+        float minY = 10000.0f, maxY = -10000.0f;
+        float minX = 10000.0f, maxX = -10000.0f;
+        for (const auto& node : snapshot.all_nodes) {
+            minY = std::min(minY, node.position.y);
+            maxY = std::max(maxY, node.position.y);
+            minX = std::min(minX, node.position.x);
+            maxX = std::max(maxX, node.position.x);
+        }
+        m_mapWorldCenterX = (minX < maxX) ? (minX + maxX) * 0.5f : 960.f;
+
+        const float mapHeight = maxY - minY;
+        const float windowHeight = static_cast<float>(m_window->getSize().y);
+        constexpr float kTopHudReserve = 110.0f;
+        constexpr float kBottomReserve = 24.0f;
+        const float visibleHeight = std::max(200.0f, windowHeight - kTopHudReserve - kBottomReserve);
+
+        if (mapHeight > visibleHeight) {
+            m_minOffset = -100.0f;
+            m_maxOffset = mapHeight - visibleHeight + 150.0f;
+        } else {
+            m_minOffset = -50.0f;
+            m_maxOffset = visibleHeight - mapHeight + 50.0f;
+        }
+    }
+
+    void MapUI::refresh_background_scale_for_window_() {
+        if (!m_window || !m_backgroundLoaded || !m_backgroundSprite) return;
+        const sf::Vector2u windowSize = m_window->getSize();
+        const sf::Vector2u textureSize = m_backgroundTexture.getSize();
+        if (textureSize.x == 0 || textureSize.y == 0 || windowSize.x == 0 || windowSize.y == 0) return;
+        const float scaleX = static_cast<float>(windowSize.x) / static_cast<float>(textureSize.x);
+        const float scaleY = static_cast<float>(windowSize.y) / static_cast<float>(textureSize.y);
+        const float scale = std::max(scaleX, scaleY);
+        m_backgroundSprite->setScale(sf::Vector2f(scale, scale));
+    }
+
+    void MapUI::sync_layout_to_window_size_if_changed_() {
+        if (!m_window) return;
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return;
+        if (wsu == m_cachedMapWindowSize_) return;
+        m_cachedMapWindowSize_ = wsu;
+        recompute_map_layout_metrics_();
+        m_viewOffset = std::max(m_minOffset, std::min(m_maxOffset, m_viewOffset));
+        refresh_background_scale_for_window_();
+    }
+
     // MapUI.cpp - setMap函数
     void MapUI::setMap(const MapEngine* engine) {
         m_mapEngine = engine;
 
         if (engine) {
-            auto snapshot = engine->get_map_snapshot();
-            float minY = 10000.0f, maxY = -10000.0f;
-            for (const auto& node : snapshot.all_nodes) {
-                minY = std::min(minY, node.position.y);
-                maxY = std::max(maxY, node.position.y);
-            }
+            recompute_map_layout_metrics_();
+            if (m_window)
+                m_cachedMapWindowSize_ = m_window->getSize();
 
-            const float mapHeight = maxY - minY;
-            const float windowHeight =
-                m_window ? static_cast<float>(m_window->getSize().y) : 1080.0f;
-            // 顶部状态栏会遮挡地图可见区域，需要预留滚动余量。
-            constexpr float kTopHudReserve = 110.0f;
-            constexpr float kBottomReserve = 24.0f;
-            const float visibleHeight = std::max(200.0f, windowHeight - kTopHudReserve - kBottomReserve);
-
-            // 由于层间距增大到 120，12层总高度 = 11 * 120 = 1320 像素
-            // 加上起始偏移，总高度约 1400 像素
-            if (mapHeight > visibleHeight) {
-                // 允许向上滚动看到 Boss 层
-                m_minOffset = -100.0f;
-                // 允许向下滚动看到底部
-                m_maxOffset = mapHeight - visibleHeight + 150.0f;
-            }
-            else {
-                m_minOffset = -50.0f;
-                m_maxOffset = visibleHeight - mapHeight + 50.0f;
-            }
-
-            // 初始视口：略增大 m_viewOffset（相对原 -300 向 0 靠拢），地图在屏幕上会稍往下
             constexpr float kMapInitialViewOffset = -240.0f;
             m_viewOffset = kMapInitialViewOffset;
-
-            std::cout << "=== 地图滚动范围 ===" << std::endl;
-            std::cout << "地图Y范围: [" << minY << ", " << maxY << "]" << std::endl;
-            std::cout << "地图高度: " << mapHeight << std::endl;
-            std::cout << "窗口高度: " << windowHeight << " 可见高度: " << visibleHeight << std::endl;
-            std::cout << "滚动范围: [" << m_minOffset << ", " << m_maxOffset << "]" << std::endl;
-            std::cout << "===================" << std::endl;
+            m_viewOffset = std::max(m_minOffset, std::min(m_maxOffset, m_viewOffset));
         }
     }
 
@@ -407,24 +450,25 @@ namespace MapEngine {
                     extraScale *= (1.0f + 0.28f * s);
                 }
 
+                const float bw = std::max(bounds.size.x, 0.0001f);
                 if (node.type == NodeType::Boss) {
-                    scale = (radius * 2 * 7.0f) / bounds.size.x;
+                    scale = (radius * 2 * 7.0f) / bw;
                     displayRadius = radius * 7.0f;
                 }
                 else if (node.type == NodeType::Elite) {
-                    scale = (radius * 2 * 1.8f) / bounds.size.x;
+                    scale = (radius * 2 * 1.8f) / bw;
                     displayRadius = radius * 1.8f;
                 }
                 else if (node.type == NodeType::Enemy) {
-                    scale = (radius * 2 * 0.8f) / bounds.size.x;
+                    scale = (radius * 2 * 0.8f) / bw;
                     displayRadius = radius * 0.8f;
                 }
                 else if (node.type == NodeType::Event) {
-                    scale = (radius * 2 * 0.6f) / bounds.size.x;
+                    scale = (radius * 2 * 0.6f) / bw;
                     displayRadius = radius * 0.6f;
                 }
                 else {
-                    scale = (radius * 2) / bounds.size.x;
+                    scale = (radius * 2) / bw;
                 }
 
                 sprite.setScale(sf::Vector2f(scale * extraScale, scale * extraScale));
@@ -603,9 +647,16 @@ namespace MapEngine {
     void MapUI::draw() {
         if (!m_window) return;
 
-        // 先绘制背景（在原视图，不滚动）
-        sf::View originalView = m_window->getView();
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return;
 
+        sync_layout_to_window_size_if_changed_();
+
+        const sf::Vector2f win(static_cast<float>(wsu.x), static_cast<float>(wsu.y));
+        sf::View uiView(sf::FloatRect(sf::Vector2f(0.f, 0.f), win));
+        m_window->setView(uiView);
+
+        // 先绘制背景（全窗口视图，不滚动）
         if (m_backgroundLoaded && m_backgroundSprite) {
             m_window->draw(*m_backgroundSprite);
         }
@@ -618,9 +669,9 @@ namespace MapEngine {
         m_lastAnimSec = nowSec;
         m_timeSec = nowSec;
 
-        // 创建滚动视图
-        sf::View scrollView = originalView;
-        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+        // 地图滚动视图：水平以节点分布中心对齐窗口，垂直随 m_viewOffset 滚动
+        sf::View scrollView(uiView);
+        scrollView.setCenter(sf::Vector2f(m_mapWorldCenterX, win.y * 0.5f - m_viewOffset));
         m_window->setView(scrollView);
 
         // ====== 悬停检测：在滚动视图下把鼠标转世界坐标 ======
@@ -685,8 +736,8 @@ namespace MapEngine {
             drawNodes();
         }
 
-        // 恢复原视图绘制图例
-        m_window->setView(originalView);
+        // 恢复全窗口视图绘制图例
+        m_window->setView(uiView);
         drawLegend();
     }
 
@@ -696,19 +747,19 @@ namespace MapEngine {
         if (!m_nodesClickable) return "";
         if (!m_mapEngine || !m_window) return "";
 
-        // 【关键】保存当前视图，设置滚动视图，转换坐标，然后恢复
-        sf::View originalView = m_window->getView();
+        sync_layout_to_window_size_if_changed_();
 
-        // 创建与 draw() 中相同的滚动视图
-        sf::View scrollView = originalView;
-        scrollView.move(sf::Vector2f(0.0f, -m_viewOffset));
+        const sf::Vector2u wsu = m_window->getSize();
+        if (wsu.x == 0u || wsu.y == 0u) return "";
+        const sf::Vector2f win(static_cast<float>(wsu.x), static_cast<float>(wsu.y));
+        sf::View uiView(sf::FloatRect(sf::Vector2f(0.f, 0.f), win));
+        sf::View scrollView(uiView);
+        scrollView.setCenter(sf::Vector2f(m_mapWorldCenterX, win.y * 0.5f - m_viewOffset));
 
-        // 使用滚动视图转换鼠标坐标
+        sf::View saved = m_window->getView();
         m_window->setView(scrollView);
         sf::Vector2f worldPos = m_window->mapPixelToCoords(sf::Vector2i(mouseX, mouseY));
-
-        // 立即恢复原始视图（不影响后续绘制）
-        m_window->setView(originalView);
+        m_window->setView(saved);
 
         // 获取当前是否有已选节点
         bool hasCurrent = m_mapEngine->hasCurrentNode();
@@ -731,20 +782,13 @@ namespace MapEngine {
 
             if (distance <= clickRadius) {
                 // 状态检查
-                if (node.is_completed && !m_allowAnyNodeClick) {
-                    std::cout << "节点 " << node.id << " 已完成" << std::endl;
+                if (node.is_completed && !m_allowAnyNodeClick)
                     return "";
-                }
-                if (node.is_current) {
-                    std::cout << "已经在节点 " << node.id << std::endl;
+                if (node.is_current)
                     return "";
-                }
-                if (!m_allowAnyNodeClick && !node.is_reachable && !(node.layer == 0 && !hasCurrent)) {
-                    std::cout << "节点 " << node.id << " 不可达" << std::endl;
+                if (!m_allowAnyNodeClick && !node.is_reachable && !(node.layer == 0 && !hasCurrent))
                     return "";
-                }
 
-                std::cout << "点击到节点: " << node.id << " 类型:" << static_cast<int>(node.type) << std::endl;
                 return node.id;
             }
         }

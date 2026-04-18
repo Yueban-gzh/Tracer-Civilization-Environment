@@ -43,6 +43,9 @@ public:
     /** 切换当前战斗背景：0/1/2 对应三张地图配置的先秦/汉唐/宋明（由 GameFlow 按当前地图索引设定） */
     void setBattleBackground(int index);
 
+    /** OpenGL 上下文重建（分辨率应用、全屏切换）后丢弃缓存纹理；调用方须再 loadFont 并预载 UI 资源 */
+    void clear_gpu_cached_textures();
+
     bool handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos);  // 处理事件，返回 true 表示点击了结束回合
     void setMousePosition(sf::Vector2f pos);    // 设置鼠标位置（用于悬停高亮）
 
@@ -60,6 +63,8 @@ public:
 
     /** 轮询一次是否有"使用灵液"的请求，若有则返回灵液槽下标与目标怪物下标（-1 表示无需目标） */
     bool pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex);
+    /** 轮询一次是否有「丢弃灵液」请求（仅从背包移除，不触发效果） */
+    bool pollPotionDiscardRequest(int& outSlotIndex);
 
     /** 牌组界面：设置要展示的牌列表（手牌+抽牌堆+弃牌堆+消耗堆合并），并打开/关闭牌组界面 */
     void set_deck_view_cards(std::vector<CardInstance> cards);  // 设置牌组视图要展示的牌
@@ -140,6 +145,7 @@ public:
     };
 
 private:
+    void dismiss_potion_action_menu_();
     void drawPauseMenuOverlay(sf::RenderWindow& window);  // 暂停菜单/设置界面覆盖层（战斗与全局 HUD 共用）
     void layout_pause_settings_controls_(float panelX, float panelY, float panelW, float panelH);
     void drawDeckView(sf::RenderWindow& window, const BattleStateSnapshot& s);   // 绘制牌组界面（网格+牌）
@@ -159,6 +165,14 @@ private:
                             const CardInstance* handInst = nullptr,
                             std::vector<CardGlossaryEntry>* card_glossary_out = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
+    void ensure_monster_hit_vfx_frames_();   // 懒加载命中特效帧图（测试路径 E:/vfx/attack_1 等）
+    void ensure_monster_poison_vfx_frames_(); // 懒加载中毒特效（E:/vfx/poizon_1 等）
+    void ensure_strength_vfx_frames_();       // 懒加载力量提升（E:/vfx/strength_1 等）
+    void spawn_and_draw_monster_hit_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    void spawn_and_draw_monster_poison_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    void spawn_and_draw_strength_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    void ensure_player_block_vfx_frames_();
+    void spawn_and_draw_player_block_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     /** 绘制 drawBattleCenter 期间入队的状态效果图标（应在手牌/飞牌之前调用，使手牌盖住图标） */
     void flushPendingBattleStatusIcons_(sf::RenderWindow& window);
@@ -272,6 +286,11 @@ private:
     bool isAimingPotion_ = false;               // 是否正在瞄准灵液目标（需目标的灵液）
     int  pendingPotionSlotIndex_ = -1;         // 待使用的灵液槽下标
     int  pendingPotionTargetIndex_ = -1;       // 灵液目标怪物下标，-1 表示无需目标
+    int  pendingPotionDiscardSlot_ = -1;       // 待丢弃的灵液槽下标（不触发效果）
+    bool potion_action_menu_active_ = false;   // 顶栏灵液：点击后弹出「饮用/扔出」与「丢弃」
+    int  potion_action_menu_slot_ = -1;
+    sf::FloatRect potion_action_use_rect_{};   // 饮用 / 扔出
+    sf::FloatRect potion_action_discard_rect_{};
     std::vector<sf::FloatRect> potionSlotRects_;  // 灵液槽矩形列表（用于点击检测）
     std::vector<sf::FloatRect> relicSlotRects_;   // 遗物槽矩形列表（用于悬停提示）
 
@@ -307,6 +326,29 @@ private:
     sf::Clock                 playerAttackClock_{};
     std::vector<sf::Clock>    monsterAttackClocks_;
     int                       prevFreshDamageEventCount_ = 0;
+
+    // 玩家攻击牌命中怪物：序列帧特效（hit_vfx）；锚点偏胸口，独立于飘字时间轴
+    struct PendingMonsterHitVfx {
+        float     anchor_x = 0.f;
+        float     anchor_y = 0.f;
+        sf::Clock since_spawn_{};
+    };
+    std::vector<PendingMonsterHitVfx> pendingMonsterHitVfx_;
+    std::vector<sf::Texture>         monsterHitVfxFrames_;
+    bool                            monsterHitVfxTriedLoad_ = false;
+
+    std::vector<PendingMonsterHitVfx> pendingMonsterPoisonVfx_;
+    std::vector<sf::Texture>         monsterPoisonVfxFrames_;
+    bool                            monsterPoisonVfxTriedLoad_ = false;
+
+    std::vector<PendingMonsterHitVfx> pendingStrengthVfx_;
+    std::vector<sf::Texture>         strengthVfxFrames_;
+    bool                            strengthVfxTriedLoad_ = false;
+
+    // 玩家技能加格挡：block_1 序列（E:/vfx/block_1）
+    std::vector<PendingMonsterHitVfx> pendingPlayerBlockVfx_; // 复用锚点+时钟结构
+    std::vector<sf::Texture>       playerBlockVfxFrames_;
+    bool                            playerBlockVfxTriedLoad_ = false;
 
     // 怪物图片缓存（monster_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> monsterTextures_;

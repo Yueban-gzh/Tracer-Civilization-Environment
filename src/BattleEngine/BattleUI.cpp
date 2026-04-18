@@ -15,6 +15,7 @@
 #include <cmath>                                   // std::sqrt/floor
 #include <cctype>                                  // std::toupper
 #include <cstdio>                                  // std::snprintf
+#include <exception>
 #include <filesystem>                              // u8path：含空格/中文的状态图标路径
 #include <cstdint>                                 // std::uint8_t
 #include <cstring>                                 // std::strlen
@@ -25,6 +26,33 @@
 #include <vector>                                  // 牌面圆角轮廓点
 
 namespace {
+
+/** 与 attack_1 命中特效一致：序列帧最大边长按较短边缩放入此像素内 */
+constexpr float kBattleVfxSequenceMaxDimPx = 440.f;
+/** 施加中毒 poizon_1 序列：略大于命中特效，便于辨认 */
+constexpr float kBattleVfxPoisonSequenceMaxDimPx = 600.f;
+/** 力量 strength_1：以「模型—血条」缝为基准，中心原点；边长按较短边缩放入此像素内 */
+constexpr float kBattleVfxStrengthSequenceMaxDimPx = 1180.f;
+/** 与 drawBattleCenter 中「模型下缘 → 血条上沿」间距一致（见 barY / mBarY） */
+constexpr float kBattleModelToHpBarGapPx = 12.f;
+/** 相对缝中线再上移若干像素（屏幕 Y 减小） */
+constexpr float kBattleStrengthVfxUpNudgePx = 12.f;
+/** 格挡 block_1 序列：刻意大于命中/中毒，更醒目 */
+constexpr float kBattleVfxBlockSequenceMaxDimPx = 1780.f;
+/** 每帧基准时长（秒）；自然总时长 = 张数 × 此值 */
+constexpr float kBattleVfxSecPerFrame = 1.f / 60.f;
+/** 所有序列帧特效整段最短时长（秒）；帧数少时单帧变慢以满足下限 */
+constexpr float kBattleVfxMinTotalDurationSec = 0.48f;
+
+inline float battle_vfx_clip_duration_sec(size_t nframes) {
+    const float natural = kBattleVfxSecPerFrame * static_cast<float>(nframes);
+    return std::max(kBattleVfxMinTotalDurationSec, natural);
+}
+
+inline float battle_vfx_seconds_per_frame_for_clip(size_t nframes, float clipDur) {
+    if (nframes == 0) return kBattleVfxSecPerFrame;
+    return clipDur / static_cast<float>(nframes);
+}
 
 inline float ui_hover_lerp(float current, float target, float dt, float speed = 16.f) {
     if (dt <= 0.f) return target;
@@ -1169,9 +1197,35 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         return fontChineseLoaded_;
     }
 
+    void BattleUI::clear_gpu_cached_textures() {
+        monsterTextures_.clear();
+        relicTextures_.clear();
+        potionTextures_.clear();
+        playerTextures_.clear();
+        cardArtTextures_.clear();
+        intentionTextures_.clear();
+        statusEffectTextures_.clear();
+        statusEffectMissing_.clear();
+        backgroundTextures_.clear();
+        topbarGoldIconLoaded_  = false;
+        topbarHeartIconLoaded_ = false;
+        monsterHitVfxFrames_.clear();
+        monsterHitVfxTriedLoad_ = false;
+        pendingMonsterHitVfx_.clear();
+        monsterPoisonVfxFrames_.clear();
+        monsterPoisonVfxTriedLoad_ = false;
+        pendingMonsterPoisonVfx_.clear();
+        strengthVfxFrames_.clear();
+        strengthVfxTriedLoad_ = false;
+        pendingStrengthVfx_.clear();
+        playerBlockVfxFrames_.clear();
+        playerBlockVfxTriedLoad_ = false;
+        pendingPlayerBlockVfx_.clear();
+    }
+
     bool BattleUI::loadMonsterTexture(const std::string& monster_id, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;  // 加载失败返回 false
+        if (!load_sf_texture_utf8(tex, path)) return false;  // 与 intention 一致：UTF-8 / u8path
         tex.setSmooth(true);  // 缩放时线性过滤，立绘放大后观感更柔和
         monsterTextures_[monster_id] = std::move(tex);  // 按 monster_id 缓存纹理
         return true;
@@ -1179,14 +1233,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     bool BattleUI::loadRelicTexture(const std::string& relic_id, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
         relicTextures_[relic_id] = std::move(tex);  // 按 relic_id 缓存
         return true;
     }
 
     bool BattleUI::loadPotionTexture(const std::string& potion_id, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
         tex.setSmooth(true);
         potionTextures_[potion_id] = std::move(tex);  // 按 potion_id 缓存
         return true;
@@ -1194,7 +1248,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     bool BattleUI::loadPlayerTexture(const std::string& character_id, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
         tex.setSmooth(true);
         playerTextures_[character_id] = std::move(tex);  // 按角色 id 缓存（如 Ironclad）
         return true;
@@ -1202,7 +1256,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     bool BattleUI::loadBackground(const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
+        if (tex.getSize().x == 0 || tex.getSize().y == 0) return false;
         if (backgroundTextures_.empty())
             backgroundTextures_.push_back(std::move(tex));
         else
@@ -1212,7 +1267,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     bool BattleUI::loadBackgroundForBattle(int index, const std::string& path) {
         sf::Texture tex;
-        if (!tex.loadFromFile(path)) return false;
+        if (!load_sf_texture_utf8(tex, path)) return false;
+        if (tex.getSize().x == 0 || tex.getSize().y == 0) return false;
         if (index < 0) return false;
         if (static_cast<size_t>(index) >= backgroundTextures_.size())
             backgroundTextures_.resize(static_cast<size_t>(index) + 1);  // 扩展容器
@@ -1265,7 +1321,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!loaded) {
             const auto it = g_statusWikiLowerToAbsPath.find(id);
             if (it != g_statusWikiLowerToAbsPath.end())
-                loaded = tex.loadFromFile(it->second);
+                loaded = load_sf_texture_utf8(tex, it->second.u8string());
         }
         if (!loaded) {
             statusEffectMissing_.insert(id);
@@ -1857,6 +1913,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             settings_panel_active_ = false;
                             pending_pause_menu_choice_ = 0;
                         } else {
+                            dismiss_potion_action_menu_();
                             pause_menu_active_ = true;
                             settings_panel_active_ = false;
                         }
@@ -1895,6 +1952,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         settings_panel_active_   = false;
                         pending_pause_menu_choice_ = 0;
                     } else {
+                        dismiss_potion_action_menu_();
                         pause_menu_active_ = true;
                         settings_panel_active_ = false;
                     }
@@ -2048,11 +2106,55 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                         }
                     }
                 }
+                // 结束回合优先：关闭灵液二级菜单并取消灵液瞄准
+                if (endTurnButton_.contains(mousePos)) {
+                    dismiss_potion_action_menu_();
+                    selectedPotionSlotIndex_ = -1;
+                    isAimingPotion_ = false;
+                    return true;
+                }
+                // 灵液二级菜单：饮用/扔出、丢弃、切换槽位、点空白关闭
+                if (potion_action_menu_active_ && lastSnapshot_) {
+                    if (potion_action_use_rect_.contains(mousePos)) {
+                        const int slot = potion_action_menu_slot_;
+                        dismiss_potion_action_menu_();
+                        if (slot >= 0 && static_cast<size_t>(slot) < lastSnapshot_->potions.size()) {
+                            const PotionId& pid = lastSnapshot_->potions[static_cast<size_t>(slot)];
+                            if (potion_requires_monster_target(pid)) {
+                                selectedPotionSlotIndex_ = slot;
+                                isAimingPotion_ = true;
+                            } else {
+                                pendingPotionSlotIndex_ = slot;
+                                pendingPotionTargetIndex_ = -1;
+                            }
+                        }
+                        return false;
+                    }
+                    if (potion_action_discard_rect_.contains(mousePos)) {
+                        const int slot = potion_action_menu_slot_;
+                        dismiss_potion_action_menu_();
+                        if (slot >= 0)
+                            pendingPotionDiscardSlot_ = slot;
+                        return false;
+                    }
+                    for (size_t i = 0; i < potionSlotRects_.size() && i < lastSnapshot_->potions.size(); ++i) {
+                        if (!potionSlotRects_[i].contains(mousePos))
+                            continue;
+                        if (static_cast<int>(i) == potion_action_menu_slot_)
+                            dismiss_potion_action_menu_();
+                        else
+                            potion_action_menu_slot_ = static_cast<int>(i);
+                        return false;
+                    }
+                    dismiss_potion_action_menu_();
+                    return false;
+                }
                 // 若当前正在瞄准牌，根据目标类型决定出牌逻辑
                 else if (selectedHandIndex_ >= 0 && isAimingCard_) {
                     if (selectedCardTargetsEnemy_) {
                         for (size_t i = 0; i < monsterModelRects_.size(); ++i) {
-                            if (monsterModelRects_[i].contains(mousePos)) {
+                            if (monsterModelRects_[i].contains(mousePos) && lastSnapshot_
+                                && i < lastSnapshot_->monsters.size()) {
                                 if (!can_pay_selected_card_cost()) {
                                     if (lastSnapshot_ && selectedHandIndex_ >= 0
                                         && static_cast<size_t>(selectedHandIndex_) < lastSnapshot_->hand.size()) {
@@ -2107,26 +2209,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 }
 
                 // 若尚未选中牌，则检查是否点中了某张手牌以开始选中/瞄准（在 drawBottomBar 中处理左键按下）
-                // 若未选中牌，检查是否点击灵液槽
+                // 若未选中牌，检查是否点击灵液槽 → 弹出「饮用/扔出」与「丢弃」
                 if (selectedHandIndex_ < 0 && lastSnapshot_) {
                     for (size_t i = 0; i < potionSlotRects_.size() && i < lastSnapshot_->potions.size(); ++i) {
                         if (potionSlotRects_[i].contains(mousePos)) {
-                            const PotionId& pid = lastSnapshot_->potions[i];
-                            if (potion_requires_monster_target(pid)) {
-                                selectedPotionSlotIndex_ = static_cast<int>(i);
-                                isAimingPotion_ = true;
-                            } else {
-                                pendingPotionSlotIndex_ = static_cast<int>(i);
-                                pendingPotionTargetIndex_ = -1;
-                            }
+                            potion_action_menu_active_ = true;
+                            potion_action_menu_slot_ = static_cast<int>(i);
+                            selectedPotionSlotIndex_ = -1;
+                            isAimingPotion_ = false;
                             return false;
                         }
                     }
-                }
-
-                // 点击结束回合按钮
-                if (endTurnButton_.contains(mousePos)) {
-                    return true;                     // 返回 true 表示主循环应调用 engine.end_turn() 结束回合
                 }
             }
 
@@ -2136,6 +2229,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 isAimingCard_ = false;
                 selectedPotionSlotIndex_ = -1;
                 isAimingPotion_ = false;
+                dismiss_potion_action_menu_();
                 return false;
             }
         }
@@ -2151,12 +2245,26 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         return true;
     }
 
+    void BattleUI::dismiss_potion_action_menu_() {
+        potion_action_menu_active_ = false;
+        potion_action_menu_slot_ = -1;
+        potion_action_use_rect_ = {};
+        potion_action_discard_rect_ = {};
+    }
+
     bool BattleUI::pollPotionRequest(int& outSlotIndex, int& outTargetMonsterIndex) {
         if (pendingPotionSlotIndex_ < 0) return false;
         outSlotIndex = pendingPotionSlotIndex_;
         outTargetMonsterIndex = pendingPotionTargetIndex_;
         pendingPotionSlotIndex_ = -1;
         pendingPotionTargetIndex_ = -1;
+        return true;
+    }
+
+    bool BattleUI::pollPotionDiscardRequest(int& outSlotIndex) {
+        if (pendingPotionDiscardSlot_ < 0) return false;
+        outSlotIndex = pendingPotionDiscardSlot_;
+        pendingPotionDiscardSlot_ = -1;
         return true;
     }
 
@@ -2185,6 +2293,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     void BattleUI::set_deck_view_active(bool active) {
         deck_view_active_ = active;
         if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
             pile_anim_snapshot_ready_ = false;
             prev_discard_ids_for_anim_.clear();
             pile_card_flights_.clear();
@@ -2254,6 +2365,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_pause_menu_active(bool active) {
         pause_menu_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         if (!active) {
             settings_panel_active_ = false;
             pause_save_slot_panel_active_ = false;
@@ -2270,6 +2386,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_reward_screen_active(bool active) {
         reward_screen_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         pile_anim_snapshot_ready_ = false;
         prev_discard_ids_for_anim_.clear();
         pile_card_flights_.clear();
@@ -2367,6 +2488,11 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
     void BattleUI::set_card_select_active(bool active) {
         card_select_active_ = active;
+        if (active) {
+            dismiss_potion_action_menu_();
+            selectedPotionSlotIndex_ = -1;
+            isAimingPotion_ = false;
+        }
         if (!active) {
             card_select_rects_.clear();
             card_select_selected_indices_.clear();
@@ -2767,12 +2893,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             idx = 0;  // 无对应图时用第 0 张
         if (static_cast<size_t>(idx) < backgroundTextures_.size()) {
             const sf::Texture& tex = backgroundTextures_[static_cast<size_t>(idx)];
-            sf::Sprite bgSprite(tex);
-            bgSprite.setPosition(sf::Vector2f(0.f, 0.f));
-            float scaleX = static_cast<float>(width_) / static_cast<float>(tex.getSize().x);
-            float scaleY = static_cast<float>(height_) / static_cast<float>(tex.getSize().y);
-            bgSprite.setScale(sf::Vector2f(scaleX, scaleY));
-            window.draw(bgSprite);
+            const auto tsz = tex.getSize();
+            if (tsz.x > 0 && tsz.y > 0 && width_ > 0 && height_ > 0) {
+                sf::Sprite bgSprite(tex);
+                bgSprite.setPosition(sf::Vector2f(0.f, 0.f));
+                float scaleX = static_cast<float>(width_) / static_cast<float>(tsz.x);
+                float scaleY = static_cast<float>(height_) / static_cast<float>(tsz.y);
+                bgSprite.setScale(sf::Vector2f(scaleX, scaleY));
+                window.draw(bgSprite);
+            }
         }
 
         // 顶栏背景色块
@@ -3180,8 +3309,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         // 6. 灵液栏：槽位矩形保持未动画（供点击/提示命中）；绘制时按 hover_potion_slot_ 插值放大上移
         const int potionSlotCount = std::max(1, std::min(5, s.potionSlotCount));  // 1~5 槽
-        const float potionW = 56.f;
-        const float potionH = 46.f;
+        const float potionW = 64.f;
+        const float potionH = 54.f;
         const float potionGap = 14.f;
         const float potionStartX = x;
         potionSlotRects_.clear();
@@ -3198,9 +3327,10 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         for (int i = 0; i < potionSlotCount; ++i) {
             const float slotX = potionStartX + i * (potionW + potionGap);
             const float baseY = rowY - 4.f;
-            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(slotX, baseY), sf::Vector2f(potionW, potionH)));
+            // 命中框与绘制一致：图标会随悬停放大上移，若仍用固定槽位矩形会导致「看得到点不到」
             const float hov = hover_potion_slot_[static_cast<size_t>(i)];
             const auto g = potion_slot_anim_box(slotX, baseY, potionW, potionH, hov);
+            potionSlotRects_.push_back(sf::FloatRect(sf::Vector2f(g[0], g[1]), sf::Vector2f(g[2], g[3])));
             sf::RectangleShape slot(sf::Vector2f(g[2], g[3]));
             slot.setPosition(sf::Vector2f(g[0], g[1]));
             slot.setFillColor(sf::Color(0, 0, 0, 0));
@@ -3221,26 +3351,29 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const auto g = potion_slot_anim_box(slotX, baseY, potionW, potionH, hov);
             const float icx = g[0] + g[2] * 0.5f;
             const float icy = g[1] + g[3] * 0.5f;
+            constexpr float potionSlotIconNudgeY = -5.f; // 相对槽几何中心略微上移瓶身
             const std::string& pid = s.potions[i];
             auto it = potionTextures_.find(pid);
             if (it != potionTextures_.end()) {
                 sf::Sprite spr(it->second);
-                const float iconMaxW = potionW - 6.f;
-                const float iconMaxH = potionH - 8.f;
-                float scaleX = iconMaxW / std::max(1.f, static_cast<float>(it->second.getSize().x));
-                float scaleY = iconMaxH / std::max(1.f, static_cast<float>(it->second.getSize().y));
-                const float scale = std::min(scaleX, scaleY) * (1.f + 0.07f * hov);
+                // 与当前槽动画框同尺寸，仅留 1px 级间隙以贴近描边且不溢出
+                const float iconMaxW = std::max(2.f, g[2] - 2.f);
+                const float iconMaxH = std::max(2.f, g[3] - 2.f);
+                const sf::Vector2u tsz = it->second.getSize();
+                float scaleX = iconMaxW / std::max(1.f, static_cast<float>(tsz.x));
+                float scaleY = iconMaxH / std::max(1.f, static_cast<float>(tsz.y));
+                const float scale = std::min(scaleX, scaleY);
+                // 用纹理像素中心作原点，避免 getLocalBounds 含透明边时在视觉上偏上/偏下
+                spr.setOrigin(sf::Vector2f(static_cast<float>(tsz.x) * 0.5f, static_cast<float>(tsz.y) * 0.5f));
                 spr.setScale(sf::Vector2f(scale, scale));
-                const sf::FloatRect tb = spr.getLocalBounds();
-                spr.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
-                spr.setPosition(sf::Vector2f(icx, icy));
+                spr.setPosition(sf::Vector2f(icx, icy + potionSlotIconNudgeY));
                 window.draw(spr);
             } else {
-                const float fillW = (potionW - 6.f) * (1.f + 0.06f * hov);
-                const float fillH = (potionH - 8.f) * (1.f + 0.06f * hov);
+                const float fillW = std::max(4.f, g[2] - 2.f);
+                const float fillH = std::max(4.f, g[3] - 2.f);
                 sf::RectangleShape fill(sf::Vector2f(fillW, fillH));
                 fill.setOrigin(sf::Vector2f(fillW * 0.5f, fillH * 0.5f));
-                fill.setPosition(sf::Vector2f(icx, icy));
+                fill.setPosition(sf::Vector2f(icx, icy + potionSlotIconNudgeY));
                 fill.setFillColor(sf::Color(
                     ui_hover_lighten_byte(180, hov, 25),
                     ui_hover_lighten_byte(140, hov, 25),
@@ -3248,6 +3381,52 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 window.draw(fill);
             }
         }
+
+        if (potion_action_menu_active_ &&
+            (potion_action_menu_slot_ < 0 || potion_action_menu_slot_ >= potionSlotCount ||
+             static_cast<size_t>(potion_action_menu_slot_) >= s.potions.size())) {
+            dismiss_potion_action_menu_();
+        }
+        if (potion_action_menu_active_ && potion_action_menu_slot_ >= 0 &&
+            static_cast<size_t>(potion_action_menu_slot_) < potionSlotRects_.size() &&
+            static_cast<size_t>(potion_action_menu_slot_) < s.potions.size()) {
+            const int mi = potion_action_menu_slot_;
+            const float btnW = 124.f, btnH = 44.f, vGap = 10.f;
+            const auto& pr = potionSlotRects_[static_cast<size_t>(mi)];
+            float menuX = pr.position.x + pr.size.x * 0.5f - btnW * 0.5f;
+            const float stackH = btnH * 2.f + vGap;
+            float menuY = pr.position.y + pr.size.y + 8.f;
+            if (menuX + btnW > static_cast<float>(width_) - 8.f)
+                menuX = static_cast<float>(width_) - btnW - 8.f;
+            if (menuX < 8.f) menuX = 8.f;
+            if (menuY + stackH > static_cast<float>(height_) - 8.f)
+                menuY = pr.position.y - stackH - 8.f;
+            if (menuY < 8.f) menuY = 8.f;
+            potion_action_use_rect_ = sf::FloatRect(sf::Vector2f(menuX, menuY), sf::Vector2f(btnW, btnH));
+            potion_action_discard_rect_ =
+                sf::FloatRect(sf::Vector2f(menuX, menuY + btnH + vGap), sf::Vector2f(btnW, btnH));
+            auto drawMiniBtn = [&](const sf::FloatRect& r, const std::wstring& label) {
+                sf::RectangleShape sh(sf::Vector2f(r.size.x, r.size.y));
+                sh.setPosition(r.position);
+                sh.setFillColor(sf::Color(55, 50, 65, 230));
+                sh.setOutlineColor(sf::Color(140, 130, 160));
+                sh.setOutlineThickness(1.f);
+                window.draw(sh);
+                sf::Text t(fontForChinese(), sf::String(label), 22);
+                t.setFillColor(sf::Color::White);
+                const sf::FloatRect tb = t.getLocalBounds();
+                t.setOrigin(sf::Vector2f(tb.position.x + tb.size.x * 0.5f, tb.position.y + tb.size.y * 0.5f));
+                t.setPosition(sf::Vector2f(r.position.x + r.size.x * 0.5f, r.position.y + r.size.y * 0.5f));
+                window.draw(t);
+            };
+            const bool needEnemy = potion_requires_monster_target(s.potions[static_cast<size_t>(mi)]);
+            drawMiniBtn(potion_action_use_rect_, needEnemy ? L"扔出" : L"饮用");
+            drawMiniBtn(potion_action_discard_rect_, L"丢弃");
+        } else {
+            potion_action_use_rect_ = {};
+            potion_action_discard_rect_ = {};
+        }
+
         x += 16.f;                              // 灵液栏后留空
 
         // 7. 当前层数（与地图当前节点层同步，由 GameFlow 每帧/进入节点时刷新）
@@ -3427,17 +3606,35 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         // 遗物与灵液奖励（显示在金币下方，各 40% 概率，互不冲突）
         rewardRowY = (reward_gold_ > 0) ? (panelY + 168.f) : (panelY + 120.f);
+        float rewardIconsBottom = 0.f;  // 遗物/灵液区实际下沿（含「遗物/灵液」标签），用于与下方选卡区分块留白
         if (!reward_relic_ids_.empty() || !reward_potion_ids_.empty()) {
-            constexpr float REWARD_RELIC_ICON_SZ = 48.f;
-            constexpr float REWARD_POTION_ICON_SZ = 56.f;
+            // 遗物与灵液槽位统一尺寸（点击区域与底板一致）
+            constexpr float REWARD_EXTRA_PICK_SZ = 60.f;
             constexpr float REWARD_ICON_GAP = 12.f;
             const size_t nr = reward_relic_ids_.size();
             const size_t np = reward_potion_ids_.size();
-            const float rowW =
-                static_cast<float>(nr) * (REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP)
-                + static_cast<float>(np) * (REWARD_POTION_ICON_SZ + REWARD_ICON_GAP);
-            float x = panelX + panelW * 0.5f
-                - ((nr + np) > 0 ? (rowW - REWARD_ICON_GAP) * 0.5f : 0.f);
+            const size_t nslots = nr + np;
+            const float rowW = nslots > 0
+                ? static_cast<float>(nslots) * REWARD_EXTRA_PICK_SZ + static_cast<float>(nslots - 1) * REWARD_ICON_GAP
+                : 0.f;
+            float x = panelX + panelW * 0.5f - rowW * 0.5f;
+
+            std::wstring pickHint;
+            if (nr > 0 && np > 0)
+                pickHint = L"点击获得遗物或药水";
+            else if (nr > 0)
+                pickHint = L"点击获得遗物";
+            else
+                pickHint = L"点击获得药水";
+            {
+                sf::Text pickHintText(fontForChinese(), sf::String(pickHint), 20);
+                pickHintText.setFillColor(sf::Color(215, 205, 185));
+                const sf::FloatRect hb = pickHintText.getLocalBounds();
+                pickHintText.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+                pickHintText.setPosition(sf::Vector2f(panelX + panelW * 0.5f, rewardRowY + 14.f));
+                window.draw(pickHintText);
+            }
+            rewardRowY += 34.f;
 
             // 刷新点击矩形 + hover 容器
             reward_relic_rects_.clear();
@@ -3448,7 +3645,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             for (const auto& rid : reward_relic_ids_) {
                 const size_t idx = reward_relic_rects_.size();
                 const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
-                    sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
+                    sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                 reward_relic_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_relic_[idx] = ui_hover_lerp(hover_reward_relic_[idx], over ? 1.f : 0.f, dtHover);
@@ -3458,7 +3655,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 // 图标底板
                 {
                     sf::RectangleShape back(sf::Vector2f(
-                        REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f, REWARD_RELIC_ICON_SZ + 10.f + grow * 2.f));
+                        REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f, REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(230, 210, 150, 245) : sf::Color(160, 140, 110, 220));
@@ -3468,12 +3665,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 auto rit = relicTextures_.find(rid);
                 if (rit != relicTextures_.end()) {
                     sf::Sprite spr(rit->second);
-                    spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_RELIC_ICON_SZ / std::max(1.f, static_cast<float>(rit->second.getSize().x));
-                    spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
+                    const sf::Vector2u tsz = rit->second.getSize();
+                    float scaleX = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(tsz.x));
+                    float scaleY = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(tsz.y));
+                    const float scale = std::min(scaleX, scaleY) * (1.f + 0.07f * h01);
+                    spr.setOrigin(sf::Vector2f(static_cast<float>(tsz.x) * 0.5f, static_cast<float>(tsz.y) * 0.5f));
+                    spr.setScale(sf::Vector2f(scale, scale));
+                    spr.setPosition(
+                        sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ * 0.5f));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_RELIC_ICON_SZ, REWARD_RELIC_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(120, 80, 100));
                     icon.setOutlineColor(sf::Color(180, 100, 120));
@@ -3484,14 +3686,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(220, 200, 210));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_RELIC_ICON_SZ * 0.5f, rewardRowY + REWARD_RELIC_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_RELIC_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_EXTRA_PICK_SZ + REWARD_ICON_GAP;
             }
             for (const auto& pid : reward_potion_ids_) {
                 const size_t idx = reward_potion_rects_.size();
                 const sf::FloatRect rect(sf::Vector2f(x, rewardRowY),
-                    sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
+                    sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                 reward_potion_rects_.push_back(rect);
                 const bool over = rect.contains(mousePos_);
                 hover_reward_potion_[idx] = ui_hover_lerp(hover_reward_potion_[idx], over ? 1.f : 0.f, dtHover);
@@ -3499,7 +3701,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 const float grow = 3.f * h01;
                 {
                     sf::RectangleShape back(sf::Vector2f(
-                        REWARD_POTION_ICON_SZ + 10.f + grow * 2.f, REWARD_POTION_ICON_SZ + 10.f + grow * 2.f));
+                        REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f, REWARD_EXTRA_PICK_SZ + 10.f + grow * 2.f));
                     back.setPosition(sf::Vector2f(x - 5.f - grow, rewardRowY - 5.f - grow));
                     back.setFillColor(sf::Color(18, 18, 26, static_cast<std::uint8_t>(150 + 30.f * h01)));
                     back.setOutlineColor(over ? sf::Color(190, 220, 255, 245) : sf::Color(110, 140, 180, 220));
@@ -3509,12 +3711,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 auto pit = potionTextures_.find(pid);
                 if (pit != potionTextures_.end()) {
                     sf::Sprite spr(pit->second);
-                    spr.setPosition(sf::Vector2f(x - grow * 0.25f, rewardRowY - grow * 0.25f));
-                    float scale = REWARD_POTION_ICON_SZ / std::max(1.f, static_cast<float>(pit->second.getSize().x));
-                    spr.setScale(sf::Vector2f(scale * (1.f + 0.07f * h01), scale * (1.f + 0.07f * h01)));
+                    const sf::Vector2u tsz = pit->second.getSize();
+                    float scaleX = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(tsz.x));
+                    float scaleY = REWARD_EXTRA_PICK_SZ / std::max(1.f, static_cast<float>(tsz.y));
+                    const float scale = std::min(scaleX, scaleY) * (1.f + 0.07f * h01);
+                    spr.setOrigin(sf::Vector2f(static_cast<float>(tsz.x) * 0.5f, static_cast<float>(tsz.y) * 0.5f));
+                    spr.setScale(sf::Vector2f(scale, scale));
+                    spr.setPosition(
+                        sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ * 0.5f));
                     window.draw(spr);
                 } else {
-                    sf::RectangleShape icon(sf::Vector2f(REWARD_POTION_ICON_SZ, REWARD_POTION_ICON_SZ));
+                    sf::RectangleShape icon(sf::Vector2f(REWARD_EXTRA_PICK_SZ, REWARD_EXTRA_PICK_SZ));
                     icon.setPosition(sf::Vector2f(x, rewardRowY));
                     icon.setFillColor(sf::Color(80, 100, 140));
                     icon.setOutlineColor(sf::Color(120, 150, 200));
@@ -3525,19 +3732,32 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 label.setFillColor(sf::Color(200, 210, 230));
                 const sf::FloatRect lb = label.getLocalBounds();
                 label.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, 0.f));
-                label.setPosition(sf::Vector2f(x + REWARD_POTION_ICON_SZ * 0.5f, rewardRowY + REWARD_POTION_ICON_SZ + 4.f));
+                label.setPosition(sf::Vector2f(x + REWARD_EXTRA_PICK_SZ * 0.5f, rewardRowY + REWARD_EXTRA_PICK_SZ + 4.f));
                 window.draw(label);
-                x += REWARD_POTION_ICON_SZ + REWARD_ICON_GAP;
+                x += REWARD_EXTRA_PICK_SZ + REWARD_ICON_GAP;
             }
-            rewardRowY += std::max(REWARD_RELIC_ICON_SZ, REWARD_POTION_ICON_SZ) + 28.f;
+            constexpr float REWARD_ICON_LABEL_BELOW = 4.f;
+            constexpr float REWARD_ICON_LABEL_H = 22.f;
+            rewardIconsBottom =
+                rewardRowY + REWARD_EXTRA_PICK_SZ + REWARD_ICON_LABEL_BELOW + REWARD_ICON_LABEL_H;
         }
 
-        // 奖励区整体下移：避免卡牌/提示与遗物/灵液行发生重叠
+        // 卡牌区纵坐标：有遗物/灵液时按实际上沿下沿留白，避免与「选择一张卡牌」条挤在一起
+        constexpr float GAP_REWARD_ICONS_TO_CARD_HINT = 40.f;
+        constexpr float CARD_CHOICE_HINT_BAR_H = 42.f;
+        constexpr float GAP_CARD_HINT_TO_CARD_ROW = 24.f;
         const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
-        const float rewardDown = hasIcons ? 58.f : 26.f;
-        const float cardY = !hasIcons
-            ? (panelY + 210.f + rewardDown)
-            : (panelY + 250.f + rewardDown);
+        float cardY = 0.f;
+        float cardHintCenterY = 0.f;
+        if (hasIcons) {
+            const float hintTop = rewardIconsBottom + GAP_REWARD_ICONS_TO_CARD_HINT;
+            cardHintCenterY = hintTop + CARD_CHOICE_HINT_BAR_H * 0.5f;
+            cardY = hintTop + CARD_CHOICE_HINT_BAR_H + GAP_CARD_HINT_TO_CARD_ROW;
+        } else {
+            const float rewardDown = 26.f;
+            cardY = panelY + 210.f + rewardDown;
+            cardHintCenterY = cardY - 50.f;
+        }
         const float totalCardsW = static_cast<float>(reward_card_ids_.size()) * REWARD_CARD_W
             + (reward_card_ids_.size() > 1 ? (reward_card_ids_.size() - 1) * CARD_GAP : 0.f);
         float cardStartX = (static_cast<float>(width_) - totalCardsW) * 0.5f;
@@ -3559,10 +3779,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         if (!reward_card_picked_) {
             // 三选一提示（更明显）
             {
-                // 避免与遗物/灵液行重叠：有图标时提示再下移一些
-                const bool hasIcons = !(reward_relic_ids_.empty() && reward_potion_ids_.empty());
-                // 提示条靠近卡牌区上沿，比“图标行”更靠下，避免重叠
-                const float hintY = cardY - (hasIcons ? 35.f : 50.f);
+                const float hintY = cardHintCenterY;
                 sf::RectangleShape bar(sf::Vector2f(420.f, 42.f));
                 bar.setPosition(sf::Vector2f(panelX + panelW * 0.5f - 210.f, hintY - 21.f));
                 bar.setFillColor(sf::Color(16, 16, 24, 190));
@@ -3710,6 +3927,34 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float boxH = 210.f;
             const float boxX = (W - boxW) * 0.5f;
             const float boxY = (H - boxH) * 0.5f;
+            auto drawReplacePotionTip = [&](const std::wstring& text) {
+                if (text.empty()) return;
+                constexpr float paddingX = 12.f;
+                constexpr float paddingY = 10.f;
+                constexpr float maxW = 380.f;
+                const int fontSize = 19;
+                sf::Text tip(fontForChinese(), sf::String(text), fontSize);
+                tip.setFillColor(sf::Color(235, 230, 220));
+                const sf::FloatRect tbx = tip.getLocalBounds();
+                const float boxTipW = std::min(tbx.size.x + paddingX * 2.f, maxW);
+                const float boxTipH = tbx.size.y + paddingY * 2.f;
+
+                float boxLeft = mousePos_.x + 18.f;
+                float boxTop  = mousePos_.y + 10.f;
+                if (boxLeft + boxTipW > boxX + boxW - 8.f) boxLeft = mousePos_.x - boxTipW - 18.f;
+                if (boxLeft < boxX + 8.f) boxLeft = boxX + 8.f;
+                if (boxTop + boxTipH > boxY + boxH - 8.f) boxTop = boxY + boxH - boxTipH - 8.f;
+                if (boxTop < boxY + 8.f) boxTop = boxY + 8.f;
+
+                sf::RectangleShape bg(sf::Vector2f(boxTipW, boxTipH));
+                bg.setPosition(sf::Vector2f(boxLeft, boxTop));
+                bg.setFillColor(sf::Color(40, 35, 45, 240));
+                bg.setOutlineColor(sf::Color(150, 140, 120));
+                bg.setOutlineThickness(1.f);
+                window.draw(bg);
+                tip.setPosition(sf::Vector2f(boxLeft + paddingX - tbx.position.x, boxTop + paddingY - tbx.position.y));
+                window.draw(tip);
+            };
 
             sf::RectangleShape shadow(sf::Vector2f(boxW, boxH));
             shadow.setPosition(sf::Vector2f(boxX + 6.f, boxY + 8.f));
@@ -3755,6 +4000,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     icon.setPosition(r.position);
                     icon.setFillColor(sf::Color(80, 100, 140));
                     window.draw(icon);
+                }
+                if (hover) {
+                    auto [name, desc] = get_potion_display_info(pid);
+                    std::wstring tip = name;
+                    if (!desc.empty()) tip += L"\n" + desc;
+                    drawReplacePotionTip(tip);
                 }
             }
 
@@ -4757,6 +5008,455 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             draw_card_glossary_beside_preview_(window, deck_view_glossary_card_screen_, deck_view_glossary_entries_);
     }
 
+    void BattleUI::ensure_monster_hit_vfx_frames_() {
+        if (monsterHitVfxTriedLoad_)
+            return;
+        monsterHitVfxTriedLoad_ = true;
+        try {
+            namespace fs = std::filesystem;
+            const char* const candidates[] = {
+                "E:/vfx/attack_1",
+                "assets/vfx/attack_1",
+            };
+            for (const char* dirUtf8 : candidates) {
+                const fs::path base = fs::u8path(dirUtf8);
+                std::error_code ec;
+                if (!fs::is_directory(base, ec))
+                    continue;
+                std::vector<fs::path> files;
+                for (const auto& ent : fs::directory_iterator(base, ec)) {
+                    if (!ent.is_regular_file())
+                        continue;
+                    std::string ext = ent.path().extension().string();
+                    for (char& c : ext) {
+                        if (c >= 'A' && c <= 'Z')
+                            c = static_cast<char>(c - 'A' + 'a');
+                    }
+                    if (ext != ".png")
+                        continue;
+                    files.push_back(ent.path());
+                }
+                if (files.empty())
+                    continue;
+                std::sort(files.begin(), files.end());
+                std::vector<sf::Texture> loaded;
+                loaded.reserve(files.size());
+                bool ok = true;
+                for (const fs::path& p : files) {
+                    sf::Texture t;
+                    if (!load_sf_texture_utf8(t, p.generic_string())) {
+                        ok = false;
+                        break;
+                    }
+                    loaded.push_back(std::move(t));
+                }
+                if (ok && !loaded.empty()) {
+                    monsterHitVfxFrames_ = std::move(loaded);
+                    return;
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[BattleUI] ensure_monster_hit_vfx_frames_: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[BattleUI] ensure_monster_hit_vfx_frames_: unknown exception\n";
+        }
+    }
+
+    void BattleUI::ensure_monster_poison_vfx_frames_() {
+        if (monsterPoisonVfxTriedLoad_)
+            return;
+        monsterPoisonVfxTriedLoad_ = true;
+        try {
+            namespace fs = std::filesystem;
+            const char* const candidates[] = {
+                "E:/vfx/poizon_1",
+                "assets/vfx/poizon_1",
+            };
+            for (const char* dirUtf8 : candidates) {
+                const fs::path base = fs::u8path(dirUtf8);
+                std::error_code ec;
+                if (!fs::is_directory(base, ec))
+                    continue;
+                std::vector<fs::path> files;
+                for (const auto& ent : fs::directory_iterator(base, ec)) {
+                    if (!ent.is_regular_file())
+                        continue;
+                    std::string ext = ent.path().extension().string();
+                    for (char& c : ext) {
+                        if (c >= 'A' && c <= 'Z')
+                            c = static_cast<char>(c - 'A' + 'a');
+                    }
+                    if (ext != ".png")
+                        continue;
+                    files.push_back(ent.path());
+                }
+                if (files.empty())
+                    continue;
+                std::sort(files.begin(), files.end());
+                std::vector<sf::Texture> loaded;
+                loaded.reserve(files.size());
+                bool ok = true;
+                for (const fs::path& p : files) {
+                    sf::Texture t;
+                    if (!load_sf_texture_utf8(t, p.generic_string())) {
+                        ok = false;
+                        break;
+                    }
+                    const auto sz = t.getSize();
+                    if (sz.x == 0 || sz.y == 0) {
+                        ok = false;
+                        break;
+                    }
+                    loaded.push_back(std::move(t));
+                }
+                if (ok && !loaded.empty()) {
+                    monsterPoisonVfxFrames_ = std::move(loaded);
+                    return;
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[BattleUI] ensure_monster_poison_vfx_frames_: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[BattleUI] ensure_monster_poison_vfx_frames_: unknown exception\n";
+        }
+    }
+
+    void BattleUI::ensure_strength_vfx_frames_() {
+        if (strengthVfxTriedLoad_)
+            return;
+        strengthVfxTriedLoad_ = true;
+        try {
+            namespace fs = std::filesystem;
+            const char* const candidates[] = {
+                "E:/vfx/strength_1",
+                "assets/vfx/strength_1",
+            };
+            for (const char* dirUtf8 : candidates) {
+                const fs::path base = fs::u8path(dirUtf8);
+                std::error_code ec;
+                if (!fs::is_directory(base, ec))
+                    continue;
+                std::vector<fs::path> files;
+                for (const auto& ent : fs::directory_iterator(base, ec)) {
+                    if (!ent.is_regular_file())
+                        continue;
+                    std::string ext = ent.path().extension().string();
+                    for (char& c : ext) {
+                        if (c >= 'A' && c <= 'Z')
+                            c = static_cast<char>(c - 'A' + 'a');
+                    }
+                    if (ext != ".png")
+                        continue;
+                    files.push_back(ent.path());
+                }
+                if (files.empty())
+                    continue;
+                std::sort(files.begin(), files.end());
+                std::vector<sf::Texture> loaded;
+                loaded.reserve(files.size());
+                bool ok = true;
+                for (const fs::path& p : files) {
+                    sf::Texture t;
+                    if (!load_sf_texture_utf8(t, p.generic_string())) {
+                        ok = false;
+                        break;
+                    }
+                    const auto sz = t.getSize();
+                    if (sz.x == 0 || sz.y == 0) {
+                        ok = false;
+                        break;
+                    }
+                    loaded.push_back(std::move(t));
+                }
+                if (ok && !loaded.empty()) {
+                    strengthVfxFrames_ = std::move(loaded);
+                    return;
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[BattleUI] ensure_strength_vfx_frames_: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[BattleUI] ensure_strength_vfx_frames_: unknown exception\n";
+        }
+    }
+
+    void BattleUI::spawn_and_draw_strength_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        ensure_strength_vfx_frames_();
+        if (strengthVfxFrames_.empty())
+            return;
+
+        constexpr int STRENGTH_VFX_SIGNAL_DURATION = 180;
+        for (const auto& ev : s.pendingStrengthVfx) {
+            const int age = STRENGTH_VFX_SIGNAL_DURATION - ev.frames_remaining;
+            if (age != 0)
+                continue;
+            PendingMonsterHitVfx inst;
+            if (ev.is_player) {
+                const sf::FloatRect& pr = playerModelRect_;
+                if (pr.size.x <= 0.f || pr.size.y <= 0.f)
+                    continue;
+                inst.anchor_x = pr.position.x + pr.size.x * 0.5f;
+                // 模型下缘与血条上沿之间的缝（略上移）
+                inst.anchor_y =
+                    pr.position.y + pr.size.y + kBattleModelToHpBarGapPx * 0.5f - kBattleStrengthVfxUpNudgePx;
+            } else {
+                const int mi = ev.monster_index;
+                if (mi < 0 || static_cast<size_t>(mi) >= monsterModelRects_.size())
+                    continue;
+                const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(mi)];
+                if (mr.size.x <= 0.f || mr.size.y <= 0.f)
+                    continue;
+                inst.anchor_x = mr.position.x + mr.size.x * 0.5f;
+                inst.anchor_y =
+                    mr.position.y + mr.size.y + kBattleModelToHpBarGapPx * 0.5f - kBattleStrengthVfxUpNudgePx;
+            }
+            pendingStrengthVfx_.push_back(std::move(inst));
+        }
+
+        const size_t nframes = strengthVfxFrames_.size();
+        const float clipDur = battle_vfx_clip_duration_sec(nframes);
+        const float secPf = battle_vfx_seconds_per_frame_for_clip(nframes, clipDur);
+
+        pendingStrengthVfx_.erase(
+            std::remove_if(pendingStrengthVfx_.begin(), pendingStrengthVfx_.end(),
+                [clipDur](const PendingMonsterHitVfx& h) {
+                    return h.since_spawn_.getElapsedTime().asSeconds() >= clipDur + 1e-3f;
+                }),
+            pendingStrengthVfx_.end());
+
+        for (const PendingMonsterHitVfx& h : pendingStrengthVfx_) {
+            if (nframes == 0)
+                break;
+            const float t = h.since_spawn_.getElapsedTime().asSeconds();
+            size_t fi = static_cast<size_t>(t / secPf);
+            if (fi >= nframes)
+                fi = nframes - 1;
+            const sf::Texture& tex = strengthVfxFrames_[fi];
+            sf::Sprite sp(tex);
+            const sf::FloatRect lb = sp.getLocalBounds();
+            // 中心为原点，锚点在「模型—血条」缝中点，避免底边对齐+超大缩放时光效集中在头部区域
+            sp.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            const float sx = (lb.size.x > 0.1f) ? (kBattleVfxStrengthSequenceMaxDimPx / lb.size.x) : 1.f;
+            const float sy = (lb.size.y > 0.1f) ? (kBattleVfxStrengthSequenceMaxDimPx / lb.size.y) : 1.f;
+            const float sc = std::min(sx, sy);
+            sp.setScale(sf::Vector2f(sc, sc));
+            sp.setPosition(sf::Vector2f(h.anchor_x, h.anchor_y));
+            window.draw(sp);
+        }
+    }
+
+    void BattleUI::spawn_and_draw_monster_hit_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        ensure_monster_hit_vfx_frames_();
+        if (monsterHitVfxFrames_.empty())
+            return;
+
+        constexpr int DAMAGE_DISPLAY_DURATION = 180;
+        for (const auto& ev : s.pendingDamageDisplays) {
+            if (!ev.hit_vfx || ev.is_player)
+                continue;
+            const int age = DAMAGE_DISPLAY_DURATION - ev.frames_remaining;
+            if (age != 0)
+                continue;
+            const int mi = ev.monster_index;
+            if (mi < 0 || static_cast<size_t>(mi) >= monsterModelRects_.size())
+                continue;
+            const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(mi)];
+            PendingMonsterHitVfx inst;
+            inst.anchor_x = mr.position.x + mr.size.x * 0.5f;
+            inst.anchor_y = mr.position.y + mr.size.y * 0.42f;
+            pendingMonsterHitVfx_.push_back(std::move(inst));
+        }
+
+        const size_t nframes = monsterHitVfxFrames_.size();
+        const float clipDur = battle_vfx_clip_duration_sec(nframes);
+        const float secPf = battle_vfx_seconds_per_frame_for_clip(nframes, clipDur);
+
+        pendingMonsterHitVfx_.erase(
+            std::remove_if(pendingMonsterHitVfx_.begin(), pendingMonsterHitVfx_.end(),
+                [clipDur](const PendingMonsterHitVfx& h) {
+                    return h.since_spawn_.getElapsedTime().asSeconds() >= clipDur + 1e-3f;
+                }),
+            pendingMonsterHitVfx_.end());
+
+        for (const PendingMonsterHitVfx& h : pendingMonsterHitVfx_) {
+            const float t = h.since_spawn_.getElapsedTime().asSeconds();
+            size_t fi = static_cast<size_t>(t / secPf);
+            if (nframes == 0)
+                continue;
+            if (fi >= nframes)
+                fi = nframes - 1;
+            const sf::Texture& tex = monsterHitVfxFrames_[fi];
+            sf::Sprite sp(tex);
+            const sf::FloatRect lb = sp.getLocalBounds();
+            sp.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            const float sx = (lb.size.x > 0.1f) ? (kBattleVfxSequenceMaxDimPx / lb.size.x) : 1.f;
+            const float sy = (lb.size.y > 0.1f) ? (kBattleVfxSequenceMaxDimPx / lb.size.y) : 1.f;
+            const float sc = std::min(sx, sy);
+            sp.setScale(sf::Vector2f(sc, sc));
+            sp.setPosition(sf::Vector2f(h.anchor_x, h.anchor_y));
+            window.draw(sp);
+        }
+    }
+
+    void BattleUI::spawn_and_draw_monster_poison_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        ensure_monster_poison_vfx_frames_();
+        if (monsterPoisonVfxFrames_.empty())
+            return;
+
+        constexpr int POISON_VFX_SIGNAL_DURATION = 180;
+        for (const auto& ev : s.pendingMonsterPoisonVfx) {
+            const int age = POISON_VFX_SIGNAL_DURATION - ev.frames_remaining;
+            if (age != 0)
+                continue;
+            const int mi = ev.monster_index;
+            if (mi < 0 || static_cast<size_t>(mi) >= monsterModelRects_.size())
+                continue;
+            const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(mi)];
+            if (mr.size.x <= 0.f || mr.size.y <= 0.f)
+                continue;
+            PendingMonsterHitVfx inst;
+            inst.anchor_x = mr.position.x + mr.size.x * 0.5f;
+            inst.anchor_y = mr.position.y + mr.size.y * 0.42f;
+            pendingMonsterPoisonVfx_.push_back(std::move(inst));
+        }
+
+        const size_t nframes = monsterPoisonVfxFrames_.size();
+        const float clipDur = battle_vfx_clip_duration_sec(nframes);
+        const float secPf = battle_vfx_seconds_per_frame_for_clip(nframes, clipDur);
+
+        pendingMonsterPoisonVfx_.erase(
+            std::remove_if(pendingMonsterPoisonVfx_.begin(), pendingMonsterPoisonVfx_.end(),
+                [clipDur](const PendingMonsterHitVfx& h) {
+                    return h.since_spawn_.getElapsedTime().asSeconds() >= clipDur + 1e-3f;
+                }),
+            pendingMonsterPoisonVfx_.end());
+
+        for (const PendingMonsterHitVfx& h : pendingMonsterPoisonVfx_) {
+            if (nframes == 0)
+                break;
+            const float t = h.since_spawn_.getElapsedTime().asSeconds();
+            size_t fi = static_cast<size_t>(t / secPf);
+            if (fi >= nframes)
+                fi = nframes - 1;
+            const sf::Texture& tex = monsterPoisonVfxFrames_[fi];
+            sf::Sprite sp(tex);
+            const sf::FloatRect lb = sp.getLocalBounds();
+            sp.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            const float sx = (lb.size.x > 0.1f) ? (kBattleVfxPoisonSequenceMaxDimPx / lb.size.x) : 1.f;
+            const float sy = (lb.size.y > 0.1f) ? (kBattleVfxPoisonSequenceMaxDimPx / lb.size.y) : 1.f;
+            const float sc = std::min(sx, sy);
+            sp.setScale(sf::Vector2f(sc, sc));
+            sp.setPosition(sf::Vector2f(h.anchor_x, h.anchor_y));
+            window.draw(sp);
+        }
+    }
+
+    void BattleUI::ensure_player_block_vfx_frames_() {
+        if (playerBlockVfxTriedLoad_)
+            return;
+        playerBlockVfxTriedLoad_ = true;
+        try {
+            namespace fs = std::filesystem;
+            const char* const candidates[] = {
+                "E:/vfx/block_1",
+                "assets/vfx/block_1",
+            };
+            for (const char* dirUtf8 : candidates) {
+                const fs::path base = fs::u8path(dirUtf8);
+                std::error_code ec;
+                if (!fs::is_directory(base, ec))
+                    continue;
+                std::vector<fs::path> files;
+                for (const auto& ent : fs::directory_iterator(base, ec)) {
+                    if (!ent.is_regular_file())
+                        continue;
+                    std::string ext = ent.path().extension().string();
+                    for (char& c : ext) {
+                        if (c >= 'A' && c <= 'Z')
+                            c = static_cast<char>(c - 'A' + 'a');
+                    }
+                    if (ext != ".png")
+                        continue;
+                    files.push_back(ent.path());
+                }
+                if (files.empty())
+                    continue;
+                std::sort(files.begin(), files.end());
+                std::vector<sf::Texture> loaded;
+                loaded.reserve(files.size());
+                bool ok = true;
+                for (const fs::path& p : files) {
+                    sf::Texture t;
+                    if (!load_sf_texture_utf8(t, p.generic_string())) {
+                        ok = false;
+                        break;
+                    }
+                    loaded.push_back(std::move(t));
+                }
+                if (ok && !loaded.empty()) {
+                    playerBlockVfxFrames_ = std::move(loaded);
+                    return;
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[BattleUI] ensure_player_block_vfx_frames_: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[BattleUI] ensure_player_block_vfx_frames_: unknown exception\n";
+        }
+    }
+
+    void BattleUI::spawn_and_draw_player_block_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s) {
+        ensure_player_block_vfx_frames_();
+        if (playerBlockVfxFrames_.empty())
+            return;
+
+        constexpr int VFX_SIGNAL_DURATION = 180;
+        const sf::FloatRect& pr = playerModelRect_;
+        const bool anchorOk = pr.size.x > 0.f && pr.size.y > 0.f;
+        for (const auto& ev : s.pendingPlayerBlockVfx) {
+            const int age = VFX_SIGNAL_DURATION - ev.frames_remaining;
+            if (age != 0)
+                continue;
+            if (!anchorOk)
+                continue;
+            PendingMonsterHitVfx inst;
+            inst.anchor_x = pr.position.x + pr.size.x * 0.5f;
+            // 在原「半身高下移」基础上略上移一点，避免过贴底边
+            inst.anchor_y = pr.position.y + pr.size.y * 0.42f + pr.size.y * 0.5f - pr.size.y * 0.10f;
+            pendingPlayerBlockVfx_.push_back(std::move(inst));
+        }
+
+        const size_t nframes = playerBlockVfxFrames_.size();
+        const float clipDur = battle_vfx_clip_duration_sec(nframes);
+        const float secPf = battle_vfx_seconds_per_frame_for_clip(nframes, clipDur);
+
+        pendingPlayerBlockVfx_.erase(
+            std::remove_if(pendingPlayerBlockVfx_.begin(), pendingPlayerBlockVfx_.end(),
+                [clipDur](const PendingMonsterHitVfx& h) {
+                    return h.since_spawn_.getElapsedTime().asSeconds() >= clipDur + 1e-3f;
+                }),
+            pendingPlayerBlockVfx_.end());
+
+        for (const PendingMonsterHitVfx& h : pendingPlayerBlockVfx_) {
+            if (nframes == 0)
+                continue;
+            const float t = h.since_spawn_.getElapsedTime().asSeconds();
+            size_t fi = static_cast<size_t>(t / secPf);
+            if (fi >= nframes)
+                fi = nframes - 1;
+            const sf::Texture& tex = playerBlockVfxFrames_[fi];
+            sf::Sprite sp(tex);
+            const sf::FloatRect lb = sp.getLocalBounds();
+            sp.setOrigin(sf::Vector2f(lb.position.x + lb.size.x * 0.5f, lb.position.y + lb.size.y * 0.5f));
+            const float sx = (lb.size.x > 0.1f) ? (kBattleVfxBlockSequenceMaxDimPx / lb.size.x) : 1.f;
+            const float sy = (lb.size.y > 0.1f) ? (kBattleVfxBlockSequenceMaxDimPx / lb.size.y) : 1.f;
+            const float sc = std::min(sx, sy);
+            sp.setScale(sf::Vector2f(sc, sc));
+            sp.setPosition(sf::Vector2f(h.anchor_x, h.anchor_y));
+            window.draw(sp);
+        }
+    }
+
     // 战场中央：玩家区(背景+模型+血条在下+增益减益)、怪物区(背景+意图在上+模型+血条在下)
     void BattleUI::drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s) {
         // 根据“新伤害飘字事件”触发攻击位移动画（纯表现层，尽量不侵入规则层）
@@ -4829,23 +5529,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop),
             sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H)
         );
-        auto pit = playerTextures_.find(s.character);
-        if (pit != playerTextures_.end()) {          // 有玩家纹理则用 Sprite 绘制
-            sf::Sprite playerSprite(pit->second);
-            const sf::FloatRect texRect = playerSprite.getLocalBounds();
-            const float scaleX = (texRect.size.x > 0.f) ? (MODEL_PLACEHOLDER_W / texRect.size.x) : 1.f;
-            const float scaleY = (texRect.size.y > 0.f) ? (MODEL_PLACEHOLDER_H / texRect.size.y) : 1.f;
-            playerSprite.setScale(sf::Vector2f(scaleX, scaleY));
-            playerSprite.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
-            window.draw(playerSprite);
-        } else {                                    // 无纹理则用灰色占位矩形
-            sf::RectangleShape playerModel(sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
-            playerModel.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
-            playerModel.setFillColor(sf::Color(60, 55, 70));
-            playerModel.setOutlineColor(sf::Color(100, 95, 110));
-            playerModel.setOutlineThickness(1.f);
-            window.draw(playerModel);
-        }
+        // 玩家立绘延后：先算怪槽位与脚下力量层，再与怪立绘一起在 strength 之上绘制
+
         sf::Text playerLabel(fontForChinese(), sf::String(L"玩家"), 20);  // 玩家标签
         playerLabel.setFillColor(sf::Color(180, 180, 190));
         playerLabel.setPosition(sf::Vector2f(playerCenterX - 24.f, modelCenterY - 26.f));
@@ -4967,7 +5652,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
         const float mModelTop = modelCenterY - monTopOff;
-        monsterModelRects_.clear();
+        const float breathT = intent_float_clock_.getElapsedTime().asSeconds();
+        const float modelFootY = mModelTop + monModelH;
         monsterIntentRects_.clear();
         std::vector<float> monsterCenterXs;
         const float totalMonsterW = nMonsters > 0
@@ -5147,8 +5833,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
 
-        const float breathT = intent_float_clock_.getElapsedTime().asSeconds();
-        const float modelFootY = mModelTop + monModelH;
+        monsterModelRects_.clear();
         for (size_t i = 0; i < nMonsters; ++i) {
             float monsterCenterX = monsterCenterXs[i];
             // 怪物攻击位移：向左前冲（朝玩家区）
@@ -5167,9 +5852,46 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             const float drawW = monModelW * breath;
             const float drawH = monModelH * breath;
             const float modelLeft = monsterCenterX - drawW * 0.5f;
-            const float modelTop = modelFootY - drawH;
-            sf::FloatRect modelRect(sf::Vector2f(modelLeft, modelTop), sf::Vector2f(drawW, drawH));
-            monsterModelRects_.push_back(modelRect);
+            const float modelTopLocal = modelFootY - drawH;
+            monsterModelRects_.push_back(
+                sf::FloatRect(sf::Vector2f(modelLeft, modelTopLocal), sf::Vector2f(drawW, drawH)));
+        }
+        // 力量脚下层：先于玩家/怪物立绘，使光效在脚底与地面一侧
+        spawn_and_draw_strength_vfx_(window, s);
+        {
+            auto pit = playerTextures_.find(s.character);
+            if (pit != playerTextures_.end()) {
+                sf::Sprite playerSprite(pit->second);
+                const sf::FloatRect texRect = playerSprite.getLocalBounds();
+                const float scaleX = (texRect.size.x > 0.f) ? (MODEL_PLACEHOLDER_W / texRect.size.x) : 1.f;
+                const float scaleY = (texRect.size.y > 0.f) ? (MODEL_PLACEHOLDER_H / texRect.size.y) : 1.f;
+                playerSprite.setScale(sf::Vector2f(scaleX, scaleY));
+                playerSprite.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
+                window.draw(playerSprite);
+            } else {
+                sf::RectangleShape playerModel(sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
+                playerModel.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
+                playerModel.setFillColor(sf::Color(60, 55, 70));
+                playerModel.setOutlineColor(sf::Color(100, 95, 110));
+                playerModel.setOutlineThickness(1.f);
+                window.draw(playerModel);
+            }
+        }
+        spawn_and_draw_player_block_vfx_(window, s);
+        for (size_t i = 0; i < nMonsters; ++i) {
+            float monsterCenterX = monsterCenterXs[i];
+            if (i < monsterAttackClocks_.size()) {
+                const float dur = 0.22f;
+                const float t = monsterAttackClocks_[i].getElapsedTime().asSeconds();
+                if (t >= 0.f && t <= dur) {
+                    const float t01 = t / dur;
+                    monsterCenterX += -ui_attack_lunge01(t01) * 44.f;
+                }
+            }
+            const float breath =
+                1.f
+                + MONSTER_BREATH_SCALE_AMP
+                      * std::sin(breathT * MONSTER_BREATH_SPEED + static_cast<float>(i) * MONSTER_BREATH_PHASE);
             const std::string& monsterId = s.monsters[i].id;
             auto it = monsterTextures_.find(monsterId);
             if (it != monsterTextures_.end()) {
@@ -5194,6 +5916,9 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 window.draw(monsterModel);
             }
         }
+
+        spawn_and_draw_monster_poison_vfx_(window, s);
+        spawn_and_draw_monster_hit_vfx_(window, s);
 
         // 悬停怪物模型时显示中文名称（默认不绘制怪物 id）
         for (size_t i = 0; i < nMonsters; ++i) {
@@ -6161,37 +6886,47 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
 
         bool aimingAtMonster = false;               // 鼠标是否在怪物上（决定箭头颜色：红=可攻击，蓝=不可）
 
-        // 瞄准状态且需要敌人目标：从选中牌中心到鼠标绘制弧形箭头；跟随阶段不显示
-        if (selectedHandIndex_ >= 0 && isAimingCard_ && selectedCardTargetsEnemy_) {
-            // 跟随阶段不显示箭头（仍在原位矩形内）
-            if (selectedCardIsFollowing_) {
+        const bool cardEnemyAim = selectedHandIndex_ >= 0 && isAimingCard_ && selectedCardTargetsEnemy_;
+        const bool potionEnemyAim = selectedPotionSlotIndex_ >= 0 && isAimingPotion_;
+
+        // 需敌人目标：从选中牌中心或灵液槽中心到鼠标绘制弧形箭头；牌「跟随阶段」不显示箭头
+        if (cardEnemyAim || potionEnemyAim) {
+            if (cardEnemyAim && selectedCardIsFollowing_) {
                 // 仍在原位矩形内跟随鼠标，仅展示预览牌本身
-            }
-            else {
+            } else {
                 sf::Vector2f start = selectedCardScreenPos_;
+                if (potionEnemyAim) {
+                    if (static_cast<size_t>(selectedPotionSlotIndex_) < potionSlotRects_.size()) {
+                        const auto& pr = potionSlotRects_[static_cast<size_t>(selectedPotionSlotIndex_)];
+                        start = sf::Vector2f(pr.position.x + pr.size.x * 0.5f, pr.position.y + pr.size.y * 0.5f);
+                    } else {
+                        start = mousePos_;
+                    }
+                }
                 sf::Vector2f end = mousePos_;
                 sf::Vector2f mid = (start + end) * 0.5f;
-                // 向上抬一点，形成弧形
                 mid.y -= 60.f;
 
-                for (const auto& r : monsterModelRects_) { if (r.contains(end)) { aimingAtMonster = true; break; } }
+                for (const auto& r : monsterModelRects_) {
+                    if (r.contains(end)) {
+                        aimingAtMonster = true;
+                        break;
+                    }
+                }
                 sf::Color arrowColor = aimingAtMonster ? sf::Color(240, 90, 90) : sf::Color(200, 230, 255);
 
-                // 用多条弧线叠加成更粗的实线箭头（只画到三角形基底，避免出现“两条线”）
                 const int segments = 20;
 
-                // 箭头三角形，线段不超过三角形基底
                 sf::Vector2f dir = end - mid;
                 float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
                 if (len > 0.001f) {
                     dir /= len;
                     sf::Vector2f n(-dir.y, dir.x);
-                    const float headLen = 40.f;     // 箭头长度
-                    const float headWidth = 26.f;   // 箭头宽度
+                    const float headLen = 40.f;
+                    const float headWidth = 26.f;
                     sf::Vector2f tip = end;
                     sf::Vector2f base = end - dir * headLen;
 
-                    // 重新绘制一遍主线，让其只到达三角形基底（不伸出三角形外）
                     auto drawMainCurveToBase = [&](float offset) {
                         sf::VertexArray curve(sf::PrimitiveType::LineStrip, static_cast<size_t>(segments + 1));
                         sf::Vector2f dirSB = base - start;
@@ -6210,16 +6945,14 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                             curve[static_cast<size_t>(i)].color = arrowColor;
                         }
                         window.draw(curve);
-                        };
+                    };
 
-                    // 粗主线（到达基底，整体更粗）
                     drawMainCurveToBase(0.f);
                     drawMainCurveToBase(3.f);
                     drawMainCurveToBase(-3.f);
                     drawMainCurveToBase(6.f);
                     drawMainCurveToBase(-6.f);
 
-                    // 三角形本体
                     sf::Vector2f left = base + n * headWidth;
                     sf::Vector2f right = base - n * headWidth;
                     sf::VertexArray arrow(sf::PrimitiveType::Triangles, 3);
@@ -6230,18 +6963,18 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                     window.draw(arrow);
                 }
             }
-            if (aimingAtMonster) {                 // 瞄准怪物时画黄色目标框
-                for (const auto& r : monsterModelRects_) {
-                    if (r.contains(mousePos_)) {
-                        sf::RectangleShape targetRect;
-                        targetRect.setPosition(r.position);
-                        targetRect.setSize(r.size);
-                        targetRect.setFillColor(sf::Color(0, 0, 0, 0));
-                        targetRect.setOutlineColor(sf::Color(255, 230, 120));
-                        targetRect.setOutlineThickness(3.f);
-                        window.draw(targetRect);
-                        break;
-                    }
+        }
+        if (aimingAtMonster && (potionEnemyAim || (cardEnemyAim && !selectedCardIsFollowing_))) {
+            for (const auto& r : monsterModelRects_) {
+                if (r.contains(mousePos_)) {
+                    sf::RectangleShape targetRect;
+                    targetRect.setPosition(r.position);
+                    targetRect.setSize(r.size);
+                    targetRect.setFillColor(sf::Color(0, 0, 0, 0));
+                    targetRect.setOutlineColor(sf::Color(255, 230, 120));
+                    targetRect.setOutlineThickness(3.f);
+                    window.draw(targetRect);
+                    break;
                 }
             }
         }

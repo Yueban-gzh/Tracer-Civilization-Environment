@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -693,9 +695,29 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
 
 void GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings& ctx) {
     if (!UserSettings::instance().consumeVideoApplyPending()) return;
-    UserSettings::instance().applyVideoModeToWindow(window_, ctx);
-    const auto sz = window_.getSize();
-    hudBattleUi_.set_window_size(sz.x, sz.y);
+    try {
+        UserSettings::instance().applyVideoModeToWindow(window_, ctx);
+        const auto sz = window_.getSize();
+        hudBattleUi_.set_window_size(sz.x, sz.y);
+        // window.create 会重建 OpenGL 上下文，此前加载的 sf::Texture 全部失效；须重载地图与 HUD 贴图与字体。
+        mapUI_.reloadGraphicsAfterWindowRecreate();
+        hudBattleUi_.clear_gpu_cached_textures();
+        if (hudFont_.openFromFile("assets/fonts/Sanji.ttf") || hudFont_.openFromFile("data/font.ttf") ||
+            hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") || hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf") ||
+            hudFont_.openFromFile("C:/Windows/Fonts/simsun.ttc")) {
+            hudFontLoaded_ = true;
+        } else {
+            hudFontLoaded_ = false;
+        }
+        (void)hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
+        (void)hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
+        (void)window_.setActive(true);
+        preload_battle_ui_assets(hudBattleUi_, playerState_.character);
+    } catch (const std::exception& e) {
+        std::cerr << "[GameFlow] applyPendingVideoAndHudResize: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[GameFlow] applyPendingVideoAndHudResize: unknown exception\n";
+    }
 }
 
 namespace {
@@ -714,6 +736,9 @@ bool GameFlowController::initialize() {
 }
 
 bool GameFlowController::initialize(CharacterClass cc) {
+    // 不在此调用 clear_gpu_cached_textures：在选角确认等路径上当前可能尚未有活跃 GL 上下文，
+    // 大批量销毁纹理易导致部分环境下闪退。preload_battle_ui_assets 会覆盖同 id 资源；真正丢上下文时由 applyPendingVideoAndHudResize 清空。
+
     // 每次新开一局前重置运行级状态
     hasPendingSceneAfterLoad_ = false;
     sceneAfterLoad_           = LastSceneKind::Map;
@@ -733,6 +758,18 @@ bool GameFlowController::initialize(CharacterClass cc) {
     playerState_.playerName = "Telys";
     playerState_.potions.clear();
     playerState_.potionSlotCount = 3;
+    // Mock：开局随机 3 瓶灵液（可重复；池子与 PotionEffects 已实现效果一致）
+    {
+        static const std::vector<PotionId> kMockStarterPotionPool = {
+            "strength_potion", "block_potion", "energy_potion", "weak_potion", "poison_potion", "fear_potion",
+            "explosion_potion", "swift_potion", "blood_potion", "fire_potion"};
+        const int slots = std::max(0, playerState_.potionSlotCount);
+        const int n     = std::min(3, slots);
+        for (int i = 0; i < n; ++i) {
+            const int idx = runRng_.uniform_int(0, static_cast<int>(kMockStarterPotionPool.size()) - 1);
+            playerState_.potions.push_back(kMockStarterPotionPool[static_cast<size_t>(idx)]);
+        }
+    }
     if (cc == CharacterClass::Ironclad) {
         playerState_.character = "Ironclad";
         playerState_.currentHp = 80;
@@ -1411,6 +1448,20 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             const auto& handNow = cardSystem_.get_hand();
             if (handIndex >= 0 && static_cast<size_t>(handIndex) < handNow.size()) {
                 const CardId& id = handNow[static_cast<size_t>(handIndex)].id;
+                const CardData* cdPlay = get_card_by_id(id);
+                const bool needsEnemyTarget =
+                    cdPlay ? cdPlay->requiresTarget : (id == "strike" || id == "bash");
+                if (needsEnemyTarget) {
+                    const BattleState stTargets = battleEngine_.get_battle_state();
+                    const int nMon = static_cast<int>(stTargets.monsters.size());
+                    if (targetMonsterIndex < 0 || targetMonsterIndex >= nMon
+                        || stTargets.monsters[static_cast<size_t>(targetMonsterIndex)].currentHp <= 0) {
+                        ui.showTip(L"请选择有效目标", 1.2f);
+                        continue;
+                    }
+                } else {
+                    targetMonsterIndex = -1;
+                }
 
                 if (id == "exhume" || id == "exhume+") {
                     const auto& exPile = cardSystem_.get_exhaust_pile();
@@ -1544,8 +1595,6 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                         battleEngine_.play_card(handIndex, targetMonsterIndex);
                     }
                 }
-            } else {
-                battleEngine_.play_card(handIndex, targetMonsterIndex);
             }
         }
 
@@ -1591,6 +1640,10 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         int potionTargetIndex = -1;
         if (ui.pollPotionRequest(potionSlotIndex, potionTargetIndex)) {
             battleEngine_.use_potion(potionSlotIndex, potionTargetIndex);
+        }
+        int potionDiscardSlot = -1;
+        if (ui.pollPotionDiscardRequest(potionDiscardSlot)) {
+            battleEngine_.discard_potion(potionDiscardSlot);
         }
 
         int deckViewMode = 0;
@@ -1763,6 +1816,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
     BattleState state = battleEngine_.get_battle_state();
     playerState_ = state.player;
     if (playerState_.currentHp <= 0) gameOver_ = true;
+    (void)deleteRunSave();
     statusText_ = "战斗失败，爬塔结束。";
 
     close_map_browse_overlay(&ui);

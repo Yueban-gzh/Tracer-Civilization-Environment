@@ -173,9 +173,19 @@ class PlayerWraithFormModifier : public IBattleModifier {           // 幽魂形
  class MonsterChokeModifier : public IBattleModifier {               // 勒脖：打出牌时对目标造成层数伤害
  public:
      void on_card_played(BattleState& state, CardId /*card_id*/, int target_monster_index, CardPlayContext* ctx) override {
-         if (target_monster_index < 0 || static_cast<size_t>(target_monster_index) >= state.monsters.size()) return;
          if (!ctx || !ctx->deal_damage_to_monster_ignoring_block) return;
-         int stacks = BattleEngine::get_status_stacks(state.monsters[target_monster_index].statuses, "choke");
+         if (target_monster_index < 0) return;
+         const size_t n = state.monsters.size();
+         if (static_cast<size_t>(target_monster_index) >= n) return;
+         const MonsterInBattle& mob = state.monsters[static_cast<size_t>(target_monster_index)];
+         if (mob.currentHp <= 0) return;
+         int stacks = 0;
+         for (const StatusInstance& st : mob.statuses) {
+             if (st.id == "choke") {
+                 stacks = st.stacks;
+                 break;
+             }
+         }
          if (stacks <= 0) return;
          ctx->deal_damage_to_monster_ignoring_block(target_monster_index, stacks);
      }
@@ -768,9 +778,11 @@ public:
     void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
         int x = BattleEngine::get_status_stacks(state.player.statuses, "poison_cloud");
         if (x <= 0) return;
-        for (auto& m : state.monsters) {
+        for (size_t i = 0; i < state.monsters.size(); ++i) {
+            auto& m = state.monsters[i];
             if (m.currentHp <= 0) continue;
             BattleEngine::merge_status_into_list(m.statuses, "poison", x, x);
+            state.pendingMonsterPoisonVfx.push_back(MonsterPoisonVfxSignal{static_cast<int>(i), 180});
         }
     }
 };

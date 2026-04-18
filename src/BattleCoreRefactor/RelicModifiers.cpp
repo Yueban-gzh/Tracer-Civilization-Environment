@@ -223,10 +223,15 @@ public:
             unblocked = (dmg.modified_amount > block) ? (dmg.modified_amount - block) : 0;  // 实际扣血量
         }
         if (unblocked <= 0 || unblocked > 5) return;  // 无伤害或已 >5 则不提升
-        if (dmg.ignore_block)
-            dmg.modified_amount = 5;                  // 无视格挡时直接设为 5
-        else
-            dmg.modified_amount = state.monsters[static_cast<size_t>(dmg.target_monster_index)].block + 5;  // 提升使扣血为 5
+        if (dmg.ignore_block) {
+            dmg.modified_amount = 5;  // 无视格挡时直接设为 5
+            return;
+        }
+        if (dmg.target_monster_index < 0
+            || static_cast<size_t>(dmg.target_monster_index) >= state.monsters.size())
+            return;  // 非无视格挡路径必须能安全读 block，下标非法则勿访问
+        dmg.modified_amount =
+            state.monsters[static_cast<size_t>(dmg.target_monster_index)].block + 5;  // 提升使扣血为 5
     }
 };
 

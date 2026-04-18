@@ -65,6 +65,7 @@ void apply_potion_effect(const PotionId& id, BattleState& state, int target_mons
         if (!found) {
             m.statuses.push_back(StatusInstance{"poison", 6, -1});
         }
+        state.pendingMonsterPoisonVfx.push_back(MonsterPoisonVfxSignal{target_monster_index, 180});
         return;
     }
 
