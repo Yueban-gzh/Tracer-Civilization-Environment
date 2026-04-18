@@ -66,3 +66,6 @@ Desktop.ini
 
 # 存档
 saves/
+
+# 本地运行日志
+run_log.txt

@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "Common/ImagePath.hpp"
 #include <SFML/Graphics.hpp>
 #include <algorithm>
 #include <cmath>
@@ -71,6 +72,8 @@ const sf::Color REST_SMITH_HOVER(115, 62, 55);
 
 inline bool try_load_texture(sf::Texture& tex, const std::vector<std::string>& candidates) {
     for (const auto& p : candidates) {
+        if (!file_exists_utf8(p))
+            continue;
         if (tex.loadFromFile(p))
             return true;
     }

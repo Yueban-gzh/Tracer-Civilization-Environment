@@ -1,4 +1,4 @@
-﻿// src/MapEngine/MapEngine.cpp
+// src/MapEngine/MapEngine.cpp
 #include "../../include/MapEngine/MapEngine.hpp" 
 #include "../../include/MapEngine/MapConfig.hpp"
 #include "../../include/Common/RunRng.hpp"
@@ -9,6 +9,20 @@
 #include <algorithm>
 #include <iostream>
 #include <map>
+
+#ifndef TCE_VERBOSE_MAP_LOG
+#define TCE_VERBOSE_MAP_LOG 0
+#endif
+#if TCE_VERBOSE_MAP_LOG
+#define MAP_LOG(expr)              \
+    do {                            \
+        std::cout expr;             \
+    } while (0)
+#else
+#define MAP_LOG(expr) \
+    do {              \
+    } while (0)
+#endif
 
 namespace MapEngine {
 
@@ -67,8 +81,8 @@ namespace MapEngine {
         layers_.clear();
         total_layers_ = layers;
 
-        std::cout << "开始生成地图" << layers << " 层，每层约 "
-            << nodes_per_layer << " 个节点" << std::endl;
+        MAP_LOG(<< "开始生成地图" << layers << " 层，每层约 "
+            << nodes_per_layer << " 个节点" << std::endl);
 
         // 生成所有节点
         for (int layer = 0; layer < layers; ++layer) {
@@ -78,7 +92,7 @@ namespace MapEngine {
                 node_count = 1;
             }
 
-            std::cout << "  第" << layer << "层生成" << node_count << "个节点" << std::endl;
+            MAP_LOG(<< "  第" << layer << "层生成" << node_count << "个节点" << std::endl);
 
             for (int i = 0; i < node_count; ++i) {
                 MapNode node;
@@ -117,7 +131,7 @@ namespace MapEngine {
             return;
         }
 
-        std::cout << "地图生成完成，节点总数" << nodes_.size() << std::endl;
+        MAP_LOG(<< "地图生成完成，节点总数" << nodes_.size() << std::endl);
     }
 
     void MapEngine::init_fixed_map(const MapConfig& config) {
@@ -129,9 +143,9 @@ namespace MapEngine {
 
         total_layers_ = static_cast<int>(layerTypes.size());
 
-        std::cout << "初始化地图" << config.getName() << std::endl;
-        std::cout << "描述" << config.getDescription() << std::endl;
-        std::cout << "共" << total_layers_ << "层" << std::endl;
+        MAP_LOG(<< "初始化地图" << config.getName() << std::endl);
+        MAP_LOG(<< "描述" << config.getDescription() << std::endl);
+        MAP_LOG(<< "共" << total_layers_ << "层" << std::endl);
 
         // 创建节点
         for (int layer = 0; layer < total_layers_; ++layer) {
@@ -150,7 +164,7 @@ namespace MapEngine {
                 }
                 else {
                     node.content_id = "content_" + std::to_string(static_cast<int>(node.type)) + "_" + node.id;
-                    std::cout << "未设置内容ID生成器，使用默认ID" << node.content_id << std::endl;
+                    MAP_LOG(<< "未设置内容ID生成器，使用默认ID" << node.content_id << std::endl);
                 }
                 // ==== 修改结束 ====
 
@@ -162,8 +176,8 @@ namespace MapEngine {
                 nodes_[node.id] = node;
                 layers_[layer].push_back(node.id);
 
-                std::cout << "  创建节点 " << node.id << " 于位置 ("
-                    << pos[i].x << ", " << pos[i].y << ")" << std::endl;
+                MAP_LOG(<< "  创建节点 " << node.id << " 于位置 ("
+                    << pos[i].x << ", " << pos[i].y << ")" << std::endl);
             }
         }
 
@@ -171,7 +185,7 @@ namespace MapEngine {
         auto connections = config.getConnections();
         this->build_fixed_connections(connections);
 
-        std::cout << "地图初始化完成，节点总数" << nodes_.size() << std::endl;
+        MAP_LOG(<< "地图初始化完成，节点总数" << nodes_.size() << std::endl);
     }
 
     void MapEngine::build_fixed_connections(
@@ -180,7 +194,7 @@ namespace MapEngine {
         for (int layer = 0; layer < static_cast<int>(connections.size()); ++layer) {
             const auto& layerConnections = connections[layer];
 
-            std::cout << "处理第 " << layer << " 层到第 " << (layer + 1) << " 层的连接" << std::endl;
+            MAP_LOG(<< "处理第 " << layer << " 层到第 " << (layer + 1) << " 层的连接" << std::endl);
 
             for (const auto& conn : layerConnections) {
                 int fromIdx = conn.first;
@@ -203,7 +217,7 @@ namespace MapEngine {
                 nodes_[fromId].next_nodes.push_back(toId);
                 nodes_[toId].prev_nodes.push_back(fromId);
 
-                std::cout << "  连接 " << fromId << " -> " << toId << std::endl;
+                MAP_LOG(<< "  连接 " << fromId << " -> " << toId << std::endl);
             }
         }
     }
@@ -517,7 +531,7 @@ namespace MapEngine {
             // 触发回调（仅第一次进入时触发，重复点击同一节点不会重复触发）
             if (m_nodeEnterCallback) {
                 m_nodeEnterCallback(it->second);
-                std::cout << "触发节点进入回调: " << node_id << std::endl;
+                MAP_LOG(<< "触发节点进入回调: " << node_id << std::endl);
             }
         }
     }
@@ -602,15 +616,17 @@ namespace MapEngine {
         nodes_.clear();
         layers_.clear();
 
-        // 地图主题名称
-        const char* map_names[] = { "标准地图", "森林地图", "沙漠地图" };
-        const char* map_descs[] = { "12层随机地图", "12层随机地图", "12层随机地图" };
-
         total_layers_ = 12;
 
-        std::cout << "===== 生成" << map_names[map_index] << " =====" << std::endl;
-        std::cout << "描述: " << map_descs[map_index] << std::endl;
-        std::cout << "层数: " << total_layers_ << std::endl;
+#if TCE_VERBOSE_MAP_LOG
+        {
+            const char* map_names[] = { "标准地图", "森林地图", "沙漠地图" };
+            const char* map_descs[] = { "12层随机地图", "12层随机地图", "12层随机地图" };
+            MAP_LOG(<< "===== 生成" << map_names[map_index] << " =====" << std::endl);
+            MAP_LOG(<< "描述: " << map_descs[map_index] << std::endl);
+        }
+#endif
+        MAP_LOG(<< "层数: " << total_layers_ << std::endl);
 
         // 记录是否已经生成精英
         bool has_elite = false;
@@ -640,7 +656,7 @@ namespace MapEngine {
                 else node_count = 4;
             }
 
-            std::cout << "  第" << layer << "层: " << node_count << "个节点" << std::endl;
+            MAP_LOG(<< "  第" << layer << "层: " << node_count << "个节点" << std::endl);
 
             // 生成本层的节点
             for (int idx = 0; idx < node_count; ++idx) {
@@ -690,18 +706,18 @@ namespace MapEngine {
                 nodes_[node.id] = node;
                 layers_[layer].push_back(node.id);
 
-                std::cout << "    " << node.id << ": ";
+                MAP_LOG(<< "    " << node.id << ": ");
                 switch (node.type) {
-                case NodeType::Enemy: std::cout << "普通怪"; break;
-                case NodeType::Elite: std::cout << "精英怪"; break;
-                case NodeType::Event: std::cout << "事件"; break;
-                case NodeType::Rest: std::cout << "火堆"; break;
-                case NodeType::Merchant: std::cout << "商店"; break;
-                case NodeType::Treasure: std::cout << "宝箱"; break;
-                case NodeType::Boss: std::cout << "Boss"; break;
-                default: std::cout << "未知"; break;
+                case NodeType::Enemy: MAP_LOG(<< "普通怪"); break;
+                case NodeType::Elite: MAP_LOG(<< "精英怪"); break;
+                case NodeType::Event: MAP_LOG(<< "事件"); break;
+                case NodeType::Rest: MAP_LOG(<< "火堆"); break;
+                case NodeType::Merchant: MAP_LOG(<< "商店"); break;
+                case NodeType::Treasure: MAP_LOG(<< "宝箱"); break;
+                case NodeType::Boss: MAP_LOG(<< "Boss"); break;
+                default: MAP_LOG(<< "未知"); break;
                 }
-                std::cout << std::endl;
+                MAP_LOG(<< std::endl);
             }
         }
 
@@ -718,7 +734,7 @@ namespace MapEngine {
             auto_layout_nodes();
         }
 
-        std::cout << "地图生成完成，共 " << nodes_.size() << " 个节点" << std::endl;
+        MAP_LOG(<< "地图生成完成，共 " << nodes_.size() << " 个节点" << std::endl);
     }
 
     void MapEngine::build_random_connections() {

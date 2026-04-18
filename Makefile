@@ -5,11 +5,15 @@
 
 CXX       = g++
 SFML_DIR ?= C:/SFML-3.0.2
+# 需要地图生成大量 std::cout 调试时可在行末追加: -DTCE_VERBOSE_MAP_LOG=1
 CXXFLAGS  = -std=c++17 -Wall -I include -I $(SFML_DIR)/include -D_DEBUG -DCONSOLE -DTEST_BATTLE_UI
-LDFLAGS   = -L $(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio
+LDFLAGS   = -L $(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -Wl,--stack,0x800000
 
 SRCS = src/main.cpp \
        src/Common/ImagePath.cpp \
+       src/Common/UserSettings.cpp \
+       src/Common/MusicManager.cpp \
+       src/UI/CardVisual.cpp \
        src/DataLayer/JsonParser.cpp \
        src/DataLayer/DataLayer.cpp \
        src/CardSystem/CardSystem.cpp \
@@ -36,6 +40,10 @@ SRCS = src/main.cpp \
        src/MapEngine/MapUI.cpp \
        src/GameFlow/GameFlowController.cpp \
        src/GameFlow/SaveSystem.cpp \
+       src/GameFlow/CharacterSelectScreen.cpp \
+       src/GameFlow/CardCatalogScreen.cpp \
+       src/GameFlow/PotionCatalogScreen.cpp \
+       src/GameFlow/RelicCatalogScreen.cpp \
        src/GameFlow/StartScreen.cpp
 
 OBJS = $(SRCS:.cpp=.o)
@@ -56,10 +64,12 @@ $(TARGET): $(OBJS)
 
 # 头文件变更时强制重编（避免 BattleState 等结构体 ABI 不一致）
 $(OBJS): include/BattleCoreRefactor/BattleState.hpp
+$(OBJS): include/EventEngine/EventShopRestUICommon.hpp
 
 run: $(TARGET)
 	./$(TARGET)
 
+# del 在“没有匹配文件”时会返回失败码，导致 mingw32-make 报 Error 1；行首 - 表示忽略该码
 clean:
-	del /Q $(OBJS) 2>nul
-	del /Q $(TARGET) 2>nul
+	-del /Q $(OBJS) 2>nul
+	-del /Q $(TARGET) 2>nul

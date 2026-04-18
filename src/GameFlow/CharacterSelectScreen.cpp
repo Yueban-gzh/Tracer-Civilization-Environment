@@ -1,7 +1,14 @@
 #include "GameFlow/CharacterSelectScreen.hpp"
+#include "Common/ImagePath.hpp"
 
 #include <SFML/Graphics.hpp>
+
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <iostream>
+#include <string>
+#include <thread>
 
 namespace tce {
 
@@ -11,8 +18,30 @@ sf::Font load_ui_font() {
     sf::Font f;
     if (f.openFromFile("assets/fonts/Sanji.ttf")) return f;
     if (f.openFromFile("data/font.ttf")) return f;
-    (void)f.openFromFile("C:/Windows/Fonts/msyh.ttc");
+    if (f.openFromFile("C:/Windows/Fonts/msyh.ttc")) return f;
+    if (f.openFromFile("C:/Windows/Fonts/simhei.ttf")) return f;
+    if (f.openFromFile("C:/Windows/Fonts/arial.ttf")) return f;
     return f;
+}
+
+bool load_tex_utf8(sf::Texture& tex, const std::string& utf8Path) {
+    if (utf8Path.empty())
+        return false;
+    namespace fs = std::filesystem;
+    try {
+        const fs::path p = fs::u8path(utf8Path);
+        if (tex.loadFromFile(p))
+            return true;
+        if (p.is_absolute())
+            return false;
+        std::error_code ec;
+        const fs::path cwd = fs::current_path(ec);
+        if (ec)
+            return false;
+        return tex.loadFromFile(cwd / p);
+    } catch (...) {
+        return false;
+    }
 }
 
 void draw_centered_text(sf::RenderWindow& window, const sf::Font& font, const std::wstring& text, unsigned size,
@@ -26,7 +55,11 @@ void draw_centered_text(sf::RenderWindow& window, const sf::Font& font, const st
 }
 
 bool try_load_bg(sf::Texture& tex) {
-    return tex.loadFromFile("assets/backgrounds/main_bg.png") || tex.loadFromFile("./assets/backgrounds/main_bg.png");
+    if (const std::string p = resolve_image_path("assets/backgrounds/main_bg"); !p.empty()) {
+        if (load_tex_utf8(tex, p))
+            return tex.getSize().x > 0u && tex.getSize().y > 0u;
+    }
+    return load_tex_utf8(tex, "assets/backgrounds/main_bg.png") || load_tex_utf8(tex, "./assets/backgrounds/main_bg.png");
 }
 
 void draw_texture_cover(sf::RenderWindow& window, const sf::Texture& tex) {
@@ -43,27 +76,83 @@ void draw_texture_cover(sf::RenderWindow& window, const sf::Texture& tex) {
     window.draw(sp);
 }
 
+/** 先 assets/ui/character_select/<id>，再回退 assets/player/<id> */
+bool try_load_character_portrait(const std::string& character_id, sf::Texture& out) {
+    try {
+        std::string p = resolve_image_path("assets/ui/character_select/" + character_id);
+        if (p.empty())
+            p = resolve_image_path("assets/player/" + character_id);
+        if (p.empty())
+            return false;
+        if (!load_tex_utf8(out, p))
+            return false;
+        return out.getSize().x > 0 && out.getSize().y > 0;
+    } catch (...) {
+        return false;
+    }
+}
+
 void draw_ink_backdrop(sf::RenderWindow& window, float W, float H) {
     sf::RectangleShape v(sf::Vector2f(W, H));
     v.setFillColor(sf::Color(8, 10, 16, 88));
     window.draw(v);
 
-    sf::RectangleShape centerBand(sf::Vector2f(W * 0.58f, H * 0.7f));
+    sf::RectangleShape centerBand(sf::Vector2f(W * 0.62f, H * 0.76f));
     centerBand.setOrigin(sf::Vector2f(centerBand.getSize().x * 0.5f, centerBand.getSize().y * 0.5f));
-    centerBand.setPosition(sf::Vector2f(W * 0.5f, H * 0.47f));
+    centerBand.setPosition(sf::Vector2f(W * 0.5f, H * 0.5f));
     centerBand.setFillColor(sf::Color(12, 14, 22, 58));
     window.draw(centerBand);
+}
+
+/** 角色卡布局：中央为正方形 1:1 插图视口（contain），整体加高以突出立绘 */
+struct CharSelectCardLayout {
+    float cardW{};
+    float cardH{};
+    float gapX{};
+    float pad{};
+    float topBarH{};
+    float gapUnderTitle{};
+    float portraitSide{};
+    float gapUnderPortrait{};
+};
+
+constexpr CharSelectCardLayout make_card_layout() {
+    CharSelectCardLayout L{};
+    L.pad              = 14.f;
+    L.topBarH          = 52.f;
+    L.gapUnderTitle    = 12.f;
+    L.portraitSide     = 420.f;  // 1:1 视口边长（较原横向条显著加大）
+    L.gapUnderPortrait = 14.f;
+    L.gapX             = 48.f;
+    L.cardW            = L.pad * 2.f + L.portraitSide;
+    // 顶栏 + 方图 + 说明 + 底部提示 + 内边距
+    L.cardH            = L.pad + L.topBarH + L.gapUnderTitle + L.portraitSide + L.gapUnderPortrait + 58.f + 40.f + L.pad;
+    return L;
+}
+
+void layout_select_screen(float W, float H, const CharSelectCardLayout& L, float& outCy, float& outLeftX, float& outRightX) {
+    outCy     = H * 0.5f + 10.f;
+    outLeftX  = W * 0.5f - (L.cardW + L.gapX * 0.5f);
+    outRightX = W * 0.5f + L.gapX * 0.5f;
 }
 
 } // namespace
 
 std::optional<CharacterClass> runCharacterSelectScreen(sf::RenderWindow& window) {
     sf::Font font = load_ui_font();
+
     sf::Texture bgTex;
-    const bool bgLoaded = try_load_bg(bgTex);
+    sf::Texture portraitIronTex;
+    sf::Texture portraitSilentTex;
+    bool        bgLoaded           = false;
+    bool        portraitIronOk    = false;
+    bool        portraitSilentOk  = false;
+    bool        characterArtReady = false;
 
     std::optional<CharacterClass> selected;
     bool running = true;
+
+    const CharSelectCardLayout kLay = make_card_layout();
 
     while (window.isOpen() && running) {
         while (const std::optional ev = window.pollEvent()) {
@@ -78,25 +167,31 @@ std::optional<CharacterClass> runCharacterSelectScreen(sf::RenderWindow& window)
             }
             if (const auto* mouse = ev->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mouse->button != sf::Mouse::Button::Left) continue;
+                const sf::Vector2u szEv = window.getSize();
+                if (szEv.x < 8u || szEv.y < 8u)
+                    continue;
                 sf::Vector2f mp = window.mapPixelToCoords(mouse->position);
 
                 const sf::Vector2u sz = window.getSize();
                 const float W = static_cast<float>(sz.x);
                 const float H = static_cast<float>(sz.y);
 
-                const float cardW = 420.f;
-                const float cardH = 520.f;
-                const float gapX  = 80.f;
-                const float cy    = H * 0.5f + 10.f;
-                const float leftX = W * 0.5f - (cardW * 1.f + gapX * 0.5f);
-                const float rightX = W * 0.5f + gapX * 0.5f;
+                float cy = 0.f;
+                float leftX = 0.f;
+                float rightX = 0.f;
+                layout_select_screen(W, H, kLay, cy, leftX, rightX);
 
-                sf::FloatRect ironRect(sf::Vector2f(leftX, cy - cardH * 0.5f), sf::Vector2f(cardW, cardH));
-                sf::FloatRect silentRect(sf::Vector2f(rightX, cy - cardH * 0.5f), sf::Vector2f(cardW, cardH));
+                sf::FloatRect ironRect(sf::Vector2f(leftX, cy - kLay.cardH * 0.5f),
+                                       sf::Vector2f(kLay.cardW, kLay.cardH));
+                sf::FloatRect silentRect(sf::Vector2f(rightX, cy - kLay.cardH * 0.5f),
+                                         sf::Vector2f(kLay.cardW, kLay.cardH));
 
-                const float btnW = 240.f;
-                const float btnH = 64.f;
-                sf::FloatRect confirmRect(sf::Vector2f(W * 0.5f - btnW * 0.5f, H - 120.f), sf::Vector2f(btnW, btnH));
+                const float btnW = 288.f;
+                const float btnH = 58.f;
+                // 确认键紧贴角色卡下方，避免像贴在屏幕底边；极矮窗口时再压到距底边留边
+                const float confirmY =
+                    std::min(cy + kLay.cardH * 0.5f + 28.f, H - btnH - 36.f);
+                sf::FloatRect confirmRect(sf::Vector2f(W * 0.5f - btnW * 0.5f, confirmY), sf::Vector2f(btnW, btnH));
 
                 if (ironRect.contains(mp)) {
                     selected = CharacterClass::Ironclad;
@@ -109,6 +204,26 @@ std::optional<CharacterClass> runCharacterSelectScreen(sf::RenderWindow& window)
         }
 
         const sf::Vector2u sz = window.getSize();
+        if (sz.x < 8u || sz.y < 8u) {
+            window.display();
+            std::this_thread::sleep_for(std::chrono::milliseconds(32));
+            continue;
+        }
+
+        // 在主循环内、首帧绘制之前加载贴图：此时已与 StartScreen 同属一条显示链路，避免入口 setActive/冷上下文上传 GPU 异常
+        if (!characterArtReady) {
+            try {
+                bgLoaded          = try_load_bg(bgTex);
+                portraitIronOk    = try_load_character_portrait("Ironclad", portraitIronTex);
+                portraitSilentOk = try_load_character_portrait("Silent", portraitSilentTex);
+            } catch (const std::exception& e) {
+                std::cerr << "[CharacterSelect] asset load: " << e.what() << "\n";
+            } catch (...) {
+                std::cerr << "[CharacterSelect] asset load: unknown exception\n";
+            }
+            characterArtReady = true;
+        }
+
         const float W = static_cast<float>(sz.x);
         const float H = static_cast<float>(sz.y);
         const sf::Vector2f mouseWorld = window.mapPixelToCoords(sf::Mouse::getPosition(window));
@@ -134,64 +249,101 @@ std::optional<CharacterClass> runCharacterSelectScreen(sf::RenderWindow& window)
             sep.setFillColor(sf::Color(182, 154, 98, 158));
             window.draw(sep);
         }
-        draw_centered_text(window, font, L"点击职业卡选择，然后点击确认开始游戏", 21, sf::Vector2f(W * 0.5f, 143.f),
+        draw_centered_text(window, font, L"点击职业卡选择，然后点击确认开始游戏", 20, sf::Vector2f(W * 0.5f, 136.f),
                            sf::Color(198, 188, 170));
 
-        const float cardW = 408.f;
-        const float cardH = 500.f;
-        const float gapX  = 76.f;
-        const float cy    = H * 0.5f + 6.f;
-        const float leftX = W * 0.5f - (cardW * 1.f + gapX * 0.5f);
-        const float rightX = W * 0.5f + gapX * 0.5f;
+        float cy = 0.f;
+        float leftX = 0.f;
+        float rightX = 0.f;
+        layout_select_screen(W, H, kLay, cy, leftX, rightX);
 
-        auto drawCharCard = [&](CharacterClass cc, const sf::Vector2f& pos, const std::wstring& name,
-                                const std::wstring& desc, const sf::Color& accent) {
-            const bool isSel = selected.has_value() && *selected == cc;
-            const sf::FloatRect rect(pos, sf::Vector2f(cardW, cardH));
-            const bool hover = rect.contains(mouseWorld);
-            const float hoverLift = hover ? 3.f : 0.f;
+        const float cardW = kLay.cardW;
+        const float cardH = kLay.cardH;
 
-            sf::RectangleShape bg(sf::Vector2f(cardW, cardH));
-            bg.setPosition(pos + sf::Vector2f(0.f, hoverLift));
-            bg.setFillColor(isSel ? sf::Color(46, 54, 78, 220) : (hover ? sf::Color(38, 44, 66, 210) : sf::Color(30, 34, 54, 198)));
-            bg.setOutlineColor(isSel ? sf::Color(220, 186, 118) : (hover ? sf::Color(186, 160, 108) : sf::Color(136, 120, 90)));
-            bg.setOutlineThickness(isSel ? 2.6f : 1.8f);
-            window.draw(bg);
+        auto drawCharCard =
+            [&](CharacterClass cc, const sf::Vector2f& pos, const std::wstring& name, const std::wstring& desc,
+                const sf::Color& accent, const sf::Texture& portraitTex, bool portraitOk) {
+                (void)accent;
+                const bool isSel = selected.has_value() && *selected == cc;
+                const sf::FloatRect rect(pos, sf::Vector2f(cardW, cardH));
+                const bool hover = rect.contains(mouseWorld);
+                const float hoverLift = hover ? 3.f : 0.f;
 
-            sf::RectangleShape topBar(sf::Vector2f(cardW - 24.f, 72.f));
-            topBar.setPosition(pos + sf::Vector2f(12.f, 10.f + hoverLift));
-            topBar.setFillColor(sf::Color(18, 20, 30, 210));
-            window.draw(topBar);
+                sf::RectangleShape bg(sf::Vector2f(cardW, cardH));
+                bg.setPosition(pos + sf::Vector2f(0.f, hoverLift));
+                bg.setFillColor(isSel ? sf::Color(46, 54, 78, 220) : (hover ? sf::Color(38, 44, 66, 210) : sf::Color(30, 34, 54, 198)));
+                bg.setOutlineColor(isSel ? sf::Color(220, 186, 118) : (hover ? sf::Color(186, 160, 108) : sf::Color(136, 120, 90)));
+                bg.setOutlineThickness(isSel ? 2.6f : 1.8f);
+                window.draw(bg);
 
-            draw_centered_text(window, font, name, 36, pos + sf::Vector2f(cardW * 0.5f, 44.f + hoverLift),
-                               sf::Color(244, 236, 218));
+                sf::RectangleShape topBar(sf::Vector2f(cardW - kLay.pad * 2.f, kLay.topBarH));
+                topBar.setPosition(pos + sf::Vector2f(kLay.pad, kLay.pad + hoverLift));
+                topBar.setFillColor(sf::Color(18, 20, 30, 210));
+                window.draw(topBar);
 
-            sf::RectangleShape art(sf::Vector2f(cardW - 38.f, 246.f));
-            art.setPosition(pos + sf::Vector2f(19.f, 98.f + hoverLift));
-            art.setFillColor(sf::Color(20, 20, 30, 220));
-            art.setOutlineColor(isSel ? sf::Color(214, 184, 124, 230) : sf::Color(150, 138, 112, 188));
-            art.setOutlineThickness(1.8f);
-            window.draw(art);
+                draw_centered_text(window, font, name, 34,
+                                   sf::Vector2f(pos.x + cardW * 0.5f,
+                                                pos.y + kLay.pad + kLay.topBarH * 0.5f + hoverLift),
+                                   sf::Color(244, 236, 218));
 
-            draw_centered_text(window, font, desc, 23, pos + sf::Vector2f(cardW * 0.5f, 389.f + hoverLift),
-                               sf::Color(220, 213, 198));
+                const float artX = pos.x + kLay.pad;
+                const float artY = pos.y + kLay.pad + kLay.topBarH + kLay.gapUnderTitle + hoverLift;
+                const float side = kLay.portraitSide;
+                sf::RectangleShape artFrame(sf::Vector2f(side, side));
+                artFrame.setPosition(sf::Vector2f(artX, artY));
+                artFrame.setFillColor(sf::Color(10, 10, 16, 240));
+                artFrame.setOutlineColor(isSel ? sf::Color(214, 184, 124, 230) : sf::Color(150, 138, 112, 188));
+                artFrame.setOutlineThickness(2.f);
+                window.draw(artFrame);
 
-            sf::Text hint(font, isSel ? L"已选择此职业" : L"点击选择", 21);
-            hint.setFillColor(isSel ? sf::Color(230, 208, 162) : sf::Color(168, 156, 136));
-            sf::FloatRect hb = hint.getLocalBounds();
-            hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
-            hint.setPosition(pos + sf::Vector2f(cardW * 0.5f, cardH - 44.f + hoverLift));
-            window.draw(hint);
-        };
+                if (portraitOk) {
+                    const auto tsz = portraitTex.getSize();
+                    if (tsz.x > 0u && tsz.y > 0u) {
+                        sf::Sprite sp(portraitTex);
+                        // 正方形视口内等比「包含」，不裁切原图
+                        const float sc = std::min(side / static_cast<float>(tsz.x),
+                                                  side / static_cast<float>(tsz.y));
+                        sp.setOrigin(sf::Vector2f(static_cast<float>(tsz.x) * 0.5f,
+                                                    static_cast<float>(tsz.y) * 0.5f));
+                        sp.setScale(sf::Vector2f(sc, sc));
+                        sp.setPosition(sf::Vector2f(artX + side * 0.5f, artY + side * 0.5f));
+                        window.draw(sp);
+                    } else {
+                        sf::RectangleShape ph(sf::Vector2f(side - 6.f, side - 6.f));
+                        ph.setPosition(sf::Vector2f(artX + 3.f, artY + 3.f));
+                        ph.setFillColor(sf::Color(22, 22, 32, 230));
+                        window.draw(ph);
+                    }
+                } else {
+                    sf::RectangleShape ph(sf::Vector2f(side - 6.f, side - 6.f));
+                    ph.setPosition(sf::Vector2f(artX + 3.f, artY + 3.f));
+                    ph.setFillColor(sf::Color(22, 22, 32, 230));
+                    window.draw(ph);
+                }
+
+                const float descCy = artY + side + kLay.gapUnderPortrait + 26.f;
+                draw_centered_text(window, font, desc, 22,
+                                   sf::Vector2f(pos.x + cardW * 0.5f, descCy + hoverLift),
+                                   sf::Color(220, 213, 198));
+
+                sf::Text hint(font, isSel ? L"已选择此职业" : L"点击选择", 20);
+                hint.setFillColor(isSel ? sf::Color(230, 208, 162) : sf::Color(168, 156, 136));
+                sf::FloatRect hb = hint.getLocalBounds();
+                hint.setOrigin(sf::Vector2f(hb.position.x + hb.size.x * 0.5f, hb.position.y + hb.size.y * 0.5f));
+                hint.setPosition(
+                    sf::Vector2f(pos.x + cardW * 0.5f, pos.y + cardH - kLay.pad - 20.f + hoverLift));
+                window.draw(hint);
+            };
 
         drawCharCard(CharacterClass::Ironclad, sf::Vector2f(leftX, cy - cardH * 0.5f),
-                     L"铁甲战士", L"以力量与重甲碾碎敌人。", sf::Color(220, 80, 70));
+                     L"铁甲战士", L"以力量与重甲碾碎敌人。", sf::Color(220, 80, 70), portraitIronTex, portraitIronOk);
         drawCharCard(CharacterClass::Silent, sf::Vector2f(rightX, cy - cardH * 0.5f),
-                     L"静默猎手", L"以技巧与毒刃悄然取胜。", sf::Color(90, 210, 150));
+                     L"静默猎手", L"以技巧与毒刃悄然取胜。", sf::Color(90, 210, 150), portraitSilentTex, portraitSilentOk);
 
-        const float btnW = 268.f;
-        const float btnH = 64.f;
-        sf::FloatRect confirmRect(sf::Vector2f(W * 0.5f - btnW * 0.5f, H - 116.f), sf::Vector2f(btnW, btnH));
+        const float btnW = 288.f;
+        const float btnH = 58.f;
+        const float confirmY = std::min(cy + cardH * 0.5f + 28.f, H - btnH - 36.f);
+        sf::FloatRect confirmRect(sf::Vector2f(W * 0.5f - btnW * 0.5f, confirmY), sf::Vector2f(btnW, btnH));
         const bool enabled = selected.has_value();
         const bool hoverBtn = confirmRect.contains(mouseWorld);
         sf::ConvexShape btn(6);

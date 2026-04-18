@@ -27,10 +27,15 @@ bool rest_forge_card_upgradable(const CardId& id) {
 EventShopRestUI::EventShopRestUI(unsigned width, unsigned height)
     : width_(width), height_(height) {
     eventBgLoaded_ = try_load_texture(eventBgTexture_, {
-        "assets/backgrounds/event_bg_cn.png",
+        // 仓库内当前文件名为 event_bg_cn..png（双点）；无则再试标准名与通用底图
         "assets/backgrounds/event_bg_cn..png",
+        "assets/backgrounds/event_bg_cn.png",
+        "assets/backgrounds/rest_bg_cn.png",
+        "assets/backgrounds/main_bg.png",
+        "./assets/backgrounds/event_bg_cn..png",
         "./assets/backgrounds/event_bg_cn.png",
-        "./assets/backgrounds/event_bg_cn..png"
+        "./assets/backgrounds/rest_bg_cn.png",
+        "./assets/backgrounds/main_bg.png"
     });
     eventBannerLoaded_ = try_load_texture(eventBannerTexture_, {
         "assets/ui/event/banner_scroll_cn.png",
@@ -42,9 +47,13 @@ EventShopRestUI::EventShopRestUI(unsigned width, unsigned height)
     });
     restBgLoaded_ = try_load_texture(restBgTexture_, {
         "assets/backgrounds/rest_bg_cn.png",
+        "assets/backgrounds/event_bg_cn..png",
         "assets/backgrounds/event_bg_cn.png",
+        "assets/backgrounds/main_bg.png",
         "./assets/backgrounds/rest_bg_cn.png",
-        "./assets/backgrounds/event_bg_cn.png"
+        "./assets/backgrounds/event_bg_cn..png",
+        "./assets/backgrounds/event_bg_cn.png",
+        "./assets/backgrounds/main_bg.png"
     });
     shopBgLoaded_ = try_load_texture(shopBgTexture_, {
         "assets/backgrounds/shop_bg.png",
@@ -71,10 +80,10 @@ EventShopRestUI::EventShopRestUI(unsigned width, unsigned height)
         "./assets/ui/rest/icon_smith.png"
     });
     restScrollLoaded_ = try_load_texture(restScrollTexture_, {
-        "assets/ui/rest/cloud.png",
         "assets/ui/rest/book.png",
-        "./assets/ui/rest/cloud.png",
-        "./assets/ui/rest/book.png"
+        "assets/ui/rest/cloud.png",
+        "./assets/ui/rest/book.png",
+        "./assets/ui/rest/cloud.png"
     });
 }
 

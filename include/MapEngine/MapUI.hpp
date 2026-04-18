@@ -19,6 +19,8 @@ namespace MapEngine {
         void loadAllNodeTextures();
         bool loadLegendTexture(const std::string& filePath);
         bool loadBackgroundTexture(const std::string& filePath);
+        /** 窗口/OpenGL 上下文被重建后重载地图相关纹理（与用户设置「应用分辨率」路径一致） */
+        void reloadGraphicsAfterWindowRecreate();
         void setMap(const MapEngine* engine);
         void draw();
         std::string handleClick(int mouseX, int mouseY);
