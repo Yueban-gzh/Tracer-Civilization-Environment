@@ -1,14 +1,18 @@
 #include "GameFlow/GameFlowController.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "BattleCoreRefactor/BattleCoreRefactorSnapshotAdapter.hpp"
 #include "BattleEngine/BattleStateSnapshot.hpp"
@@ -27,6 +31,13 @@
 #include "EventEngine/EventShopRestUICommon.hpp"
 #include "EventEngine/TreasureRoomUI.hpp"
 #include "GameFlow/CharacterSelectScreen.hpp"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace tce {
 
@@ -51,21 +62,36 @@ int randomIndex(RunRng& rng, int boundExclusive) {
     return rng.uniform_int(0, boundExclusive - 1);
 }
 
+/** 交给 ffplay/system 的路径一律用绝对路径：VS 启动时 cwd 常在输出目录，相对 assets/... 会找不到。 */
+std::string video_path_to_abs_cmd_string(const std::filesystem::path& pIn) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path        p = pIn;
+    if (p.is_relative()) {
+        const fs::path cwd = fs::current_path(ec);
+        if (ec) return p.lexically_normal().u8string();
+        p = cwd / p;
+    }
+    const fs::path can = fs::weakly_canonical(p, ec);
+    if (!ec) return can.lexically_normal().u8string();
+    return p.lexically_normal().u8string();
+}
+
 std::string resolve_video_path(const std::string& relPath) {
     namespace fs = std::filesystem;
-    const fs::path rel(relPath);
+    const fs::path rel = fs::u8path(relPath);
     std::error_code ec;
-    if (fs::exists(rel, ec)) return rel.string();
+    if (fs::exists(rel, ec)) return video_path_to_abs_cmd_string(rel);
 
     const fs::path exeDir(get_executable_directory_utf8());
     const fs::path p1 = exeDir / rel;
-    if (fs::exists(p1, ec)) return p1.string();
+    if (fs::exists(p1, ec)) return video_path_to_abs_cmd_string(p1);
 
     const fs::path p2 = exeDir / ".." / rel;
-    if (fs::exists(p2, ec)) return fs::weakly_canonical(p2, ec).string();
+    if (fs::exists(p2, ec)) return video_path_to_abs_cmd_string(fs::weakly_canonical(p2, ec));
 
     const fs::path p3 = exeDir / ".." / ".." / rel;
-    if (fs::exists(p3, ec)) return fs::weakly_canonical(p3, ec).string();
+    if (fs::exists(p3, ec)) return video_path_to_abs_cmd_string(fs::weakly_canonical(p3, ec));
 
     return {};
 }
@@ -82,12 +108,253 @@ std::string quote_cmd_arg(const std::string& s) {
     return out;
 }
 
-bool has_ffplay_in_path() {
+bool env_ffplay_path_nonempty(char* buf, size_t bufSize, const char* name) {
 #ifdef _WIN32
-    return std::system("ffplay -version >nul 2>&1") == 0;
+    const DWORD n = GetEnvironmentVariableA(name, buf, static_cast<DWORD>(bufSize));
+    return n > 0 && n < bufSize;
 #else
-    return std::system("ffplay -version >/dev/null 2>&1") == 0;
+    const char* v = std::getenv(name);
+    if (!v || !*v) return false;
+    const size_t n = std::strlen(v);
+    if (n >= bufSize) return false;
+    std::memcpy(buf, v, n + 1);
+    return true;
 #endif
+}
+
+/** 返回可执行的 ffplay 路径（UTF-8）；找不到则空串。VS 启动时 PATH 常不含 FFmpeg，故多路径探测 + 环境变量 TCE_FFPLAY/FFPLAY。 */
+std::string resolve_ffplay_executable() {
+    namespace fs = std::filesystem;
+    const auto usable_ffplay = [](const fs::path& p) {
+        std::error_code ec;
+        if (!fs::exists(p, ec) || ec) return false;
+        return !fs::is_directory(p, ec);
+    };
+
+    for (const char* evname : {"TCE_FFPLAY", "FFPLAY"}) {
+        char envBuf[4096]{};
+        if (!env_ffplay_path_nonempty(envBuf, sizeof(envBuf), evname)) continue;
+        const fs::path p = fs::u8path(static_cast<const char*>(envBuf));
+        if (usable_ffplay(p)) return p.lexically_normal().u8string();
+    }
+
+    // main() 里 setup_asset_working_directory() 后 cwd 一般为仓库根：优先于 PATH，避免只拷了 ffplay 却命中系统残缺安装
+    {
+        std::error_code ec;
+        const fs::path cwd = fs::current_path(ec);
+        if (!ec && !cwd.empty()) {
+            const fs::path fromCwd[] = {cwd / "ffmpeg" / "ffplay.exe",
+                                        cwd / "ffmpeg" / "bin" / "ffplay.exe",
+                                        cwd / "src" / "ffmpeg" / "ffplay.exe",
+                                        cwd / "tools" / "ffmpeg" / "bin" / "ffplay.exe"};
+            for (const fs::path& cand : fromCwd) {
+                if (usable_ffplay(cand)) return cand.lexically_normal().u8string();
+            }
+        }
+    }
+
+#ifdef _WIN32
+    {
+        wchar_t spBuf[32768]{};
+        const DWORD cap = static_cast<DWORD>(sizeof(spBuf) / sizeof(spBuf[0]));
+        const DWORD n   = SearchPathW(nullptr, L"ffplay.exe", nullptr, cap, spBuf, nullptr);
+        if (n > 0 && n < cap) {
+            const fs::path p(spBuf);
+            if (usable_ffplay(p)) return p.lexically_normal().u8string();
+        }
+    }
+    {
+        // 从游戏 exe 目录向上若干层查找：支持 ffplay 在仓库 ffmpeg/、ffmpeg/bin/、tools/ffmpeg/bin/、src/ffmpeg/ 等
+        const std::string exeDir = get_executable_directory_utf8();
+        if (!exeDir.empty()) {
+            fs::path step = fs::u8path(exeDir);
+            for (int depth = 0; depth < 10 && !step.empty(); ++depth) {
+                for (const char* rel : {"ffplay.exe", "ffmpeg\\ffplay.exe", "ffmpeg\\bin\\ffplay.exe", "tools\\ffmpeg\\bin\\ffplay.exe",
+                                       "src\\ffmpeg\\ffplay.exe"}) {
+                    const fs::path cand = step / fs::path(rel);
+                    if (usable_ffplay(cand)) return cand.lexically_normal().u8string();
+                }
+                step = step.parent_path();
+            }
+        }
+    }
+    {
+        wchar_t localApp[1024]{};
+        const DWORD la =
+            GetEnvironmentVariableW(L"LOCALAPPDATA", localApp, static_cast<DWORD>(sizeof(localApp) / sizeof(localApp[0])));
+        if (la > 0 && la < static_cast<DWORD>(sizeof(localApp) / sizeof(localApp[0]))) {
+            const fs::path wingetLink =
+                fs::path(localApp) / L"Microsoft" / L"WinGet" / L"Links" / L"ffplay.exe";
+            if (usable_ffplay(wingetLink)) return wingetLink.lexically_normal().u8string();
+        }
+    }
+    static const wchar_t* kFixedCandidates[] = {L"C:\\ffmpeg\\bin\\ffplay.exe", L"C:\\Program Files\\ffmpeg\\bin\\ffplay.exe",
+                                                L"C:\\Program Files (x86)\\ffmpeg\\bin\\ffplay.exe"};
+    for (const wchar_t* w : kFixedCandidates) {
+        const fs::path p(w);
+        if (usable_ffplay(p)) return p.lexically_normal().u8string();
+    }
+    if (FILE* wf = _popen("where ffplay 2>nul", "r")) {
+        char line[4096]{};
+        if (std::fgets(line, static_cast<int>(sizeof(line)), wf)) {
+            std::string s(line);
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+            if (!s.empty()) {
+                const fs::path p = fs::u8path(s);
+                if (usable_ffplay(p)) {
+                    (void)_pclose(wf);
+                    return p.lexically_normal().u8string();
+                }
+            }
+        }
+        (void)_pclose(wf);
+    }
+#else
+    if (FILE* wf = popen("command -v ffplay 2>/dev/null", "r")) {
+        char line[4096]{};
+        if (std::fgets(line, static_cast<int>(sizeof(line)), wf)) {
+            std::string s(line);
+            while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+            if (!s.empty()) {
+                const fs::path p(fs::u8path(s));
+                if (usable_ffplay(p)) {
+                    (void)pclose(wf);
+                    return p.lexically_normal().u8string();
+                }
+            }
+        }
+        (void)pclose(wf);
+    }
+#endif
+    return {};
+}
+
+void log_ffplay_line(const std::string& line) {
+    std::cerr << line;
+#ifdef _WIN32
+    OutputDebugStringA(line.c_str());
+#endif
+}
+
+/**
+ * gyan「essentials」等包常为静态/单体：bin 里只有 ffmpeg/ffplay/ffprobe，无 .dll、单个 ffplay 可达近百 MB，属正常。
+ * 若同目录 DLL 很少但 ffplay 也很小，才提示可能缺了 shared 版依赖。
+ */
+void warn_if_ffplay_sibling_dlls_likely_insufficient_once(const std::string& ffplayUtf8) {
+    static std::unordered_set<std::string> warnedPaths;
+    if (!warnedPaths.insert(ffplayUtf8).second) return;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path exe = fs::u8path(ffplayUtf8);
+    const fs::path dir = exe.parent_path();
+    if (!fs::is_directory(dir, ec) || ec) return;
+
+    int dllCount = 0;
+    for (const auto& ent : fs::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (!ent.is_regular_file(ec)) continue;
+        const std::string ext = ent.path().extension().generic_string();
+        if (ext == ".dll" || ext == ".DLL") ++dllCount;
+    }
+
+    const std::uintmax_t ffplayBytes = fs::file_size(exe, ec);
+    if (ec) return;
+    // gyan essentials 单体 ffplay 常见约 90MB+，同目录无 dll 即静态链接，不必告警
+    constexpr std::uintmax_t kLikelyStaticFfplayMinBytes = 35u * 1024u * 1024u;
+    if (dllCount == 0 && ffplayBytes >= kLikelyStaticFfplayMinBytes) return;
+
+    if (dllCount < 5) {
+        log_ffplay_line("[GameFlow] 检测到 ffplay 同目录仅有 " + std::to_string(dllCount) +
+                        " 个 DLL，且 ffplay 体积偏小；若视频不播放或闪退，可能下成了 shared 版却只拷了 exe——"
+                        "请把官方 zip/7z 里 **bin 目录内全部 .dll** 与 ffplay.exe 放在同一文件夹。\n"
+                        "（若你用的是 gyan essentials 且 bin 里只有三个大 exe、无 dll，则属静态版，无需再拷 DLL。）\n");
+    }
+}
+
+/** 铺满目标尺寸：归一 SAR、等比放大、显式居中裁切（避免默认 crop 与奇数尺寸错位）；输出严格 WxH。 */
+std::wstring ffplay_vf_cover_window_w(unsigned w, unsigned h) {
+    const std::wstring sw = std::to_wstring(w);
+    const std::wstring sh = std::to_wstring(h);
+    return L"-vf setsar=1,scale=" + sw + L":" + sh +
+           L":flags=bilinear:force_original_aspect_ratio=increase,crop=" + sw + L":" + sh + L":(iw-" + sw + L")/2:(ih-" + sh +
+           L")/2 ";
+}
+
+std::string ffplay_vf_cover_window_a(unsigned w, unsigned h) {
+    const std::string sw = std::to_string(w);
+    const std::string sh = std::to_string(h);
+    return "-vf setsar=1,scale=" + sw + ":" + sh +
+           ":flags=bilinear:force_original_aspect_ratio=increase,crop=" + sw + ":" + sh + ":(iw-" + sw + ")/2:(ih-" + sh + ")/2 ";
+}
+
+#ifdef _WIN32
+/**
+ * 不用 std::system/cmd：路径含 +（如 C_C++）或 UTF-8 时 cmd 解析易报「文件名语法不正确」。
+ * 用 CreateProcessW 直接启动 ffplay 并等待结束。
+ */
+int run_ffplay_process_wait_utf8(const std::string& ffplayUtf8,
+                                 const std::string& videoUtf8,
+                                 unsigned             w,
+                                 unsigned             h,
+                                 bool                 withNoBorder,
+                                 bool                 positionOverlay,
+                                 int                  overlayLeft,
+                                 int                  overlayTop) {
+    auto utf8_to_wide = [](const std::string& u8) -> std::wstring {
+        if (u8.empty()) return {};
+        int len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, u8.c_str(), static_cast<int>(u8.size()), nullptr, 0);
+        if (len <= 0) {
+            len = MultiByteToWideChar(CP_UTF8, 0, u8.c_str(), static_cast<int>(u8.size()), nullptr, 0);
+        }
+        if (len <= 0) return {};
+        std::wstring out(static_cast<size_t>(len), L'\0');
+        if (MultiByteToWideChar(CP_UTF8, 0, u8.c_str(), static_cast<int>(u8.size()), out.data(), len) == 0) return {};
+        return out;
+    };
+
+    const std::wstring exeW = utf8_to_wide(ffplayUtf8);
+    const std::wstring vidW = utf8_to_wide(videoUtf8);
+    if (exeW.empty() || vidW.empty()) return -1;
+
+    std::wstring tail = L"-hide_banner -loglevel error -nostats -autoexit ";
+    tail += ffplay_vf_cover_window_w(w, h);
+    if (positionOverlay) {
+        tail += L"-left " + std::to_wstring(overlayLeft) + L" -top " + std::to_wstring(overlayTop) + L" ";
+    }
+    if (withNoBorder) tail += L"-noborder ";
+    tail += L"-x " + std::to_wstring(w) + L" -y " + std::to_wstring(h) + L" \"" + vidW + L"\"";
+
+    std::wstring       cmdLine = L"\"" + exeW + L"\" " + tail;
+    std::vector<wchar_t> cmdBuf(cmdLine.begin(), cmdLine.end());
+    cmdBuf.push_back(L'\0');
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(exeW.c_str(), cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        const DWORD err = GetLastError();
+        log_ffplay_line(std::string("[GameFlow] CreateProcessW(ffplay) 失败 GetLastError=") + std::to_string(err) + "\n");
+        return -1;
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exitCode = 1;
+    (void)GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return static_cast<int>(exitCode);
+}
+#endif
+
+/**
+ * ffplay 弹出/关闭瞬间，DWM 仍可能先合成游戏窗口的「上一帧」缓冲（开始菜单、战斗 UI 等），看起来像闪一下。
+ * 用与图文剧情首帧相同的底色清屏并 swap，减少视频↔图片衔接时的跳闪。
+ */
+void prepare_game_window_buffer_for_external_video(sf::RenderWindow& w) {
+    if (!w.isOpen()) return;
+    (void)w.setActive(true);
+    w.clear(sf::Color(8, 7, 12));
+    w.display();
 }
 
 std::wstring map_idx_to_label(int mapIdx) {
@@ -743,6 +1010,7 @@ bool GameFlowController::initialize(CharacterClass cc) {
     hasPendingSceneAfterLoad_ = false;
     sceneAfterLoad_           = LastSceneKind::Map;
     exitToStartRequested_     = false;
+    skipFirstMapIntroVideo_   = false;
     seenEventRootsByLayer_.clear();
     hudBattleUi_.set_deck_view_active(false);
     hudBattleUi_.set_pause_menu_active(false);
@@ -1009,7 +1277,9 @@ void GameFlowController::run() {
         }
     }
 
-    playCinematicVideoIfAvailable("assets/introduce/1.mp4");
+    if (!skipFirstMapIntroVideo_) {
+        playCinematicVideoIfAvailable("assets/introduce/1.mp4", true);
+    }
     runBattleEntryAnimation();
 
     while (window_.isOpen()) {
@@ -1152,22 +1422,108 @@ void GameFlowController::run() {
     }
 }
 
-void GameFlowController::playCinematicVideoIfAvailable(const std::string& videoPath) {
-    static bool ffplayChecked = false;
-    static bool ffplayAvailable = false;
-    if (!ffplayChecked) {
-        ffplayAvailable = has_ffplay_in_path();
-        ffplayChecked = true;
+void GameFlowController::playCinematicVideoIfAvailable(const std::string& videoPath, bool silenceGameMusic) {
+    static std::string ffplayCached;
+    std::string        ffplay = ffplayCached;
+    if (ffplay.empty()) {
+        ffplay = resolve_ffplay_executable();
+        if (!ffplay.empty()) ffplayCached = ffplay;
     }
-    if (!ffplayAvailable) return;
+    static bool loggedNoFfplay = false;
+    if (ffplay.empty()) {
+        if (!loggedNoFfplay) {
+            loggedNoFfplay = true;
+            log_ffplay_line(
+                "[GameFlow] 无法播放片头/过场视频：未找到 ffplay.exe。\n"
+                "          可选：安装 FFmpeg 并加入 PATH；或设置 TCE_FFPLAY=完整路径；或将 ffplay 放在\n"
+                "          仓库根下 ffmpeg/、ffmpeg/bin/、src/ffmpeg/、tools/ffmpeg/bin/（shared 版须同目录带齐 DLL）；或与游戏 exe 同目录。\n");
+        }
+        return;
+    }
+
+    warn_if_ffplay_sibling_dlls_likely_insufficient_once(ffplay);
 
     const std::string resolved = resolve_video_path(videoPath);
-    if (resolved.empty()) return;
+    if (resolved.empty()) {
+        log_ffplay_line(std::string("[GameFlow] 跳过视频（文件不存在）：") + videoPath + "\n");
+        return;
+    }
 
-    // -autoexit: 播放完自动关闭；-fs: 全屏；无 ffplay 时静默跳过
-    const std::string cmd =
-        "ffplay -hide_banner -loglevel error -nostats -autoexit -fs " + quote_cmd_arg(resolved);
-    (void)std::system(cmd.c_str());
+    struct ScopedSilenceMapBgmForCinematic {
+        MusicManager& mm;
+        const bool    silence;
+        ScopedSilenceMapBgmForCinematic(MusicManager& m, bool s) : mm(m), silence(s) {
+            if (silence) mm.stopMusic();
+        }
+        ~ScopedSilenceMapBgmForCinematic() {
+            if (silence) mm.playMapMusic();
+        }
+    } const bgmForCinematic(musicManager_, silenceGameMusic);
+
+    static bool loggedFirstPlay = false;
+    if (!loggedFirstPlay) {
+        loggedFirstPlay = true;
+        log_ffplay_line(std::string("[GameFlow] 过场视频 ffplay=") + ffplay + "\n[GameFlow] 过场视频 file=" + resolved + "\n");
+    }
+
+    unsigned           w = std::max(1u, window_.getSize().x);
+    unsigned           h = std::max(1u, window_.getSize().y);
+    // 偶数宽高，减轻 crop/缩放舍入与部分解码器对齐问题
+    w = std::max(2u, (w / 2u) * 2u);
+    h = std::max(2u, (h / 2u) * 2u);
+
+    bool positionOverlay = false;
+    int  overlayLeft     = 0;
+    int  overlayTop      = 0;
+#ifdef _WIN32
+    if (const HWND hwnd = static_cast<HWND>(window_.getNativeHandle())) {
+        RECT cr{};
+        if (GetClientRect(hwnd, &cr)) {
+            const unsigned cw = static_cast<unsigned>(std::max(0L, cr.right - cr.left));
+            const unsigned ch = static_cast<unsigned>(std::max(0L, cr.bottom - cr.top));
+            if (cw > 0 && ch > 0) {
+                w = std::max(2u, (std::max(1u, cw) / 2u) * 2u);
+                h = std::max(2u, (std::max(1u, ch) / 2u) * 2u);
+            }
+            POINT pt{0, 0};
+            if (ClientToScreen(hwnd, &pt)) {
+                positionOverlay = true;
+                overlayLeft     = static_cast<int>(pt.x);
+                overlayTop      = static_cast<int>(pt.y);
+            }
+        }
+    }
+#endif
+
+    prepare_game_window_buffer_for_external_video(window_);
+
+    // -left/-top：与游戏客户区屏幕位置对齐；-x/-y：与客户区像素一致；-noborder：失败则去掉重试。
+    int rc = 0;
+#ifdef _WIN32
+    rc = run_ffplay_process_wait_utf8(ffplay, resolved, w, h, true, positionOverlay, overlayLeft, overlayTop);
+    if (rc != 0) rc = run_ffplay_process_wait_utf8(ffplay, resolved, w, h, false, positionOverlay, overlayLeft, overlayTop);
+#else
+    {
+        const std::string vf = ffplay_vf_cover_window_a(w, h);
+        const std::string tailNoBorder =
+            " -hide_banner -loglevel error -nostats -autoexit " + vf + "-noborder -x " + std::to_string(w) + " -y " +
+            std::to_string(h) + " " + quote_cmd_arg(resolved);
+        const std::string tailBorder = " -hide_banner -loglevel error -nostats -autoexit " + vf + "-x " + std::to_string(w) +
+                                        " -y " + std::to_string(h) + " " + quote_cmd_arg(resolved);
+        std::string cmd = quote_cmd_arg(ffplay) + tailNoBorder;
+        rc              = std::system(cmd.c_str());
+        if (rc != 0) {
+            cmd = quote_cmd_arg(ffplay) + tailBorder;
+            rc  = std::system(cmd.c_str());
+        }
+    }
+#endif
+
+    prepare_game_window_buffer_for_external_video(window_);
+
+    if (rc != 0) {
+        log_ffplay_line(std::string("[GameFlow] ffplay 退出码 ") + std::to_string(rc) + "（已尝试去掉 -noborder）。\n");
+    }
 }
 
 bool GameFlowController::tryMoveToNode(const std::string& nodeId) {
@@ -1777,36 +2133,35 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
             const int mapIdx     = mapConfigManager_.getCurrentIndex();
             const int mapCount   = static_cast<int>(mapConfigManager_.getMapCount());
             const int lastMapIdx = mapCount > 0 ? mapCount - 1 : 0;
-            runCinematicDialog(make_boss_victory_dialog_lines(mapIdx));
             if (mapIdx >= lastMapIdx) {
-                // 最后一页 Boss：通关界面后返回主菜单
+                // 最后一张图 Boss：图文导语 -> 通关遮罩（3.mp4 已改在「进第三张图」前播放）
+                runCinematicDialog(make_boss_victory_dialog_lines(mapIdx));
                 captureCheckpointForCurrentNode();
                 statusText_ = "通关！";
                 runPostBattleExitOverlay(window_, ui, state, cardSystem_, true, hudFont_, hudFontLoaded_,
                     mapEngine_.get_current_layer(), mapEngine_.get_total_layers());
                 exitToStartRequested_ = true;
                 return false;
-            } else {
-                // 非最后一页：进入下一页地图，重新随机生成，继续 Run
-                mapConfigManager_.nextMap();
-                mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
-                seenEventRootsByLayer_.clear();
-                mapUI_.setMap(&mapEngine_);
-                mapUI_.setCurrentLayer(0);
-                const int enteredMapIdx = mapConfigManager_.getCurrentIndex();
-                if (enteredMapIdx == 1 || enteredMapIdx == 2) {
-                    if (enteredMapIdx == 1) {
-                        // 先秦胜利 -> 2.mp4 -> 汉唐导语
-                        playCinematicVideoIfAvailable("assets/introduce/2.mp4");
-                    } else {
-                        // 汉唐胜利 -> 3.mp4 -> 宋明导语
-                        playCinematicVideoIfAvailable("assets/introduce/3.mp4");
-                    }
-                    runCinematicDialog(make_enter_new_map_dialog_lines(enteredMapIdx));
-                }
-                captureCheckpointForCurrentNode();
-                statusText_ = "Boss 已击败，进入「" + mapConfigManager_.getCurrentMapName() + "」。请从本图起点继续。";
             }
+            runCinematicDialog(make_boss_victory_dialog_lines(mapIdx));
+            // 非最后一页：进入下一页地图，重新随机生成，继续 Run
+            mapConfigManager_.nextMap();
+            mapEngine_.init_random_map(mapConfigManager_.getCurrentIndex());
+            seenEventRootsByLayer_.clear();
+            mapUI_.setMap(&mapEngine_);
+            mapUI_.setCurrentLayer(0);
+            const int enteredMapIdx = mapConfigManager_.getCurrentIndex();
+            if (enteredMapIdx == 1) {
+                // 先秦 Boss 胜利 -> 2.mp4 -> 汉唐导语
+                playCinematicVideoIfAvailable("assets/introduce/2.mp4", true);
+                runCinematicDialog(make_enter_new_map_dialog_lines(enteredMapIdx));
+            } else if (enteredMapIdx == 2) {
+                // 汉唐 Boss 胜利 -> 3.mp4 -> 宋明导语（进入第三张图前）
+                playCinematicVideoIfAvailable("assets/introduce/3.mp4", true);
+                runCinematicDialog(make_enter_new_map_dialog_lines(enteredMapIdx));
+            }
+            captureCheckpointForCurrentNode();
+            statusText_ = "Boss 已击败，进入「" + mapConfigManager_.getCurrentMapName() + "」。请从本图起点继续。";
         } else {
             statusText_ = "战斗胜利，已发放金币与卡牌奖励。";
         }

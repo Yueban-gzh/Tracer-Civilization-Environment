@@ -44,6 +44,12 @@ public:
     bool initialize(CharacterClass cc);
     void run();
 
+    /**
+     * 若可解析到 ffplay，则按当前游戏窗口像素尺寸播放片头/过场视频（否则静默跳过）。
+     * @param silenceGameMusic 为 true 时暂停游戏 BGM，结束后恢复地图曲（用于自带音轨的片头）。
+     */
+    void playCinematicVideoIfAvailable(const std::string& videoPath, bool silenceGameMusic = false);
+
     /** 将当前 Run 状态写入存档文件（默认：saves/run_auto_save.json）。成功返回 true。 */
     bool saveRun(const std::string& path = "saves/run_auto_save.json") const;
 
@@ -76,7 +82,6 @@ private:
     bool runTreasureScene();
     void runBattleEntryAnimation();
     void runCinematicDialog(const std::vector<std::wstring>& lines, const std::string& backgroundPath = "assets/backgrounds/dialog_bg.png");
-    void playCinematicVideoIfAvailable(const std::string& videoPath);
 
     int firstAliveMonsterIndex(const BattleState& state) const;
     void drawHud();
@@ -145,6 +150,9 @@ private:
 
     // 从暂停菜单“保存并退出”返回开始界面，而不是直接关游戏
     bool exitToStartRequested_ = false;
+
+    /** 读档继续时跳过「第一层地图前」1.mp4；新开局 initialize 会清零。 */
+    bool skipFirstMapIntroVideo_ = false;
 
     bool map_cheat_free_travel_ = false;  // F2：作弊模式（地图任意节点可达；战斗中 K 秒杀全部怪物）
     bool            map_browse_overlay_active_ = false;

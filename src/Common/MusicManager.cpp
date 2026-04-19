@@ -134,6 +134,10 @@ void MusicManager::playMapMusic() {
     activePath_.clear();
 }
 
+void MusicManager::stopMusic() {
+    music_.stop();
+}
+
 void MusicManager::playRandomBattleMusic() {
     const auto& pool = battlePaths_;
     if (pool.empty()) {

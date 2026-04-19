@@ -538,6 +538,8 @@ bool GameFlowController::loadRun(const std::string& path) {
         musicManager_.scanAssets();
         if (sceneAfterLoad_ != LastSceneKind::Battle) musicManager_.playMapMusic();
 
+        skipFirstMapIntroVideo_ = true;
+
         return true;
     } catch (...) {
         return false;

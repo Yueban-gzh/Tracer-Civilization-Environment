@@ -18,6 +18,8 @@ public:
     void scanAssets();
     void playMapMusic();
     void playRandomBattleMusic();
+    /** 停止当前 BGM（如播放带音频的外置 ffplay 前调用）。 */
+    void stopMusic();
 
 private:
     enum class ActiveKind { None, Map, Battle };

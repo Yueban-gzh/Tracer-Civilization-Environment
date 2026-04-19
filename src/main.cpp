@@ -2,7 +2,8 @@
  * 正式入口流程：
  * 1) 创建窗口：桌面分辨率恰为 1920×1080 时用全屏；否则用 1920×1080 窗口（小于桌面则缩小以免出屏）
  * 2) 初始化 GameFlowController（加载数据、系统依赖、UI 资源）
- * 3) 开始界面（新游戏/继续） <-> 主流程循环（地图/战斗/事件/商店/休息/宝箱）
+ * 3) 首次启动时播放菜单前片头（menu_introduction.mp4，需 ffplay）
+ * 4) 开始界面（新游戏/继续） <-> 主流程循环（地图/战斗/事件/商店/休息/宝箱）
  */
 #include <SFML/Graphics.hpp>
 #include <iostream>
@@ -37,7 +38,12 @@ int main() {
             return 1;
         }
 
+        bool menuIntroPlayed = false;
         while (window.isOpen()) {
+            if (!menuIntroPlayed) {
+                game.playCinematicVideoIfAvailable("assets/introduce/menu_introduction.mp4", true);
+                menuIntroPlayed = true;
+            }
             tce::runStartScreen(window, game);
             if (!window.isOpen()) break;
             game.run();
