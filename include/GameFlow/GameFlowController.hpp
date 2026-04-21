@@ -40,6 +40,7 @@ public:
     };
 
     explicit GameFlowController(sf::RenderWindow& window);
+    ~GameFlowController();
     bool initialize();  // 默认：铁甲战士
     bool initialize(CharacterClass cc);
     void run();
@@ -49,6 +50,9 @@ public:
      * @param silenceGameMusic 为 true 时暂停游戏 BGM，结束后恢复地图曲（用于自带音轨的片头）。
      */
     void playCinematicVideoIfAvailable(const std::string& videoPath, bool silenceGameMusic = false);
+
+    /** 开场剧情等每帧末尾：推进预载若干张（不检查地图鼠标空闲）。 */
+    void tick_ironclad_attack_anim_map_preload_frame(int max_textures);
 
     /** 将当前 Run 状态写入存档文件（默认：saves/run_auto_save.json）。成功返回 true。 */
     bool saveRun(const std::string& path = "saves/run_auto_save.json") const;
@@ -63,8 +67,11 @@ public:
     uint64_t get_run_rng_state() const { return runRng_.get_state(); }
     void     set_run_rng_state(uint64_t s) { runRng_.set_state(s); }
 
-    /** 若用户在设置中申请了分辨率变更，则重建窗口并同步 HUD 尺寸（每帧或每轮循环开头调用） */
-    void applyPendingVideoAndHudResize(const sf::ContextSettings& ctx);
+    /**
+     * 若用户在设置中申请了分辨率变更，则重建窗口并同步 HUD 尺寸（每帧或每轮循环开头调用）。
+     * @return 本次调用是否确实执行了窗口/OpenGL 上下文重建（为 true 时，栈上的 BattleUI 等须调用 reload_local_battle_ui_after_gl_recreate_）
+     */
+    bool applyPendingVideoAndHudResize(const sf::ContextSettings& ctx);
 
 private:
     bool tryMoveToNode(const std::string& nodeId);
@@ -84,6 +91,10 @@ private:
     void runCinematicDialog(const std::vector<std::wstring>& lines, const std::string& backgroundPath = "assets/backgrounds/dialog_bg.png");
 
     int firstAliveMonsterIndex(const BattleState& state) const;
+    /** 打出卡牌；若成功且为攻击牌、当前角色为铁甲战士，则触发中央攻击序列帧立绘 */
+    bool play_card_with_ironclad_attack_anim_(BattleUI& ui, int handIndex, int targetMonsterIndex);
+    /** applyPendingVideoAndHudResize 重建 GL 上下文后：重载本地 BattleUI；monsters 非空时含战场背景与怪物纹理 */
+    void reload_local_battle_ui_after_gl_recreate_(BattleUI& ui, const std::vector<MonsterId>* monsters, int mapPage);
     void drawHud();
     std::string nodeTypeToString(NodeType nodeType) const;
 

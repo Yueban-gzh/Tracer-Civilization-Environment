@@ -7,6 +7,7 @@
 #include "BattleCoreRefactor/PotionEffects.hpp"    // 灵液需目标判断
 #include "DataLayer/DataLayer.hpp"                 // 卡牌/怪物数据查询
 #include "Common/ImagePath.hpp"
+#include "Common/IroncladAttackAnimMapCache.hpp"
 #include "Common/UserSettings.hpp"
 #include <SFML/Graphics.hpp>                       // 图形绘制
 #include <algorithm>                               // std::min/max 等
@@ -27,10 +28,10 @@
 
 namespace {
 
-/** 与 attack_1 命中特效一致：序列帧最大边长按较短边缩放入此像素内 */
-constexpr float kBattleVfxSequenceMaxDimPx = 440.f;
+/** 与 attack_1 命中特效一致：序列帧最大边长按较短边缩放入此像素内（铁甲剑气等同用） */
+constexpr float kBattleVfxSequenceMaxDimPx = 1180.f;
 /** 施加中毒 poizon_1 序列：略大于命中特效，便于辨认 */
-constexpr float kBattleVfxPoisonSequenceMaxDimPx = 600.f;
+constexpr float kBattleVfxPoisonSequenceMaxDimPx = 740.f;
 /** 力量 strength_1：以「模型—血条」缝为基准，中心原点；边长按较短边缩放入此像素内 */
 constexpr float kBattleVfxStrengthSequenceMaxDimPx = 1180.f;
 /** 与 drawBattleCenter 中「模型下缘 → 血条上沿」间距一致（见 barY / mBarY） */
@@ -38,7 +39,9 @@ constexpr float kBattleModelToHpBarGapPx = 12.f;
 /** 相对缝中线再上移若干像素（屏幕 Y 减小） */
 constexpr float kBattleStrengthVfxUpNudgePx = 12.f;
 /** 格挡 block_1 序列：刻意大于命中/中毒，更醒目 */
-constexpr float kBattleVfxBlockSequenceMaxDimPx = 1780.f;
+constexpr float kBattleVfxBlockSequenceMaxDimPx = 2100.f;
+/** 铁甲攻击序列帧：单张纹理最长边（像素）；超过则加载时按比例缩小再上传 GPU（Spine 高分辨率导出仍可流畅） */
+constexpr unsigned kIroncladAttackAnimMaxTextureSidePx = 1024u;
 /** 每帧基准时长（秒）；自然总时长 = 张数 × 此值 */
 constexpr float kBattleVfxSecPerFrame = 1.f / 60.f;
 /** 所有序列帧特效整段最短时长（秒）；帧数少时单帧变慢以满足下限 */
@@ -95,6 +98,51 @@ static bool load_sf_texture_utf8(sf::Texture& tex, const std::string& utf8Path) 
     if (ec)
         return false;
     return tex.loadFromFile(cwd / p);
+}
+
+/**
+ * 与 load_sf_texture_utf8 相同路径规则；若图像最长边大于 maxSide，则按比例缩小（最近邻采样）再上传纹理。
+ * 解码大图仍发生在本帧，但显存占用与后续绘制成本显著降低；导出时降分辨率仍可进一步加快解码。
+ */
+static bool load_sf_texture_utf8_max_side(sf::Texture& tex, const std::string& utf8Path, unsigned maxSide) {
+    if (utf8Path.empty() || maxSide < 32u)
+        return false;
+    namespace fs = std::filesystem;
+    fs::path p = fs::u8path(utf8Path);
+    std::error_code ec;
+    if (!fs::is_regular_file(p, ec)) {
+        if (p.is_absolute())
+            return false;
+        const fs::path cwd = fs::current_path(ec);
+        if (ec)
+            return false;
+        p = cwd / p;
+        if (!fs::is_regular_file(p, ec))
+            return false;
+    }
+    sf::Image img;
+    if (!img.loadFromFile(p))
+        return false;
+    const sf::Vector2u sz = img.getSize();
+    const unsigned w = sz.x;
+    const unsigned h = sz.y;
+    if (w == 0 || h == 0)
+        return false;
+    const unsigned longSide = std::max(w, h);
+    if (longSide <= maxSide)
+        return tex.loadFromImage(img);
+    const double scale = static_cast<double>(maxSide) / static_cast<double>(longSide);
+    const unsigned nw = std::max(1u, static_cast<unsigned>(std::lround(static_cast<double>(w) * scale)));
+    const unsigned nh = std::max(1u, static_cast<unsigned>(std::lround(static_cast<double>(h) * scale)));
+    sf::Image small(sf::Vector2u(nw, nh), sf::Color::Transparent);
+    for (unsigned y = 0; y < nh; ++y) {
+        for (unsigned x = 0; x < nw; ++x) {
+            const unsigned sx = std::min(w - 1u, (x * w) / nw);
+            const unsigned sy = std::min(h - 1u, (y * h) / nh);
+            small.setPixel(sf::Vector2u(x, y), img.getPixel(sf::Vector2u(sx, sy)));
+        }
+    }
+    return tex.loadFromImage(small);
 }
 
 /** 仅处理 ASCII A–Z，用于匹配磁盘上的 Icon 文件名（与 wiki 主名一致）。 */
@@ -482,8 +530,33 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         constexpr float MONSTER_BREATH_SCALE_AMP = 0.022f;
         constexpr float MONSTER_BREATH_SPEED     = 1.65f;  // rad/s，略慢于意图球
         constexpr float MONSTER_BREATH_PHASE     = 0.47f;  // 相邻怪相位差
+        /** 玩家立绘呼吸相位（与怪错开，避免完全同频） */
+        constexpr float PLAYER_BREATH_PHASE = 1.35f;
         constexpr float MODEL_PLACEHOLDER_W = 380.f;      // 玩家/怪物模型占位（1:1）
         constexpr float MODEL_PLACEHOLDER_H = 380.f;
+        /** Spine 导出序列画布大、人物占比小：相对占位框放大绘制，脚底与静态立绘底对齐（过大会压战场） */
+        constexpr float IRONCLAD_ATTACK_ANIM_BOX_MUL = 1.55f;
+        /** 相对静态占位框底边（modelTop+MODEL_PLACEHOLDER_H）再偏移：正数下移、负数上移（屏幕像素） */
+        constexpr float IRONCLAD_ATTACK_ANIM_ANCHOR_DOWN_EXTRA_PX = -56.f;
+        /**
+         * 原点从纹理「底边中点」向上提多少（未缩放像素）。Spine 导出常在脚下留透明边，
+         * 仍把原点放在画布底会导致人物整段显得偏下；此项把锚点移到接近脚底，再配合 ANCHOR 微调落地。
+         */
+        constexpr float IRONCLAD_ATTACK_ANIM_ORIGIN_LIFT_PX = 120.f;
+        /** 挥剑序列相对静态立绘水平中心向右偏移（像素） */
+        constexpr float IRONCLAD_ATTACK_ANIM_OFFSET_X_PX = 40.f;
+        /** 相对其它序列 VFX 的 `battle_vfx_clip_duration_sec`：仅铁甲攻击再乘此系数（越大越久） */
+        constexpr float IRONCLAD_ATTACK_ANIM_DURATION_MUL = 2.5f;
+        /** 铁甲：挥剑整段结束后再延此时间，开始第一段剑气 attack_1（秒） */
+        constexpr float IRONCLAD_SWORD_QI_POST_SWING_GAP_SEC = 0.06f;
+        /** 剑气整条时间轴相对「挥剑结束 + POST_SWING」再提前（秒）；每道仍相隔 BURST_SPACING，避免只提前首道时压缩 1→2 间隔 */
+        constexpr float IRONCLAD_SWORD_QI_SCHEDULE_ADVANCE_SEC = 0.35f;
+        /** 相邻两道剑气间隔（秒），沿玩家→怪身前依次播放 */
+        constexpr float IRONCLAD_SWORD_QI_BURST_SPACING_SEC = 0.12f;
+        /** 剑气段数（每段完整播 attack_1 序列一轮） */
+        constexpr int IRONCLAD_SWORD_QI_BURST_COUNT = 4;
+        /** attack_1 锚点整体上移（屏幕像素，略抬高特效） */
+        constexpr float MONSTER_ATTACK_HIT_VFX_ANCHOR_UP_PX = 34.f;
         constexpr float MODEL_TOP_OFFSET = 190.f;      // 约为高度一半，使模型中心对齐 modelCenterY
         constexpr float MODEL_CENTER_Y_RATIO = 0.50f; // 略上移，避免大模型压住下方手牌区与底栏图标
         constexpr float BATTLE_MODEL_BLOCK_Y_OFFSET = 32.f;  // 整体略上移，与 MODEL_CENTER_Y_RATIO 配合
@@ -555,7 +628,6 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
                 {"vajra", {L"金刚杵", L"战斗开始时获得 1 点力量"}},
                 {"nunchaku", {L"双截棍", L"每打出10张攻击牌获得1点能量"}},
                 {"ceramic_fish", {L"陶瓷小鱼", L"每次往牌组加牌时获得9金币"}},
-                {"hand_drum", {L"手摇鼓", L"回合开始时获得1层真言"}},
                 {"pen_nib", {L"钢笔尖", L"每打出的第10张攻击牌造成双倍伤害"}},
                 {"toy_ornithopter", {L"玩具扑翼飞机", L"每使用一瓶灵液回复5点生命"}},
                 {"preparation_pack", {L"准备背包", L"战斗开始时额外抽2张牌"}},
@@ -1099,6 +1171,12 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             sf::Vector2f(END_TURN_W * uiScaleX_, END_TURN_H * uiScaleY_));
     }
 
+    BattleUI::~BattleUI() {
+        // 先丢弃快照指针，再集中释放纹理：避免退出战斗/析构顺序下 SFML 纹理与成员析构交织触发堆损坏或 GL 异常
+        lastSnapshot_ = nullptr;
+        clear_gpu_cached_textures();
+    }
+
     void BattleUI::set_window_size(unsigned width, unsigned height) {
         width_  = width;
         height_ = height;
@@ -1221,6 +1299,135 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         playerBlockVfxFrames_.clear();
         playerBlockVfxTriedLoad_ = false;
         pendingPlayerBlockVfx_.clear();
+        ironcladAttackAnimPendingPaths_.clear();
+        ironcladAttackAnimLoadIndex_ = 0;
+        ironcladAttackAnimIncrementalActive_ = false;
+        ironcladAttackAnimFramesShared_.reset();
+        ironcladAttackAnimFrames_.clear();
+        ironcladAttackAnimPlaying_ = false;
+        ironcladAttackAnimStreamDelayRemaining_ = 0;
+    }
+
+    void BattleUI::notify_player_attack_card_played(const std::string& character_id) {
+        if (character_id != "Ironclad")
+            return;
+        if (!ironclad_attack_anim_disk_load_finished_() || ironclad_attack_anim_frames_ref_().empty())
+            return;
+        ironcladAttackAnimPlaying_ = true;
+        ironcladAttackAnimClock_.restart();
+    }
+
+    void BattleUI::warm_ironclad_attack_anim_if_ironclad(const std::string& character_id) {
+        ironcladAttackAnimPlaying_ = false;
+        ironcladAttackAnimPendingPaths_.clear();
+        ironcladAttackAnimFramesShared_.reset();
+        ironcladAttackAnimFrames_.clear();
+        ironcladAttackAnimLoadIndex_ = 0;
+        ironcladAttackAnimStreamDelayRemaining_ = 0;
+        ironcladAttackAnimIncrementalActive_ = (character_id == "Ironclad");
+        if (!ironcladAttackAnimIncrementalActive_)
+            return;
+        scan_ironclad_attack_anim_paths_(ironcladAttackAnimPendingPaths_);
+        ironcladAttackAnimStreamDelayRemaining_ = 0;
+    }
+
+    bool BattleUI::ironclad_attack_anim_disk_load_finished_() const {
+        if (!ironcladAttackAnimIncrementalActive_)
+            return false;
+        return ironcladAttackAnimLoadIndex_ >= ironcladAttackAnimPendingPaths_.size();
+    }
+
+    const std::vector<sf::Texture>& BattleUI::ironclad_attack_anim_frames_ref_() const {
+        if (ironcladAttackAnimFramesShared_)
+            return *ironcladAttackAnimFramesShared_;
+        return ironcladAttackAnimFrames_;
+    }
+
+    void BattleUI::ironclad_attack_anim_session_try_commit_after_load_() {
+        if (!ironcladAttackAnimIncrementalActive_)
+            return;
+        if (ironcladAttackAnimPendingPaths_.empty())
+            return;
+        if (ironcladAttackAnimLoadIndex_ < ironcladAttackAnimPendingPaths_.size())
+            return;
+        if (ironcladAttackAnimFramesShared_ && ironcladAttackAnimFrames_.empty())
+            return;
+        ironclad_attack_anim_session_commit(ironcladAttackAnimPendingPaths_, std::move(ironcladAttackAnimFrames_),
+                                            ironcladAttackAnimFramesShared_);
+    }
+
+    void BattleUI::scan_ironclad_attack_anim_paths_(std::vector<std::string>& out_utf8_paths) {
+        scan_ironclad_attack_anim_paths(out_utf8_paths);
+    }
+
+    bool BattleUI::try_adopt_ironclad_attack_anim_map_gpu_cache() {
+        if (!ironcladAttackAnimIncrementalActive_)
+            return true;
+        ironcladAttackAnimFramesShared_.reset();
+        if (ironclad_attack_anim_session_try_borrow(ironcladAttackAnimPendingPaths_, ironcladAttackAnimFramesShared_,
+                                                    ironcladAttackAnimLoadIndex_)) {
+            ironcladAttackAnimFrames_.clear();
+            return ironclad_attack_anim_disk_load_finished_();
+        }
+        if (ironclad_attack_anim_map_cache_try_adopt(ironcladAttackAnimPendingPaths_, ironcladAttackAnimFrames_,
+                                                     ironcladAttackAnimLoadIndex_)) {
+            if (ironclad_attack_anim_disk_load_finished_())
+                ironclad_attack_anim_session_commit(ironcladAttackAnimPendingPaths_,
+                                                    std::move(ironcladAttackAnimFrames_), ironcladAttackAnimFramesShared_);
+            return ironclad_attack_anim_disk_load_finished_();
+        }
+        return false;
+    }
+
+    void BattleUI::tick_ironclad_attack_anim_load_() {
+        if (!ironcladAttackAnimIncrementalActive_)
+            return;
+        if (ironcladAttackAnimStreamDelayRemaining_ > 0) {
+            --ironcladAttackAnimStreamDelayRemaining_;
+            return;
+        }
+        if (ironcladAttackAnimLoadIndex_ >= ironcladAttackAnimPendingPaths_.size())
+            return;
+        // 非播放时每帧多解码几张，缩短进战斗后「全部就绪」等待；播放中略减以免出牌瞬间卡顿
+        int budget = ironcladAttackAnimPlaying_ ? 2 : 8;
+        while (budget-- > 0 && ironcladAttackAnimLoadIndex_ < ironcladAttackAnimPendingPaths_.size()) {
+            const std::string& pth = ironcladAttackAnimPendingPaths_[ironcladAttackAnimLoadIndex_];
+            try {
+                sf::Texture t;
+                if (load_sf_texture_utf8_max_side(t, pth, kIroncladAttackAnimMaxTextureSidePx)) {
+                    t.setSmooth(true);
+                    ironcladAttackAnimFrames_.push_back(std::move(t));
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[BattleUI] tick_ironclad_attack_anim_load_: " << pth << " : " << e.what() << "\n";
+            } catch (...) {
+                std::cerr << "[BattleUI] tick_ironclad_attack_anim_load_: " << pth << " : unknown exception\n";
+            }
+            ++ironcladAttackAnimLoadIndex_;
+        }
+        ironclad_attack_anim_session_try_commit_after_load_();
+    }
+
+    void BattleUI::preload_ironclad_attack_anim_blocking() {
+        if (!ironcladAttackAnimIncrementalActive_)
+            return;
+        ironcladAttackAnimStreamDelayRemaining_ = 0;
+        while (ironcladAttackAnimLoadIndex_ < ironcladAttackAnimPendingPaths_.size()) {
+            const std::string& pth = ironcladAttackAnimPendingPaths_[ironcladAttackAnimLoadIndex_];
+            try {
+                sf::Texture t;
+                if (load_sf_texture_utf8_max_side(t, pth, kIroncladAttackAnimMaxTextureSidePx)) {
+                    t.setSmooth(true);
+                    ironcladAttackAnimFrames_.push_back(std::move(t));
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[BattleUI] preload_ironclad_attack_anim_blocking: " << pth << " : " << e.what() << "\n";
+            } catch (...) {
+                std::cerr << "[BattleUI] preload_ironclad_attack_anim_blocking: " << pth << " : unknown exception\n";
+            }
+            ++ironcladAttackAnimLoadIndex_;
+        }
+        ironclad_attack_anim_session_try_commit_after_load_();
     }
 
     bool BattleUI::loadMonsterTexture(const std::string& monster_id, const std::string& path) {
@@ -1381,16 +1588,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const std::wstring& phase = s.phaseDebugLabel;
         const bool phase_changed = (phase != lastPhaseForTurnTips_);
 
+        // 提示时长与条数直接影响首回合发牌：此前两条各 ~0.95s 会阻塞 step_turn_phase，手牌长时间为空。
+        constexpr float kTurnBannerSec = 0.52f;
         if (phase == L"PlayerTurnStart") {
             if (phase_changed) {
                 if (s.turnNumber == 1 && !battleStartTipShown_) {
-                    enqueue_center_tip_(L"战斗开始", 0.95f);
+                    enqueue_center_tip_(L"战斗开始 · 玩家回合 1", kTurnBannerSec);
                     battleStartTipShown_ = true;
-                }
-                {
+                } else {
                     std::wstring msg = L"玩家回合 ";
                     msg += std::to_wstring(std::max(1, s.turnNumber));
-                    enqueue_center_tip_(std::move(msg), 0.95f);
+                    enqueue_center_tip_(std::move(msg), kTurnBannerSec);
                 }
             }
             lastPhaseForTurnTips_ = phase;
@@ -1399,7 +1607,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
         if (phase == L"EnemyTurnStart") {
             if (phase_changed) {
-                enqueue_center_tip_(L"敌方回合", 0.95f);
+                enqueue_center_tip_(L"敌方回合", kTurnBannerSec);
             }
             lastPhaseForTurnTips_ = phase;
             tick_center_tip_queue_();
@@ -2418,6 +2626,18 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         reward_card_ids_ = std::move(card_ids);
         reward_relic_ids_ = std::move(relic_ids);
         reward_potion_ids_ = std::move(potion_ids);
+        for (const auto& rid : reward_relic_ids_) {
+            if (rid.empty() || relicTextures_.count(rid))
+                continue;
+            if (const std::string path = resolve_image_path("assets/relics/" + rid); !path.empty())
+                loadRelicTexture(rid, path);
+        }
+        for (const auto& pid : reward_potion_ids_) {
+            if (pid.empty() || potionTextures_.count(pid))
+                continue;
+            if (const std::string path = resolve_image_path("assets/potions/" + pid); !path.empty())
+                loadPotionTexture(pid, path);
+        }
         // 布局矩形不要只在 set_reward_data 里算死：奖励面板会随窗口尺寸变化，
         // 且 drawRewardScreen 内的 panelY/cardY 是动态的。
         // 这里先清空，具体布局在 drawRewardScreen 里按同一套公式每帧刷新。
@@ -2765,6 +2985,8 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         }
 
         // 新入手牌：从抽牌堆飞向扇区目标位
+        const bool openingHandDraw =
+            prev_hand_for_pile_anim_.empty() && !s.hand.empty(); // 战斗首张批量入手：缩短飞入，减少「空桌等待」感
         for (size_t i = 0; i < s.hand.size() && pile_card_flights_.size() < kMaxNewAnims + 8; ++i) {
             const auto& c = s.hand[i];
             if (prev_ids.count(c.instanceId)) continue;
@@ -2774,7 +2996,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             a.end         = hand_fan_card_center_(i, s.hand.size());
             a.kind        = PileCardFlightAnim::DrawToHand;
             a.instance_id = c.instanceId;
-            a.duration_sec = 0.38f;
+            a.duration_sec = openingHandDraw ? 0.22f : 0.38f;
             a.use_arc_path = true;
             a.clock.restart();
             pile_card_flights_.push_back(std::move(a));
@@ -2873,6 +3095,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 拷贝到成员：lastSnapshot_ 若指向适配器/调用方栈上的临时引用，事件在下一帧处理时会悬垂，表现为 hand.size()==0
         snapshotForEvents_ = s;
         lastSnapshot_      = &snapshotForEvents_;
+        tick_ironclad_attack_anim_load_();
         if (!fontLoaded_) return;                   // 字体未加载则不绘制（避免崩溃）
 
         pendingBattleStatusIcons_.clear();          // 由 drawBattleCenter 入队，随后在 drawBottomBar 之前 flush（手牌盖住效果栏）
@@ -5015,7 +5238,6 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         try {
             namespace fs = std::filesystem;
             const char* const candidates[] = {
-                "E:/vfx/attack_1",
                 "assets/vfx/attack_1",
             };
             for (const char* dirUtf8 : candidates) {
@@ -5069,7 +5291,6 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         try {
             namespace fs = std::filesystem;
             const char* const candidates[] = {
-                "E:/vfx/poizon_1",
                 "assets/vfx/poizon_1",
             };
             for (const char* dirUtf8 : candidates) {
@@ -5128,7 +5349,6 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         try {
             namespace fs = std::filesystem;
             const char* const candidates[] = {
-                "E:/vfx/strength_1",
                 "assets/vfx/strength_1",
             };
             for (const char* dirUtf8 : candidates) {
@@ -5261,10 +5481,38 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             if (mi < 0 || static_cast<size_t>(mi) >= monsterModelRects_.size())
                 continue;
             const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(mi)];
-            PendingMonsterHitVfx inst;
-            inst.anchor_x = mr.position.x + mr.size.x * 0.5f;
-            inst.anchor_y = mr.position.y + mr.size.y * 0.42f;
-            pendingMonsterHitVfx_.push_back(std::move(inst));
+            const sf::FloatRect& pr = playerModelRect_;
+            const auto& ironclad_atk_frames = ironclad_attack_anim_frames_ref_();
+            const bool ironclad_qi = (s.character == "Ironclad" && !ironclad_atk_frames.empty()
+                && pr.size.x > 1.f && pr.size.y > 1.f && mr.size.x > 1.f && mr.size.y > 1.f);
+            if (ironclad_qi) {
+                const size_t ni = ironclad_atk_frames.size();
+                const float clipIron =
+                    battle_vfx_clip_duration_sec(ni) * IRONCLAD_ATTACK_ANIM_DURATION_MUL;
+                // 起点：玩家侧靠怪物一边；终点：怪物朝向玩家一侧（身前）
+                const float start_x = pr.position.x + pr.size.x * 0.76f;
+                const float start_y = pr.position.y + pr.size.y * 0.35f;
+                const float end_x = mr.position.x + mr.size.x * 0.30f;
+                const float end_y = mr.position.y + mr.size.y * 0.42f;
+                for (int k = 0; k < IRONCLAD_SWORD_QI_BURST_COUNT; ++k) {
+                    const float t01 =
+                        static_cast<float>(k + 1) / static_cast<float>(IRONCLAD_SWORD_QI_BURST_COUNT + 1);
+                    PendingMonsterHitVfx inst;
+                    inst.anchor_x = start_x + (end_x - start_x) * t01;
+                    inst.anchor_y = start_y + (end_y - start_y) * t01 - MONSTER_ATTACK_HIT_VFX_ANCHOR_UP_PX;
+                    const float delay = clipIron + IRONCLAD_SWORD_QI_POST_SWING_GAP_SEC
+                        - IRONCLAD_SWORD_QI_SCHEDULE_ADVANCE_SEC
+                        + static_cast<float>(k) * IRONCLAD_SWORD_QI_BURST_SPACING_SEC;
+                    inst.playback_delay_sec = std::max(0.f, delay);
+                    pendingMonsterHitVfx_.push_back(std::move(inst));
+                }
+            } else {
+                PendingMonsterHitVfx inst;
+                inst.anchor_x = mr.position.x + mr.size.x * 0.5f;
+                inst.anchor_y = mr.position.y + mr.size.y * 0.42f - MONSTER_ATTACK_HIT_VFX_ANCHOR_UP_PX;
+                inst.playback_delay_sec = 0.f;
+                pendingMonsterHitVfx_.push_back(std::move(inst));
+            }
         }
 
         const size_t nframes = monsterHitVfxFrames_.size();
@@ -5274,12 +5522,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         pendingMonsterHitVfx_.erase(
             std::remove_if(pendingMonsterHitVfx_.begin(), pendingMonsterHitVfx_.end(),
                 [clipDur](const PendingMonsterHitVfx& h) {
-                    return h.since_spawn_.getElapsedTime().asSeconds() >= clipDur + 1e-3f;
+                    return h.since_spawn_.getElapsedTime().asSeconds()
+                        >= h.playback_delay_sec + clipDur + 1e-3f;
                 }),
             pendingMonsterHitVfx_.end());
 
         for (const PendingMonsterHitVfx& h : pendingMonsterHitVfx_) {
-            const float t = h.since_spawn_.getElapsedTime().asSeconds();
+            const float elapsed = h.since_spawn_.getElapsedTime().asSeconds();
+            // 延迟窗口内不得绘制：此前用 max(0,elapsed-delay) 会在整段延迟内反复画 fi=0，造成「铁甲动画刚起怪物已冒特效」
+            if (elapsed < h.playback_delay_sec)
+                continue;
+            const float t = elapsed - h.playback_delay_sec;
             size_t fi = static_cast<size_t>(t / secPf);
             if (nframes == 0)
                 continue;
@@ -5358,7 +5611,6 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         try {
             namespace fs = std::filesystem;
             const char* const candidates[] = {
-                "E:/vfx/block_1",
                 "assets/vfx/block_1",
             };
             for (const char* dirUtf8 : candidates) {
@@ -5525,10 +5777,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             }
         }
         float modelTop = modelCenterY - MODEL_TOP_OFFSET;    // 模型上边，固定不变
-        playerModelRect_ = sf::FloatRect(
-            sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop),
-            sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H)
-        );
+        // playerModelRect_ 在算出 breathT 后与怪物槽位一同更新（含轻微呼吸缩放）
         // 玩家立绘延后：先算怪槽位与脚下力量层，再与怪立绘一起在 strength 之上绘制
 
         sf::Text playerLabel(fontForChinese(), sf::String(L"玩家"), 20);  // 玩家标签
@@ -5856,25 +6105,81 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
             monsterModelRects_.push_back(
                 sf::FloatRect(sf::Vector2f(modelLeft, modelTopLocal), sf::Vector2f(drawW, drawH)));
         }
+        const float playerModelFootY = modelTop + MODEL_PLACEHOLDER_H;
+        const float player_breath_idle =
+            1.f
+            + MONSTER_BREATH_SCALE_AMP
+                  * std::sin(breathT * MONSTER_BREATH_SPEED + PLAYER_BREATH_PHASE);
+        {
+            const float pw = MODEL_PLACEHOLDER_W * player_breath_idle;
+            const float ph = MODEL_PLACEHOLDER_H * player_breath_idle;
+            playerModelRect_ = sf::FloatRect(
+                sf::Vector2f(playerCenterX - pw * 0.5f, playerModelFootY - ph), sf::Vector2f(pw, ph));
+        }
         // 力量脚下层：先于玩家/怪物立绘，使光效在脚底与地面一侧
         spawn_and_draw_strength_vfx_(window, s);
         {
-            auto pit = playerTextures_.find(s.character);
-            if (pit != playerTextures_.end()) {
-                sf::Sprite playerSprite(pit->second);
-                const sf::FloatRect texRect = playerSprite.getLocalBounds();
-                const float scaleX = (texRect.size.x > 0.f) ? (MODEL_PLACEHOLDER_W / texRect.size.x) : 1.f;
-                const float scaleY = (texRect.size.y > 0.f) ? (MODEL_PLACEHOLDER_H / texRect.size.y) : 1.f;
-                playerSprite.setScale(sf::Vector2f(scaleX, scaleY));
-                playerSprite.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
-                window.draw(playerSprite);
-            } else {
-                sf::RectangleShape playerModel(sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
-                playerModel.setPosition(sf::Vector2f(playerCenterX - MODEL_PLACEHOLDER_W * 0.5f, modelTop));
-                playerModel.setFillColor(sf::Color(60, 55, 70));
-                playerModel.setOutlineColor(sf::Color(100, 95, 110));
-                playerModel.setOutlineThickness(1.f);
-                window.draw(playerModel);
+            bool drewAttackAnim = false;
+            const auto& ironclad_atk_frames = ironclad_attack_anim_frames_ref_();
+            if (s.character == "Ironclad" && ironcladAttackAnimPlaying_ && !ironclad_atk_frames.empty()) {
+                const size_t nframes = ironclad_atk_frames.size();
+                const float clipDur =
+                    battle_vfx_clip_duration_sec(nframes) * IRONCLAD_ATTACK_ANIM_DURATION_MUL;
+                const float t = ironcladAttackAnimClock_.getElapsedTime().asSeconds();
+                if (t >= clipDur - 1e-4f) {
+                    ironcladAttackAnimPlaying_ = false;
+                } else {
+                    const float secPf = battle_vfx_seconds_per_frame_for_clip(nframes, clipDur);
+                    size_t fi = static_cast<size_t>(t / secPf);
+                    if (fi >= nframes)
+                        fi = nframes - 1;
+                    const sf::Texture& atkTex = ironclad_atk_frames[fi];
+                    const auto atkSz = atkTex.getSize();
+                    if (atkSz.x > 0 && atkSz.y > 0) {
+                        sf::Sprite playerSprite(atkTex);
+                        const sf::FloatRect texRect = playerSprite.getLocalBounds();
+                        const float boxW = MODEL_PLACEHOLDER_W * IRONCLAD_ATTACK_ANIM_BOX_MUL;
+                        const float boxH = MODEL_PLACEHOLDER_H * IRONCLAD_ATTACK_ANIM_BOX_MUL;
+                        const float sx = (texRect.size.x > 0.1f) ? (boxW / texRect.size.x) : 1.f;
+                        const float sy = (texRect.size.y > 0.1f) ? (boxH / texRect.size.y) : 1.f;
+                        const float sc = std::max(sx, sy);
+                        const float liftRaw = std::min(IRONCLAD_ATTACK_ANIM_ORIGIN_LIFT_PX,
+                            std::max(0.f, texRect.size.y - 1.f));
+                        const float originY = texRect.position.y + texRect.size.y - liftRaw;
+                        playerSprite.setOrigin(
+                            sf::Vector2f(texRect.position.x + texRect.size.x * 0.5f, originY));
+                        playerSprite.setScale(sf::Vector2f(sc, sc));
+                        playerSprite.setPosition(sf::Vector2f(
+                            playerCenterX + IRONCLAD_ATTACK_ANIM_OFFSET_X_PX,
+                            modelTop + MODEL_PLACEHOLDER_H + IRONCLAD_ATTACK_ANIM_ANCHOR_DOWN_EXTRA_PX));
+                        window.draw(playerSprite);
+                        drewAttackAnim = true;
+                    }
+                }
+            }
+            if (!drewAttackAnim) {
+                auto pit = playerTextures_.find(s.character);
+                if (pit != playerTextures_.end()) {
+                    sf::Sprite playerSprite(pit->second);
+                    const sf::FloatRect texRect = playerSprite.getLocalBounds();
+                    const float baseSx = (texRect.size.x > 0.f) ? (MODEL_PLACEHOLDER_W / texRect.size.x) : 1.f;
+                    const float baseSy = (texRect.size.y > 0.f) ? (MODEL_PLACEHOLDER_H / texRect.size.y) : 1.f;
+                    const float ox = texRect.position.x + texRect.size.x * 0.5f;
+                    const float oy = texRect.position.y + texRect.size.y;
+                    playerSprite.setOrigin(sf::Vector2f(ox, oy));
+                    playerSprite.setScale(sf::Vector2f(baseSx * player_breath_idle, baseSy * player_breath_idle));
+                    playerSprite.setPosition(sf::Vector2f(playerCenterX, playerModelFootY));
+                    window.draw(playerSprite);
+                } else {
+                    sf::RectangleShape playerModel(sf::Vector2f(MODEL_PLACEHOLDER_W, MODEL_PLACEHOLDER_H));
+                    playerModel.setOrigin(sf::Vector2f(MODEL_PLACEHOLDER_W * 0.5f, MODEL_PLACEHOLDER_H));
+                    playerModel.setScale(sf::Vector2f(player_breath_idle, player_breath_idle));
+                    playerModel.setPosition(sf::Vector2f(playerCenterX, playerModelFootY));
+                    playerModel.setFillColor(sf::Color(60, 55, 70));
+                    playerModel.setOutlineColor(sf::Color(100, 95, 110));
+                    playerModel.setOutlineThickness(1.f);
+                    window.draw(playerModel);
+                }
             }
         }
         spawn_and_draw_player_block_vfx_(window, s);
@@ -6450,6 +6755,17 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         // 同一目标多个伤害错开出现：用 frames_remaining 推断“入队时长”，第 i 个需等待 i*12 帧后才显示（纯 UI 逻辑，不改结构体）
         constexpr int DAMAGE_DISPLAY_DURATION = 180;  // 与 BattleEngine 一致
         constexpr int STAGGER_FRAMES = 12;            // 同目标相邻数字间隔约 0.2 秒
+        // 铁甲攻击牌剑气：与 spawn_and_draw_monster_hit_vfx_ 中最后一道剑气的 playback_delay 对齐（约 60fps 折帧）
+        int ironclad_last_qi_damage_delay_frames = 0;
+        const auto& ironclad_atk_frames = ironclad_attack_anim_frames_ref_();
+        if (s.character == "Ironclad" && !ironclad_atk_frames.empty()) {
+            const size_t ni = ironclad_atk_frames.size();
+            const float clipIron = battle_vfx_clip_duration_sec(ni) * IRONCLAD_ATTACK_ANIM_DURATION_MUL;
+            const float delay_last_sec = clipIron + IRONCLAD_SWORD_QI_POST_SWING_GAP_SEC
+                - IRONCLAD_SWORD_QI_SCHEDULE_ADVANCE_SEC
+                + static_cast<float>(IRONCLAD_SWORD_QI_BURST_COUNT - 1) * IRONCLAD_SWORD_QI_BURST_SPACING_SEC;
+            ironclad_last_qi_damage_delay_frames = static_cast<int>(std::ceil(delay_last_sec * 60.f));
+        }
         const float damageNumSize = 42.f;  // 伤害数字的字号（字体大小）
         const float playerDamageX = playerCenterX - MODEL_PLACEHOLDER_W * 0.5f - 50.f;  // 玩家受伤数字显示在玩家模型左侧一点
         const float damageY = modelCenterY - 20.f;  // 伤害数字的垂直位置（接近模型中心略偏上）
@@ -6459,7 +6775,15 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
         const auto key = std::make_pair(ev.is_player, ev.monster_index);
         const int idx = targetIndex[key]++;  // 该目标下第几个（0,1,2...）
         const int age = DAMAGE_DISPLAY_DURATION - ev.frames_remaining;  // 入队已过帧数
-        const int ageDisplay = age - idx * STAGGER_FRAMES;
+        int ironclad_qi_extra = 0;
+        if (!ev.is_player && ev.hit_vfx && ironclad_last_qi_damage_delay_frames > 0 && ev.monster_index >= 0
+            && static_cast<size_t>(ev.monster_index) < monsterModelRects_.size()) {
+            const sf::FloatRect& mr = monsterModelRects_[static_cast<size_t>(ev.monster_index)];
+            const sf::FloatRect& pr = playerModelRect_;
+            if (pr.size.x > 1.f && pr.size.y > 1.f && mr.size.x > 1.f && mr.size.y > 1.f)
+                ironclad_qi_extra = ironclad_last_qi_damage_delay_frames;
+        }
+        const int ageDisplay = age - idx * STAGGER_FRAMES - ironclad_qi_extra;
         if (ageDisplay < 0) continue;  // 未到显示时机，跳过（错开出现）
         const int displayFrames = std::max(1, DAMAGE_DISPLAY_DURATION - idx * STAGGER_FRAMES);
         float t01 = static_cast<float>(ageDisplay) / static_cast<float>(displayFrames);
@@ -7115,7 +7439,7 @@ std::string deck_view_detail_resolve_display_id(const CardInstance& inst, bool s
     }
 
 std::vector<std::string> ui_get_all_known_potion_ids() {
-    // 与 GameFlowController::preload_battle_ui_assets 中 kPotions 一致，便于总览与资源预载对齐
+    // 全量灵液 id 列表（战斗预载已改为仅当前 Run 槽内灵液；此处仍保留全集供图鉴/调试）
     static const std::vector<std::string> kIds = {
         "attack_potion", "block_potion", "blood_potion", "dexterity_potion", "energy_potion",
         "explosion_potion", "fear_potion", "fire_potion", "focus_potion", "poison_potion",
@@ -7126,7 +7450,7 @@ std::vector<std::string> ui_get_all_known_potion_ids() {
 std::vector<std::string> ui_get_all_known_relic_ids() {
     static const std::vector<std::string> kIds = {
         "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
-        "clockwork_boots", "copper_scales", "data_disk", "hand_drum", "happy_flower", "lantern",
+        "clockwork_boots", "copper_scales", "data_disk", "happy_flower", "lantern",
         "marble_bag", "nunchaku", "orichalcum", "pen_nib", "potion_belt", "preparation_pack",
         "red_skull", "small_blood_vial", "smooth_stone", "snake_skull", "strawberry",
         "toy_ornithopter", "vajra", "relic_strength_plus"};

@@ -1,6 +1,8 @@
 #include "Common/ImagePath.hpp"
 
+#include <algorithm>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -224,6 +226,73 @@ void append_status_effect_icon_scan_roots(std::vector<std::filesystem::path>& ou
     fs::path cwd = fs::current_path(ec);
     if (!ec && !cwd.empty())
         push_from_start_dir(std::move(cwd));
+}
+
+void append_ironclad_attack_anim_dir_candidates(std::vector<std::filesystem::path>& out) {
+    std::unordered_set<std::string> seen;
+    auto try_push = [&](const fs::path& dir) {
+        std::error_code ec;
+        if (!fs::is_directory(dir, ec) || ec)
+            return;
+        fs::path canon = fs::weakly_canonical(dir, ec);
+        if (ec)
+            canon = fs::absolute(dir, ec);
+        const std::string key = canon.u8string();
+        if (!seen.insert(key).second)
+            return;
+        out.push_back(dir);
+    };
+    auto push_from_start_dir = [&](const fs::path& start) {
+        const fs::path root = find_outermost_ancestor_with_game_content_root(start);
+        if (!root.empty())
+            try_push(root / "assets" / "animations" / "Ironclad_attack");
+    };
+#ifdef _WIN32
+    if (const std::string exeDir = get_executable_directory_utf8(); !exeDir.empty())
+        push_from_start_dir(fs::u8path(exeDir));
+#endif
+    std::error_code ec;
+    fs::path cwd = fs::current_path(ec);
+    if (!ec && !cwd.empty())
+        push_from_start_dir(std::move(cwd));
+    try_push(fs::u8path("assets/animations/Ironclad_attack"));
+}
+
+void scan_ironclad_attack_anim_paths(std::vector<std::string>& out_utf8_paths) {
+    out_utf8_paths.clear();
+    try {
+        std::vector<fs::path> candidates;
+        append_ironclad_attack_anim_dir_candidates(candidates);
+        for (const fs::path& base : candidates) {
+            std::error_code ec;
+            if (!fs::is_directory(base, ec))
+                continue;
+            std::vector<fs::path> files;
+            for (const auto& ent : fs::directory_iterator(base, ec)) {
+                if (!ent.is_regular_file())
+                    continue;
+                std::string ext = ent.path().extension().string();
+                for (char& c : ext) {
+                    if (c >= 'A' && c <= 'Z')
+                        c = static_cast<char>(c - 'A' + 'a');
+                }
+                if (ext != ".png")
+                    continue;
+                files.push_back(ent.path());
+            }
+            if (files.empty())
+                continue;
+            std::sort(files.begin(), files.end());
+            out_utf8_paths.reserve(files.size());
+            for (const fs::path& p : files)
+                out_utf8_paths.push_back(p.generic_string());
+            return;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ImagePath] scan_ironclad_attack_anim_paths: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[ImagePath] scan_ironclad_attack_anim_paths: unknown exception\n";
+    }
 }
 
 } // namespace tce

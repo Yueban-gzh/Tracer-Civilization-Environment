@@ -30,4 +30,15 @@ std::string resolve_image_path(const std::string& base_no_ext);
  */
 void append_status_effect_icon_scan_roots(std::vector<std::filesystem::path>& out);
 
+/**
+ * 铁甲战士攻击序列帧目录：与状态图标相同，从 exe 上溯工程根、cwd、相对路径等收集候选，
+ * 避免仅依赖 cwd 时从 build/ 启动找不到 assets/animations/Ironclad_attack。
+ */
+void append_ironclad_attack_anim_dir_candidates(std::vector<std::filesystem::path>& out);
+
+/**
+ * 扫描首个可用的 Ironclad_attack 目录下 PNG（排序后 UTF-8 路径），与 BattleUI 进战斗预载规则一致。
+ */
+void scan_ironclad_attack_anim_paths(std::vector<std::string>& out_utf8_paths);
+
 } // namespace tce

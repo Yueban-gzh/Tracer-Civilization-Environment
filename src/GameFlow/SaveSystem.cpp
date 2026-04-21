@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include "DataLayer/JsonParser.h"
 
@@ -55,12 +56,27 @@ static std::filesystem::path resolve_save_path(const std::string& path) {
 std::string json_escape(const std::string& s) {
     std::string o;
     o.reserve(s.size() + 8);
-    for (char c : s) {
-        if (c == '\\' || c == '"')
+    for (unsigned char uc : s) {
+        const char c = static_cast<char>(uc);
+        if (c == '\\' || c == '"') {
             o += '\\';
-        o += c;
+            o += c;
+        } else if (c == '\n')
+            o += "\\n";
+        else if (c == '\r')
+            o += "\\r";
+        else if (c == '\t')
+            o += "\\t";
+        else
+            o += c;
     }
     return o;
+}
+
+/** 存档用节点坐标：避免 NaN/Inf 导致 lround 未定义行为 */
+static int map_coord_to_save_pxpy(float v) {
+    if (!std::isfinite(v)) return 0;
+    return static_cast<int>(std::lround(static_cast<double>(v) * 100.0));
 }
 
 const char* node_type_to_json(NodeType t) {
@@ -97,10 +113,8 @@ bool GameFlowController::saveRun(const std::string& path) const {
             fs::create_directories(dir);
         }
 
-        std::ofstream out(savePath, std::ios::binary);
-        if (!out) {
-            return false;
-        }
+        std::ostringstream oss;
+        oss.exceptions(std::ios::goodbit);
 
         // --- 固定检查点（进入节点瞬间） ---
         // 默认规则：无论在宝箱/事件/战斗等界面何时触发保存，都只写进入该节点瞬间的状态，
@@ -118,90 +132,90 @@ bool GameFlowController::saveRun(const std::string& path) const {
 
         const MapEngine::MapSnapshot snap = mapEngine_.get_map_snapshot();
 
-        out << "{\n";
-        out << "  \"schema_version\": 2,\n";
-        out << "  \"run_rng_state\": \"" << rng_state << "\",\n";
+        oss << "{\n";
+        oss << "  \"schema_version\": 2,\n";
+        oss << "  \"run_rng_state\": \"" << rng_state << "\",\n";
 
         // map：完整节点快照 + 地图配置页索引，读档后可 1:1 复现整张随机地图
-        out << "  \"map\": {\n";
-        out << "    \"page_index\": " << mapConfigManager_.getCurrentIndex() << ",\n";
-        out << "    \"total_layers\": " << snap.total_layers << ",\n";
-        out << "    \"current_layer\": " << current_layer << ",\n";
-        out << "    \"current_node_id\": \"" << json_escape(current_node_id) << "\",\n";
-        out << "    \"nodes\": [\n";
+        oss << "  \"map\": {\n";
+        oss << "    \"page_index\": " << mapConfigManager_.getCurrentIndex() << ",\n";
+        oss << "    \"total_layers\": " << snap.total_layers << ",\n";
+        oss << "    \"current_layer\": " << current_layer << ",\n";
+        oss << "    \"current_node_id\": \"" << json_escape(current_node_id) << "\",\n";
+        oss << "    \"nodes\": [\n";
         for (size_t i = 0; i < snap.all_nodes.size(); ++i) {
             const MapEngine::MapNode& n = snap.all_nodes[i];
-            if (i > 0) out << ",\n";
-            out << "      {";
-            out << "\"id\":\"" << json_escape(n.id) << "\",";
-            out << "\"type\":\"" << node_type_to_json(n.type) << "\",";
-            out << "\"content_id\":\"" << json_escape(n.content_id) << "\",";
-            out << "\"layer\":" << n.layer << ",";
-            const int px = static_cast<int>(std::lround(n.position.x * 100.0f));
-            const int py = static_cast<int>(std::lround(n.position.y * 100.0f));
-            out << "\"px\":" << px << ",\"py\":" << py << ",";
-            out << "\"prev\":[";
+            if (i > 0) oss << ",\n";
+            oss << "      {";
+            oss << "\"id\":\"" << json_escape(n.id) << "\",";
+            oss << "\"type\":\"" << node_type_to_json(n.type) << "\",";
+            oss << "\"content_id\":\"" << json_escape(n.content_id) << "\",";
+            oss << "\"layer\":" << n.layer << ",";
+            const int px = map_coord_to_save_pxpy(n.position.x);
+            const int py = map_coord_to_save_pxpy(n.position.y);
+            oss << "\"px\":" << px << ",\"py\":" << py << ",";
+            oss << "\"prev\":[";
             for (size_t j = 0; j < n.prev_nodes.size(); ++j) {
-                if (j > 0) out << ",";
-                out << "\"" << json_escape(n.prev_nodes[j]) << "\"";
+                if (j > 0) oss << ",";
+                oss << "\"" << json_escape(n.prev_nodes[j]) << "\"";
             }
-            out << "],\"next\":[";
+            oss << "],\"next\":[";
             for (size_t j = 0; j < n.next_nodes.size(); ++j) {
-                if (j > 0) out << ",";
-                out << "\"" << json_escape(n.next_nodes[j]) << "\"";
+                if (j > 0) oss << ",";
+                oss << "\"" << json_escape(n.next_nodes[j]) << "\"";
             }
-            out << "],\"is_visited\":" << (n.is_visited ? "true" : "false") << ",";
-            out << "\"is_current\":" << (n.is_current ? "true" : "false") << ",";
-            out << "\"is_reachable\":" << (n.is_reachable ? "true" : "false") << ",";
-            out << "\"is_completed\":" << (n.is_completed ? "true" : "false");
-            out << "}";
+            oss << "],\"is_visited\":" << (n.is_visited ? "true" : "false") << ",";
+            oss << "\"is_current\":" << (n.is_current ? "true" : "false") << ",";
+            oss << "\"is_reachable\":" << (n.is_reachable ? "true" : "false") << ",";
+            oss << "\"is_completed\":" << (n.is_completed ? "true" : "false");
+            oss << "}";
         }
-        out << "\n    ]\n";
-        out << "  },\n";
+        oss << "\n    ]\n";
+        oss << "  },\n";
 
         // player
-        out << "  \"player\": {\n";
-        out << "    \"name\": \"" << p.playerName << "\",\n";
-        out << "    \"character_id\": \"" << p.character << "\",\n";
-        out << "    \"current_hp\": " << p.currentHp << ",\n";
-        out << "    \"max_hp\": " << p.maxHp << ",\n";
-        out << "    \"block\": " << p.block << ",\n";
-        out << "    \"gold\": " << p.gold << ",\n";
-        out << "    \"max_energy\": " << p.maxEnergy << ",\n";
-        out << "    \"potion_slots\": " << p.potionSlotCount << ",\n";
+        oss << "  \"player\": {\n";
+        oss << "    \"name\": \"" << json_escape(p.playerName) << "\",\n";
+        oss << "    \"character_id\": \"" << json_escape(p.character) << "\",\n";
+        oss << "    \"current_hp\": " << p.currentHp << ",\n";
+        oss << "    \"max_hp\": " << p.maxHp << ",\n";
+        oss << "    \"block\": " << p.block << ",\n";
+        oss << "    \"gold\": " << p.gold << ",\n";
+        oss << "    \"max_energy\": " << p.maxEnergy << ",\n";
+        oss << "    \"potion_slots\": " << p.potionSlotCount << ",\n";
 
         // potions array
-        out << "    \"potions\": [";
+        oss << "    \"potions\": [";
         for (size_t i = 0; i < p.potions.size(); ++i) {
-            if (i > 0) out << ", ";
-            out << "\"" << p.potions[i] << "\"";
+            if (i > 0) oss << ", ";
+            oss << "\"" << json_escape(p.potions[i]) << "\"";
         }
-        out << "],\n";
+        oss << "],\n";
 
         // relics array
-        out << "    \"relics\": [";
+        oss << "    \"relics\": [";
         for (size_t i = 0; i < p.relics.size(); ++i) {
-            if (i > 0) out << ", ";
-            out << "\"" << p.relics[i] << "\"";
+            if (i > 0) oss << ", ";
+            oss << "\"" << json_escape(p.relics[i]) << "\"";
         }
-        out << "],\n";
+        oss << "],\n";
 
         // master deck（永久牌组）
-        out << "    \"master_deck\": [";
+        oss << "    \"master_deck\": [";
         if (useCheckpoint) {
             for (size_t i = 0; i < checkpointMasterDeck_.size(); ++i) {
-                if (i > 0) out << ", ";
-                out << "\"" << checkpointMasterDeck_[i] << "\"";
+                if (i > 0) oss << ", ";
+                oss << "\"" << json_escape(checkpointMasterDeck_[i]) << "\"";
             }
         } else {
             const auto& deck = cardSystem_.get_master_deck();
             for (size_t i = 0; i < deck.size(); ++i) {
-                if (i > 0) out << ", ";
-                out << "\"" << deck[i].id << "\"";
+                if (i > 0) oss << ", ";
+                oss << "\"" << json_escape(deck[i].id) << "\"";
             }
         }
-        out << "]\n";
-        out << "  },\n";
+        oss << "]\n";
+        oss << "  },\n";
 
         // --- 最后所在界面（用于读档后自动跳转）：map / battle / event / shop / rest / treasure ---
         const char* sceneStr = "map";
@@ -217,28 +231,28 @@ bool GameFlowController::saveRun(const std::string& path) const {
         }
         // 战斗胜利奖励界面：保存奖励候选与进度（点击才获得）
         if (lastSceneForSave_ == LastSceneKind::BattleReward) {
-            out << "  \"battle_reward\": {\n";
-            out << "    \"gold\": " << savedBattleRewardGold_ << ",\n";
-            out << "    \"card_picked\": " << (savedBattleRewardCardPicked_ ? "true" : "false") << ",\n";
-            out << "    \"cards\": [";
+            oss << "  \"battle_reward\": {\n";
+            oss << "    \"gold\": " << savedBattleRewardGold_ << ",\n";
+            oss << "    \"card_picked\": " << (savedBattleRewardCardPicked_ ? "true" : "false") << ",\n";
+            oss << "    \"cards\": [";
             for (size_t i = 0; i < savedBattleRewardCards_.size(); ++i) {
-                if (i > 0) out << ", ";
-                out << "\"" << json_escape(savedBattleRewardCards_[i]) << "\"";
+                if (i > 0) oss << ", ";
+                oss << "\"" << json_escape(savedBattleRewardCards_[i]) << "\"";
             }
-            out << "],\n";
-            out << "    \"relic_offers\": [";
+            oss << "],\n";
+            oss << "    \"relic_offers\": [";
             for (size_t i = 0; i < savedBattleRewardRelicOffers_.size(); ++i) {
-                if (i > 0) out << ", ";
-                out << "\"" << json_escape(savedBattleRewardRelicOffers_[i]) << "\"";
+                if (i > 0) oss << ", ";
+                oss << "\"" << json_escape(savedBattleRewardRelicOffers_[i]) << "\"";
             }
-            out << "],\n";
-            out << "    \"potion_offers\": [";
+            oss << "],\n";
+            oss << "    \"potion_offers\": [";
             for (size_t i = 0; i < savedBattleRewardPotionOffers_.size(); ++i) {
-                if (i > 0) out << ", ";
-                out << "\"" << json_escape(savedBattleRewardPotionOffers_[i]) << "\"";
+                if (i > 0) oss << ", ";
+                oss << "\"" << json_escape(savedBattleRewardPotionOffers_[i]) << "\"";
             }
-            out << "]\n";
-            out << "  },\n";
+            oss << "]\n";
+            oss << "  },\n";
         }
 
         // 宝箱房：固定本次已随机出的内容（读档后不重 roll）
@@ -260,20 +274,26 @@ bool GameFlowController::saveRun(const std::string& path) const {
                 default: return "Rare";
                 }
             };
-            out << "  \"treasure_room\": {\n";
-            out << "    \"chest_kind\": \"" << chestStr(t.chest_kind) << "\",\n";
-            out << "    \"relic_tier\": \"" << tierStr(t.relic_tier) << "\",\n";
-            out << "    \"grants_gold\": " << (t.grants_gold ? "true" : "false") << ",\n";
-            out << "    \"gold_amount\": " << t.gold_amount << ",\n";
-            out << "    \"relic_id\": \"" << json_escape(t.relic_id) << "\"\n";
-            out << "  },\n";
+            oss << "  \"treasure_room\": {\n";
+            oss << "    \"chest_kind\": \"" << chestStr(t.chest_kind) << "\",\n";
+            oss << "    \"relic_tier\": \"" << tierStr(t.relic_tier) << "\",\n";
+            oss << "    \"grants_gold\": " << (t.grants_gold ? "true" : "false") << ",\n";
+            oss << "    \"gold_amount\": " << t.gold_amount << ",\n";
+            oss << "    \"relic_id\": \"" << json_escape(t.relic_id) << "\"\n";
+            oss << "  },\n";
         }
 
-        out << "  \"last_scene\": \"" << sceneStr << "\"\n";
+        oss << "  \"last_scene\": \"" << sceneStr << "\"\n";
 
-        out << "}\n";
+        oss << "}\n";
 
-        return true;
+        const std::string json = std::move(oss).str();
+        // 先拼完整 JSON 再一次性落盘：减少 MinGW 下 path+ofstream 与长流式写入的异常崩溃风险
+        std::ofstream outFile(savePath, std::ios::binary | std::ios::trunc);
+        if (!outFile)
+            return false;
+        outFile.write(json.data(), static_cast<std::streamsize>(json.size()));
+        return static_cast<bool>(outFile.good());
     } catch (...) {
         return false;
     }

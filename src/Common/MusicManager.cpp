@@ -1,4 +1,4 @@
-﻿#include "Common/MusicManager.hpp"
+#include "Common/MusicManager.hpp"
 #include "Common/UserSettings.hpp"
 
 #include <SFML/Audio/Listener.hpp>
@@ -18,6 +18,21 @@ bool ext_supported(const fs::path& p) {
     for (char& c : e)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return e == ".mp4" || e == ".mp3" || e == ".ogg" || e == ".flac" || e == ".wav";
+}
+
+/** 文件名（stem）是否以 ASCII 前缀开头，ASCII 字母不区分大小写（用于 boss_bgm*） */
+bool stem_starts_with_ascii_ci(const fs::path& p, const char* prefix) {
+    const std::string s = p.stem().u8string();
+    const size_t      n = std::strlen(prefix);
+    if (n == 0 || s.size() < n) return false;
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char a = static_cast<unsigned char>(s[i]);
+        unsigned char b = static_cast<unsigned char>(prefix[i]);
+        if (a >= 'A' && a <= 'Z') a = static_cast<unsigned char>(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = static_cast<unsigned char>(b - 'A' + 'a');
+        if (a != b) return false;
+    }
+    return true;
 }
 
 bool stem_equals_ascii_ci(const fs::path& p, const char* asciiStem) {
@@ -77,6 +92,8 @@ void MusicManager::scanAssets() {
         music_.stop();
         activeKind_ = ActiveKind::None;
         activePath_.clear();
+        normalBattlePaths_.clear();
+        bossBattlePaths_.clear();
         return;
     }
 
@@ -92,6 +109,18 @@ void MusicManager::scanAssets() {
 
     mapPath_ = pick_map_track(allPaths_);
     build_battle_list(allPaths_, mapPath_, battlePaths_);
+
+    normalBattlePaths_.clear();
+    bossBattlePaths_.clear();
+    for (const fs::path& p : battlePaths_) {
+        if (stem_starts_with_ascii_ci(p, "boss_bgm"))
+            bossBattlePaths_.push_back(p);
+        else
+            normalBattlePaths_.push_back(p);
+    }
+    // 若全部文件都用了 boss_bgm 前缀，小怪战仍应用整池，避免无曲可播
+    if (normalBattlePaths_.empty() && !battlePaths_.empty())
+        normalBattlePaths_ = battlePaths_;
 
     if (allPaths_.empty()) {
         music_.stop();
@@ -138,9 +167,16 @@ void MusicManager::stopMusic() {
     music_.stop();
 }
 
-void MusicManager::playRandomBattleMusic() {
-    const auto& pool = battlePaths_;
-    if (pool.empty()) {
+void MusicManager::playRandomBattleMusic(bool boss_node) {
+    const std::vector<fs::path>* pool = nullptr;
+    if (boss_node && !bossBattlePaths_.empty())
+        pool = &bossBattlePaths_;
+    else if (!normalBattlePaths_.empty())
+        pool = &normalBattlePaths_;
+    else if (!battlePaths_.empty())
+        pool = &battlePaths_;
+
+    if (pool == nullptr || pool->empty()) {
         playMapMusic();
         return;
     }
@@ -148,12 +184,12 @@ void MusicManager::playRandomBattleMusic() {
         std::random_device rd;
         return std::mt19937(rd());
     }()};
-    const int n = static_cast<int>(pool.size());
+    const int n = static_cast<int>(pool->size());
     std::uniform_int_distribution<int> dist(0, n - 1);
     const int start = dist(pickGen);
     for (int k = 0; k < n; ++k) {
         const int i = (start + k) % n;
-        if (tryPlayFile(pool[static_cast<size_t>(i)], ActiveKind::Battle)) return;
+        if (tryPlayFile((*pool)[static_cast<size_t>(i)], ActiveKind::Battle)) return;
     }
     playMapMusic();
 }

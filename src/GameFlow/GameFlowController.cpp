@@ -24,6 +24,7 @@
 #include "Cheat/CheatPanel.hpp"
 #include "DataLayer/DataLayer.hpp"
 #include "Common/ImagePath.hpp"
+#include "Common/IroncladAttackAnimMapCache.hpp"
 #include "Common/UserSettings.hpp"
 #include "DataLayer/JsonParser.h"
 #include "Effects/CardEffects.hpp"
@@ -621,7 +622,6 @@ std::string relic_name_cn(const std::string& id) {
     if (id == "vajra") return "金刚杵";
     if (id == "nunchaku") return "双截棍";
     if (id == "ceramic_fish") return "陶瓷小鱼";
-    if (id == "hand_drum") return "手摇鼓";
     if (id == "pen_nib") return "钢笔尖";
     if (id == "toy_ornithopter") return "玩具扑翼飞机";
     if (id == "preparation_pack") return "准备背包";
@@ -697,8 +697,11 @@ static bool preload_intention_icons_from_data_map(BattleUI& ui) {
     return n > 0;
 }
 
-/** 预加载战斗 UI：玩家立绘、遗物/灵液、怪物意图图标（支持 .png / .jpg / .jpeg）。 */
-void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
+/** 预加载战斗 UI：玩家立绘、当前 Run 的遗物/灵液、怪物意图图标（支持 .png / .jpg / .jpeg）。 */
+void preload_battle_ui_assets(BattleUI& ui,
+                              const std::string& character_id,
+                              const std::vector<std::string>& relic_ids,
+                              const std::vector<std::string>& potion_ids) {
     if (const std::string playerPath = resolve_image_path("assets/player/" + character_id); !playerPath.empty()) {
         ui.loadPlayerTexture(character_id, playerPath);
     }
@@ -724,24 +727,16 @@ void preload_battle_ui_assets(BattleUI& ui, const std::string& character_id) {
             }
         }
     }
-    static const std::vector<std::string> kRelics = {
-        "akabeko", "anchor", "art_of_war", "burning_blood", "centennial_puzzle", "ceramic_fish",
-        "clockwork_boots", "copper_scales", "data_disk", "hand_drum", "happy_flower", "lantern",
-        "marble_bag", "nunchaku", "orichalcum", "pen_nib", "potion_belt", "preparation_pack",
-        "red_skull", "small_blood_vial", "smooth_stone", "snake_skull", "strawberry",
-        "toy_ornithopter", "vajra", "relic_strength_plus"
-    };
-    static const std::vector<std::string> kPotions = {
-        "attack_potion", "block_potion", "blood_potion", "dexterity_potion", "energy_potion",
-        "explosion_potion", "fear_potion", "fire_potion", "focus_potion", "poison_potion",
-        "speed_potion", "steroid_potion", "strength_potion", "swift_potion", "weak_potion"
-    };
-    for (const auto& rid : kRelics) {
+    for (const auto& rid : relic_ids) {
+        if (rid.empty())
+            continue;
         if (const std::string path = resolve_image_path("assets/relics/" + rid); !path.empty()) {
             ui.loadRelicTexture(rid, path);
         }
     }
-    for (const auto& pid : kPotions) {
+    for (const auto& pid : potion_ids) {
+        if (pid.empty())
+            continue;
         if (const std::string path = resolve_image_path("assets/potions/" + pid); !path.empty()) {
             ui.loadPotionTexture(pid, path);
         }
@@ -960,8 +955,15 @@ GameFlowController::GameFlowController(sf::RenderWindow& window)
     , hudBattleUi_(static_cast<unsigned>(window.getSize().x),
                    static_cast<unsigned>(window.getSize().y)) {}
 
-void GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings& ctx) {
-    if (!UserSettings::instance().consumeVideoApplyPending()) return;
+GameFlowController::~GameFlowController() = default;
+
+void GameFlowController::tick_ironclad_attack_anim_map_preload_frame(int max_textures) {
+    (void)window_.setActive(true);
+    ironclad_attack_anim_map_cache_tick(window_, playerState_.character, max_textures);
+}
+
+bool GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings& ctx) {
+    if (!UserSettings::instance().consumeVideoApplyPending()) return false;
     try {
         UserSettings::instance().applyVideoModeToWindow(window_, ctx);
         const auto sz = window_.getSize();
@@ -969,6 +971,7 @@ void GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings
         // window.create 会重建 OpenGL 上下文，此前加载的 sf::Texture 全部失效；须重载地图与 HUD 贴图与字体。
         mapUI_.reloadGraphicsAfterWindowRecreate();
         hudBattleUi_.clear_gpu_cached_textures();
+        ironclad_attack_anim_map_cache_invalidate();
         if (hudFont_.openFromFile("assets/fonts/Sanji.ttf") || hudFont_.openFromFile("data/font.ttf") ||
             hudFont_.openFromFile("C:/Windows/Fonts/msyh.ttc") || hudFont_.openFromFile("C:/Windows/Fonts/simhei.ttf") ||
             hudFont_.openFromFile("C:/Windows/Fonts/simsun.ttc")) {
@@ -979,11 +982,82 @@ void GameFlowController::applyPendingVideoAndHudResize(const sf::ContextSettings
         (void)hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
         (void)hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
         (void)window_.setActive(true);
-        preload_battle_ui_assets(hudBattleUi_, playerState_.character);
+        preload_battle_ui_assets(hudBattleUi_, playerState_.character, playerState_.relics, playerState_.potions);
+        return true;
     } catch (const std::exception& e) {
         std::cerr << "[GameFlow] applyPendingVideoAndHudResize: " << e.what() << "\n";
     } catch (...) {
         std::cerr << "[GameFlow] applyPendingVideoAndHudResize: unknown exception\n";
+    }
+    return false;
+}
+
+void GameFlowController::reload_local_battle_ui_after_gl_recreate_(BattleUI& ui,
+                                                                   const std::vector<MonsterId>* monsters,
+                                                                   int mapPage) {
+    const auto sz = window_.getSize();
+    ui.set_window_size(static_cast<unsigned>(sz.x), static_cast<unsigned>(sz.y));
+    ui.clear_gpu_cached_textures();
+    // 勿在此处 ironclad_attack_anim_map_cache_invalidate：本函数每场战斗都会调用，清空会丢掉
+    // 地图/会话预载并迫使进战同步解码。真正 GL 失效仅由 applyPendingVideoAndHudResize 等处 invalidate。
+    if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadFont("assets/fonts/default.ttf")) {
+            ui.loadFont("data/font.ttf");
+        }
+    }
+    if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
+        if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
+            if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
+                ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
+            }
+        }
+    }
+    preload_battle_ui_assets(ui, playerState_.character, playerState_.relics, playerState_.potions);
+    ui.warm_ironclad_attack_anim_if_ironclad(playerState_.character);
+    (void)window_.setActive(true);
+    (void)ui.try_adopt_ironclad_attack_anim_map_gpu_cache();
+    // 未 adopt/借用到完整序列时不在此阻塞：BattleUI::draw 内 tick_ironclad_attack_anim_load_ 分帧解码。
+
+    if (monsters) {
+        static const char* const kBattleBgBases[] = {
+            "assets/backgrounds/bg_xianqin",
+            "assets/backgrounds/bg_hantang",
+            "assets/backgrounds/bg_songming",
+        };
+        const std::string fallback = resolve_image_path("assets/backgrounds/bg");
+        std::string       slotPath[3];
+        for (int i = 0; i < 3; ++i) {
+            slotPath[i] = resolve_image_path(kBattleBgBases[i]);
+            if (slotPath[i].empty()) slotPath[i] = fallback;
+        }
+        std::string firstGood;
+        for (int i = 0; i < 3; ++i) {
+            if (!slotPath[i].empty()) {
+                firstGood = slotPath[i];
+                break;
+            }
+        }
+        if (!firstGood.empty()) {
+            for (int i = 0; i < 3; ++i) {
+                const std::string& p = !slotPath[i].empty() ? slotPath[i] : firstGood;
+                ui.loadBackgroundForBattle(i, p);
+            }
+            int bgIdx = mapPage;
+            if (bgIdx < 0) bgIdx = 0;
+            if (bgIdx > 2) bgIdx = 2;
+            ui.setBattleBackground(bgIdx);
+        }
+
+        for (const auto& mid : *monsters) {
+            std::string path = resolve_image_path("assets/monsters/" + mid);
+            if (path.empty()) {
+                const auto it = kMonsterImageFileAliases.find(mid);
+                if (it != kMonsterImageFileAliases.end())
+                    path = resolve_image_path("assets/monsters/" + it->second);
+            }
+            if (!path.empty())
+                ui.loadMonsterTexture(mid, path);
+        }
     }
 }
 
@@ -1098,7 +1172,7 @@ bool GameFlowController::initialize(CharacterClass cc) {
     // 顶栏/遗物栏 UI 使用与战斗一致的字体配置
     hudBattleUi_.loadFont("assets/fonts/Sanji.ttf");
     hudBattleUi_.loadChineseFont("assets/fonts/Sanji.ttf");
-    preload_battle_ui_assets(hudBattleUi_, playerState_.character);
+    preload_battle_ui_assets(hudBattleUi_, playerState_.character, playerState_.relics, playerState_.potions);
 
     statusText_ = "选择第一个节点开始爬塔。";
     // 初始检查点：即使还未进入节点，也允许写入稳定基线存档。
@@ -1229,6 +1303,8 @@ void GameFlowController::poll_map_browse_toggle(BattleUI* battleUiOrNull) {
 }
 
 void GameFlowController::run() {
+    // 铁甲攻击序列预载：不在选角后立刻阻塞；改在开场对白（及地图空闲）中分帧推进，见 BattleEntryAnimation。
+
     // 若是从读档进入（且读档记录了非地图界面），在正式进入地图循环前先跳转一次对应界面
     if (hasPendingSceneAfterLoad_) {
         hasPendingSceneAfterLoad_ = false;
@@ -1415,6 +1491,13 @@ void GameFlowController::run() {
         draw_cheat_mode_hint();
         window_.display();
 
+        {
+            const bool map_idle_for_ironclad_preload = !sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) &&
+                                                     !sf::Mouse::isButtonPressed(sf::Mouse::Button::Right);
+            if (map_idle_for_ironclad_preload)
+                ironclad_attack_anim_map_cache_tick(window_, playerState_.character, 3);
+        }
+
         if (exitToStartRequested_) {
             exitToStartRequested_ = false;
             return;  // 结束本次 run，回到 main 逻辑（开始界面）
@@ -1597,78 +1680,21 @@ void GameFlowController::resolveNode(const MapEngine::MapNode& node) {
 bool GameFlowController::runBattleScene(NodeType nodeType) {
     struct BattleMusicScope {
         MusicManager& mm;
-        explicit BattleMusicScope(MusicManager& m) : mm(m) { m.playRandomBattleMusic(); }
+        explicit BattleMusicScope(MusicManager& m, bool boss_fight) : mm(m) { m.playRandomBattleMusic(boss_fight); }
         ~BattleMusicScope() { mm.playMapMusic(); }
     };
-    const BattleMusicScope battleMusicScope(musicManager_);
+    const BattleMusicScope battleMusicScope(musicManager_, nodeType == NodeType::Boss);
 
     const int mapPage = mapConfigManager_.getCurrentIndex();
     std::vector<MonsterId> monsters = dataLayer_.roll_monsters_for_battle(mapPage, nodeType, runRng_);
 
     battleEngine_.start_battle(monsters, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
     BattleUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
-    if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
-        if (!ui.loadFont("assets/fonts/default.ttf")) {
-            ui.loadFont("data/font.ttf");
-        }
-    }
-    if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
-        if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
-            if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
-                ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
-            }
-        }
-    }
-    preload_battle_ui_assets(ui, playerState_.character);
+    reload_local_battle_ui_after_gl_recreate_(ui, &monsters, mapPage);
 
     ui.set_hide_top_right_map_button(false);
     if (map_browse_overlay_active_)
         close_map_browse_overlay(&ui);
-
-    // 战斗专用三张背景（商店/休息/事件等仍用各自界面资源，不受影响）。
-    // resolve_image_path 会依次尝试 .png / .jpg / .jpeg / .jfif（含大写），JPEG 与 PNG 均可。
-    {
-        static const char* const kBattleBgBases[] = {
-            "assets/backgrounds/bg_xianqin",
-            "assets/backgrounds/bg_hantang",
-            "assets/backgrounds/bg_songming",
-        };
-        const std::string fallback = resolve_image_path("assets/backgrounds/bg");
-        std::string slotPath[3];
-        for (int i = 0; i < 3; ++i) {
-            slotPath[i] = resolve_image_path(kBattleBgBases[i]);
-            if (slotPath[i].empty()) slotPath[i] = fallback;
-        }
-        std::string firstGood;
-        for (int i = 0; i < 3; ++i) {
-            if (!slotPath[i].empty()) {
-                firstGood = slotPath[i];
-                break;
-            }
-        }
-        if (!firstGood.empty()) {
-            for (int i = 0; i < 3; ++i) {
-                const std::string& p = !slotPath[i].empty() ? slotPath[i] : firstGood;
-                ui.loadBackgroundForBattle(i, p);
-            }
-            // 三张地图配置各对应一张战斗背景（整场不变），与 mapConfigManager 下标一致：0 先秦 / 1 汉唐 / 2 宋明
-            int bgIdx = mapPage;
-            if (bgIdx < 0) bgIdx = 0;
-            if (bgIdx > 2) bgIdx = 2;
-            ui.setBattleBackground(bgIdx);
-        }
-    }
-
-    for (const auto& mid : monsters) {
-        std::string path = resolve_image_path("assets/monsters/" + mid);
-        if (path.empty()) {
-            const auto it = kMonsterImageFileAliases.find(mid);
-            if (it != kMonsterImageFileAliases.end())
-                path = resolve_image_path("assets/monsters/" + it->second);
-        }
-        if (!path.empty())
-            ui.loadMonsterTexture(mid, path);
-    }
 
     CheatEngine cheat(&battleEngine_, &cardSystem_);
     CheatPanel cheatPanel(&cheat,
@@ -1697,7 +1723,14 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
         std::vector<InstanceId> selectedInstanceIds;
     } pendingSelectPlay;
     while (window_.isOpen() && runningBattleScene) {
-        applyPendingVideoAndHudResize(kGameUiContext);
+        if (applyPendingVideoAndHudResize(kGameUiContext)) {
+            reload_local_battle_ui_after_gl_recreate_(ui, &monsters, mapPage);
+            if (!cheatPanel.loadFont("assets/fonts/Sanji.ttf") && !cheatPanel.loadFont("assets/fonts/default.ttf")) {
+                cheatPanel.loadFont("data/font.ttf");
+            }
+            cheatPanel.set_window_size(static_cast<unsigned>(window_.getSize().x),
+                                       static_cast<unsigned>(window_.getSize().y));
+        }
         ui.set_window_size(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
         while (const std::optional ev = window_.pollEvent()) {
             if (ev->is<sf::Event::Closed>()) {
@@ -1924,7 +1957,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                             if (pendingSelectPlay.maxCount > static_cast<int>(candidates.size()))
                                 pendingSelectPlay.maxCount = static_cast<int>(candidates.size());
                             if (pendingSelectPlay.requiredCount <= 0) {
-                                battleEngine_.play_card(handIndex, targetMonsterIndex);
+                                play_card_with_ironclad_attack_anim_(ui, handIndex, targetMonsterIndex);
                                 continue;
                             }
                             pendingSelectPlay.selectedInstanceIds.clear();
@@ -1945,10 +1978,10 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                                 handIndex, pendingSelectPlay.maxCount);
                             ui.set_card_select_active(true);
                         } else {
-                            battleEngine_.play_card(handIndex, targetMonsterIndex);
+                            play_card_with_ironclad_attack_anim_(ui, handIndex, targetMonsterIndex);
                         }
                     } else {
-                        battleEngine_.play_card(handIndex, targetMonsterIndex);
+                        play_card_with_ironclad_attack_anim_(ui, handIndex, targetMonsterIndex);
                     }
                 }
             }
@@ -1979,7 +2012,7 @@ bool GameFlowController::runBattleScene(NodeType nodeType) {
                     }
                     ui.set_pending_select_ui_pile_fly(static_cast<int>(pendingSelectPlay.selectedInstanceIds.size()));
                     battleEngine_.set_effect_selected_instance_ids(pendingSelectPlay.selectedInstanceIds);
-                    battleEngine_.play_card(pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
+                    play_card_with_ironclad_attack_anim_(ui, pendingSelectPlay.playHandIndex, pendingSelectPlay.playTargetMonsterIndex);
                     pendingSelectPlay.active = false;
                     pendingSelectPlay.selectedInstanceIds.clear();
                     pendingSelectPlay.candidateInstanceIds.clear();
@@ -2188,19 +2221,7 @@ bool GameFlowController::runBattleRewardOnlyScene() {
     battleEngine_.start_battle({}, playerState_, cardSystem_.get_master_deck_card_ids(), playerState_.relics);
 
     BattleUI ui(static_cast<unsigned>(window_.getSize().x), static_cast<unsigned>(window_.getSize().y));
-    if (!ui.loadFont("assets/fonts/Sanji.ttf")) {
-        if (!ui.loadFont("assets/fonts/default.ttf")) {
-            ui.loadFont("data/font.ttf");
-        }
-    }
-    if (!ui.loadChineseFont("assets/fonts/Sanji.ttf")) {
-        if (!ui.loadChineseFont("C:/Windows/Fonts/msyh.ttc")) {
-            if (!ui.loadChineseFont("C:/Windows/Fonts/simhei.ttf")) {
-                ui.loadChineseFont("C:/Windows/Fonts/simsun.ttc");
-            }
-        }
-    }
-    preload_battle_ui_assets(ui, playerState_.character);
+    reload_local_battle_ui_after_gl_recreate_(ui, nullptr, 0);
     ui.set_hide_top_right_map_button(false);
     if (map_browse_overlay_active_)
         close_map_browse_overlay(&ui);
@@ -2215,7 +2236,15 @@ bool GameFlowController::runBattleRewardOnlyScene() {
 
     bool running = true;
     while (window_.isOpen() && running) {
-        applyPendingVideoAndHudResize(kGameUiContext);
+        if (applyPendingVideoAndHudResize(kGameUiContext)) {
+            reload_local_battle_ui_after_gl_recreate_(ui, nullptr, 0);
+            ui.set_reward_data(savedBattleRewardGold_,
+                               std::vector<std::string>(savedBattleRewardCards_),
+                               std::vector<std::string>(savedBattleRewardRelicOffers_),
+                               std::vector<std::string>(savedBattleRewardPotionOffers_));
+            ui.set_reward_screen_active(true);
+            ui.set_reward_card_picked(savedBattleRewardCardPicked_);
+        }
         const sf::Vector2f mousePos = window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
         ui.setMousePosition(mousePos);
 
@@ -2397,7 +2426,7 @@ void GameFlowController::resolveEvent(const std::string& contentId) {
             static const std::vector<RelicId> relic_pool = {
                 "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle",
                 "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull",
-                "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum",
+                "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish",
                 "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
             };
             for (int i = 0; i < count; ++i) {
@@ -2941,7 +2970,7 @@ bool GameFlowController::runEventScene(const std::string& contentId) {
                                 static const std::vector<RelicId> relic_pool = {
                                     "burning_blood", "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle",
                                     "clockwork_boots", "happy_flower", "lantern", "smooth_stone", "orichalcum", "red_skull",
-                                    "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish", "hand_drum",
+                                    "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "ceramic_fish",
                                     "pen_nib", "toy_ornithopter", "preparation_pack", "anchor", "art_of_war", "relic_strength_plus"
                                 };
                                 std::vector<std::string> gainedRelics;
@@ -3715,6 +3744,20 @@ int GameFlowController::firstAliveMonsterIndex(const BattleState& state) const {
         if (state.monsters[static_cast<size_t>(i)].currentHp > 0) return i;
     }
     return -1;
+}
+
+bool GameFlowController::play_card_with_ironclad_attack_anim_(BattleUI& ui, int handIndex, int targetMonsterIndex) {
+    const auto& hand = cardSystem_.get_hand();
+    // 仅数据层 CardType::Attack 视为「攻击牌」；技能/能力不播序列（与卡牌面板类型一致）
+    bool isAttackCard = false;
+    if (handIndex >= 0 && static_cast<size_t>(handIndex) < hand.size()) {
+        if (const CardData* cd = get_card_by_id(hand[static_cast<size_t>(handIndex)].id))
+            isAttackCard = (cd->cardType == CardType::Attack);
+    }
+    const bool ok = battleEngine_.play_card(handIndex, targetMonsterIndex);
+    if (ok && isAttackCard && playerState_.character == "Ironclad")
+        ui.notify_player_attack_card_played(playerState_.character);
+    return ok;
 }
 
 void GameFlowController::drawHud() {

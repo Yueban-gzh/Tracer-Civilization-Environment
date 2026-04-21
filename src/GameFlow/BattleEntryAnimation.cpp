@@ -70,6 +70,7 @@ namespace tce {
 
     void runStoryDialogAnimationImpl(
         sf::RenderWindow& window,
+        GameFlowController* ironclad_map_preload_host,
         const sf::Font& hudFont,
         bool hudFontLoaded,
         const std::vector<StorySceneLine>& lines,
@@ -85,6 +86,7 @@ namespace tce {
 
         sf::Clock clock;
         bool animationComplete = false;
+        int ironcladPreloadStoryFrames = 0;
 
         sf::Texture backgroundTexture;
         std::unique_ptr<sf::Sprite> backgroundSprite;
@@ -193,6 +195,13 @@ namespace tce {
             }
 
             window.display();
+
+            if (ironclad_map_preload_host) {
+                // 前若干帧每帧少解码几张，减轻卡顿；之后略加快仍控制单帧负载。
+                const int budget = (ironcladPreloadStoryFrames < 12) ? 3 : 10;
+                ironclad_map_preload_host->tick_ironclad_attack_anim_map_preload_frame(budget);
+                ++ironcladPreloadStoryFrames;
+            }
         }
     }
 
@@ -223,6 +232,7 @@ namespace tce {
         }
         runStoryDialogAnimationImpl(
             window_,
+            this,
             hudFont_,
             hudFontLoaded_,
             introText,
@@ -238,6 +248,7 @@ namespace tce {
         }
         runStoryDialogAnimationImpl(
             window_,
+            this,
             hudFont_,
             hudFontLoaded_,
             converted,

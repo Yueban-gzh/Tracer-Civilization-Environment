@@ -8,6 +8,7 @@ namespace tce {
 /**
  * 用户偏好：主音量、分辨率预设。持久化 saves/user_settings.json。
  * 分辨率需在持有 ContextSettings 的代码里调用 applyVideoModeToWindow / pollVideoApply。
+ * 预设「1920×1080」：若 getDesktopMode 恰为 1920×1080 则全屏，否则 1920×1080 窗口。
  */
 class UserSettings {
 public:

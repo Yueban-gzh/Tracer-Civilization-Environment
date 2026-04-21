@@ -141,14 +141,6 @@ public:
     }
 };
 
-class HandDrumRelic : public IBattleModifier {  // 手摇鼓：回合开始时，获得 1 层真言
-public:
-    void on_turn_start_player(BattleState& state, TurnStartContext* /*ctx*/) override {
-        if (state.player.currentHp <= 0) return;   // 玩家已死则跳过
-        add_or_merge_status(state.player.statuses, "mantra", 1, -1);  // 获得 1 层真言，本场战斗内有效
-    }
-};
-
 class ToyOrnithopterRelic : public IBattleModifier {  // 玩具扑翼飞机：每使用一瓶灵液，回复 5 点生命
 public:
     void on_potion_used(BattleState& state, PotionId /*id*/) override {
@@ -298,8 +290,6 @@ create_relic_modifiers(const std::vector<RelicId>& relics) {
             out.push_back(std::make_shared<VajraRelic>());
         } else if (id == "nunchaku") {
             out.push_back(std::make_shared<NunchakuRelic>());
-        } else if (id == "hand_drum") {
-            out.push_back(std::make_shared<HandDrumRelic>());
         } else if (id == "pen_nib") {
             out.push_back(std::make_shared<PenNibRelic>());
         } else if (id == "toy_ornithopter") {

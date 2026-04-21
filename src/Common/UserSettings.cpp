@@ -90,6 +90,8 @@ std::wstring UserSettings::videoPresetLabelForIndex(int index) const {
     if (index >= kVideoModeCount) index = kVideoModeCount - 1;
     const VideoModeEntry& m = kVideoModes[static_cast<size_t>(index)];
     if (m.fullscreen) return L"全屏（桌面分辨率）";
+    if (m.w == 1920u && m.h == 1080u)
+        return L"1920 × 1080（本机 1080p 全屏，否则窗口）";
     return std::to_wstring(m.w) + L" × " + std::to_wstring(m.h) + L"（窗口）";
 }
 
@@ -103,9 +105,22 @@ void UserSettings::applyAudio() const {
 
 void UserSettings::applyVideoModeToWindow(sf::RenderWindow& window, const sf::ContextSettings& ctx) const {
     const VideoModeEntry& m = kVideoModes[static_cast<size_t>(video_preset_)];
+    const sf::VideoMode dm = sf::VideoMode::getDesktopMode();
+    const bool desktop_is_1920_1080 = (dm.size.x == 1920u && dm.size.y == 1080u);
+
     if (m.fullscreen) {
-        const sf::VideoMode dm = sf::VideoMode::getDesktopMode();
         window.create(dm, "Tracer Civilization", sf::State::Fullscreen, ctx);
+    } else if (m.w == 1920u && m.h == 1080u) {
+        // 设计分辨率：主显示器桌面恰为 1920×1080 时全屏；否则固定 1920×1080 窗口
+        if (desktop_is_1920_1080) {
+            window.create(dm, "Tracer Civilization", sf::State::Fullscreen, ctx);
+        } else {
+            window.create(sf::VideoMode({1920u, 1080u}),
+                          "Tracer Civilization",
+                          sf::Style::Close | sf::Style::Titlebar,
+                          sf::State::Windowed,
+                          ctx);
+        }
     } else {
         window.create(sf::VideoMode({m.w, m.h}),
                       "Tracer Civilization",

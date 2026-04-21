@@ -9,6 +9,7 @@
 #include "../CardSystem/CardSystem.hpp"         // 卡牌实例、牌组视图
 #include <SFML/Graphics.hpp>                    // 窗口、字体、图形绘制
 #include <array>
+#include <memory>
 #include <string>                               // 字符串
 #include <unordered_map>                        // 怪物 id→纹理 缓存
 #include <unordered_set>                        // 抽/弃牌动画：隐藏飞行中的手牌实例
@@ -19,6 +20,7 @@ namespace tce {
 class BattleUI {
 public:
     BattleUI(unsigned width, unsigned height);  // 构造：传入窗口宽高
+    ~BattleUI();
     void set_window_size(unsigned width, unsigned height);
 
     bool loadFont(const std::string& path);     // 加载主字体（英文/数字）
@@ -45,6 +47,24 @@ public:
 
     /** OpenGL 上下文重建（分辨率应用、全屏切换）后丢弃缓存纹理；调用方须再 loadFont 并预载 UI 资源 */
     void clear_gpu_cached_textures();
+
+    /**
+     * 成功打出攻击牌后由主流程调用：当前仅铁甲战士会在战场中央用序列帧短暂替换静态立绘，
+     * 播放结束后自动恢复（资源目录见 assets/animations/README.txt）。
+     */
+    void notify_player_attack_card_played(const std::string& character_id);
+    /** 进入战斗后尽早调用：在主线程预载攻击序列 PNG，避免首张攻击牌出牌瞬间同步解码造成卡顿 */
+    void warm_ironclad_attack_anim_if_ironclad(const std::string& character_id);
+    /**
+     * 在 warm 之后调用：铁甲时在本线程一次性解码并上传全部攻击序列帧。
+     * 若地图界面已通过独立 GPU 缓存预载完毕，可先 try_adopt_ironclad_attack_anim_map_gpu_cache 以跳过本调用。
+     */
+    void preload_ironclad_attack_anim_blocking();
+    /**
+     * warm 已扫描路径后调用：合并地图空闲时写入的 Ironclad 攻击序列 GPU 缓存（路径须一致）。
+     * @return true 表示已全部载入，无需再 preload_ironclad_attack_anim_blocking。
+     */
+    bool try_adopt_ironclad_attack_anim_map_gpu_cache();
 
     bool handleEvent(const sf::Event& ev, const sf::Vector2f& mousePos);  // 处理事件，返回 true 表示点击了结束回合
     void setMousePosition(sf::Vector2f pos);    // 设置鼠标位置（用于悬停高亮）
@@ -165,14 +185,19 @@ private:
                             const CardInstance* handInst = nullptr,
                             std::vector<CardGlossaryEntry>* card_glossary_out = nullptr);
     void drawBattleCenter(sf::RenderWindow& window, const BattleStateSnapshot& s);  // 战场中心：玩家、怪物、意图
-    void ensure_monster_hit_vfx_frames_();   // 懒加载命中特效帧图（测试路径 E:/vfx/attack_1 等）
-    void ensure_monster_poison_vfx_frames_(); // 懒加载中毒特效（E:/vfx/poizon_1 等）
-    void ensure_strength_vfx_frames_();       // 懒加载力量提升（E:/vfx/strength_1 等）
+    void ensure_monster_hit_vfx_frames_();   // 懒加载命中特效帧图（assets/vfx/attack_1）
+    void ensure_monster_poison_vfx_frames_(); // 懒加载中毒特效（assets/vfx/poizon_1）
+    void ensure_strength_vfx_frames_();       // 懒加载力量提升（assets/vfx/strength_1）
     void spawn_and_draw_monster_hit_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void spawn_and_draw_monster_poison_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void spawn_and_draw_strength_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
     void ensure_player_block_vfx_frames_();
     void spawn_and_draw_player_block_vfx_(sf::RenderWindow& window, const BattleStateSnapshot& s);
+    void scan_ironclad_attack_anim_paths_(std::vector<std::string>& out_utf8_paths);
+    void tick_ironclad_attack_anim_load_();
+    bool ironclad_attack_anim_disk_load_finished_() const;
+    const std::vector<sf::Texture>& ironclad_attack_anim_frames_ref_() const;
+    void ironclad_attack_anim_session_try_commit_after_load_();
     void drawBottomBar(sf::RenderWindow& window, const BattleStateSnapshot& s); // 底栏：能量、手牌、结束回合、牌堆
     /** 绘制 drawBattleCenter 期间入队的状态效果图标（应在手牌/飞牌之前调用，使手牌盖住图标） */
     void flushPendingBattleStatusIcons_(sf::RenderWindow& window);
@@ -331,6 +356,8 @@ private:
     struct PendingMonsterHitVfx {
         float     anchor_x = 0.f;
         float     anchor_y = 0.f;
+        /** 相对 since_spawn_ 延后多少秒才开始播序列（铁甲中央攻击与怪物 hit_vfx 错峰） */
+        float     playback_delay_sec = 0.f;
         sf::Clock since_spawn_{};
     };
     std::vector<PendingMonsterHitVfx> pendingMonsterHitVfx_;
@@ -345,10 +372,23 @@ private:
     std::vector<sf::Texture>         strengthVfxFrames_;
     bool                            strengthVfxTriedLoad_ = false;
 
-    // 玩家技能加格挡：block_1 序列（E:/vfx/block_1）
+    // 玩家技能加格挡：block_1 序列（assets/vfx/block_1）
     std::vector<PendingMonsterHitVfx> pendingPlayerBlockVfx_; // 复用锚点+时钟结构
     std::vector<sf::Texture>       playerBlockVfxFrames_;
     bool                            playerBlockVfxTriedLoad_ = false;
+
+    // 铁甲战士：打出攻击牌时中央立绘序列帧（assets/animations/Ironclad_attack/*.png）
+    // 磁盘/解码分摊到多帧加载，避免进战斗或出牌当帧一次性载入全部 PNG 造成长时间卡死
+    std::vector<std::string>        ironcladAttackAnimPendingPaths_;
+    size_t                          ironcladAttackAnimLoadIndex_ = 0;
+    bool                            ironcladAttackAnimIncrementalActive_ = false;
+    std::vector<sf::Texture>        ironcladAttackAnimFrames_;
+    /** 非空时与 ironcladAttackAnimFrames_ 二选一：绘制与 notify 均走共享块（跨战斗复用）。 */
+    std::shared_ptr<std::vector<sf::Texture>> ironcladAttackAnimFramesShared_{};
+    bool                            ironcladAttackAnimPlaying_ = false;
+    sf::Clock                       ironcladAttackAnimClock_{};
+    /** 进战斗后先空几帧再解码序列，避免与首帧其它载入叠在同一段卡死 */
+    int                             ironcladAttackAnimStreamDelayRemaining_ = 0;
 
     // 怪物图片缓存（monster_id -> texture），无图时用灰色占位矩形
     std::unordered_map<std::string, sf::Texture> monsterTextures_;

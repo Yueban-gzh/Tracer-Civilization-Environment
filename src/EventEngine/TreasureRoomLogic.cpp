@@ -51,7 +51,7 @@ TreasureRelicTier roll_relic_tier(RunRng& rng, TreasureChestKind kind) {
 const std::vector<RelicId>& pool_for_tier(TreasureRelicTier t) {
     static const std::vector<RelicId> common = {
         "marble_bag", "small_blood_vial", "copper_scales", "centennial_puzzle", "clockwork_boots",
-        "happy_flower", "lantern", "smooth_stone", "hand_drum", "toy_ornithopter", "ceramic_fish",
+        "happy_flower", "lantern", "smooth_stone", "toy_ornithopter", "ceramic_fish",
     };
     static const std::vector<RelicId> uncommon = {
         "red_skull", "snake_skull", "strawberry", "potion_belt", "vajra", "nunchaku", "pen_nib",

@@ -17,6 +17,7 @@ public:
     CheatPanel(CheatEngine* cheat, unsigned windowWidth, unsigned windowHeight);
     /** 尝试加载字体，返回是否成功 */
     bool loadFont(const std::string& path);
+    void set_window_size(unsigned windowWidth, unsigned windowHeight);
     /** 处理事件，返回 true 表示已消费（主循环不再传递给其他 UI） */
     bool handleEvent(const sf::Event& ev);
     /** 绘制面板（仅当可见时有效） */

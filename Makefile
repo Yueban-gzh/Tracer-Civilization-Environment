@@ -11,6 +11,7 @@ LDFLAGS   = -L $(SFML_DIR)/lib -lsfml-graphics -lsfml-window -lsfml-system -lsfm
 
 SRCS = src/main.cpp \
        src/Common/ImagePath.cpp \
+       src/Common/IroncladAttackAnimMapCache.cpp \
        src/Common/UserSettings.cpp \
        src/Common/MusicManager.cpp \
        src/UI/CardVisual.cpp \
@@ -39,6 +40,7 @@ SRCS = src/main.cpp \
        src/MapEngine/MapEngine.cpp \
        src/MapEngine/MapUI.cpp \
        src/GameFlow/GameFlowController.cpp \
+       src/GameFlow/BattleEntryAnimation.cpp \
        src/GameFlow/SaveSystem.cpp \
        src/GameFlow/CharacterSelectScreen.cpp \
        src/GameFlow/CardCatalogScreen.cpp \
@@ -64,6 +66,7 @@ $(TARGET): $(OBJS)
 
 # 头文件变更时强制重编（避免 BattleState 等结构体 ABI 不一致）
 $(OBJS): include/BattleCoreRefactor/BattleState.hpp
+$(OBJS): include/BattleEngine/BattleUI.hpp
 $(OBJS): include/EventEngine/EventShopRestUICommon.hpp
 
 run: $(TARGET)

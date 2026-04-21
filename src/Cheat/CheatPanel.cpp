@@ -22,6 +22,11 @@ static const size_t CHEAT_COMMANDS_COUNT = sizeof(CHEAT_COMMANDS) / sizeof(CHEAT
 CheatPanel::CheatPanel(CheatEngine* cheat, unsigned windowWidth, unsigned windowHeight)
     : cheat_(cheat), width_(windowWidth), height_(windowHeight) {}
 
+void CheatPanel::set_window_size(unsigned windowWidth, unsigned windowHeight) {
+    width_  = windowWidth;
+    height_ = windowHeight;
+}
+
 bool CheatPanel::loadFont(const std::string& path) {
     fontLoaded_ = font_.openFromFile(path);
     return fontLoaded_;

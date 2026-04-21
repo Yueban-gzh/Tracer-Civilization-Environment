@@ -27,7 +27,7 @@ std::wstring relic_name_w(const std::string& id) {
         {"red_skull", L"红头骨"},             {"snake_skull", L"异蛇头骨"},
         {"strawberry", L"草莓"},               {"potion_belt", L"灵液腰带"},
         {"vajra", L"金刚杵"},                  {"nunchaku", L"双截棍"},
-        {"ceramic_fish", L"陶瓷小鱼"},         {"hand_drum", L"手摇鼓"},
+        {"ceramic_fish", L"陶瓷小鱼"},
         {"pen_nib", L"钢笔尖"},               {"toy_ornithopter", L"玩具扑翼飞机"},
         {"preparation_pack", L"准备背包"},     {"anchor", L"锚"},
         {"art_of_war", L"孙子兵法"},           {"relic_strength_plus", L"力量遗物"},
