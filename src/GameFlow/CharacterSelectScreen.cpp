@@ -336,9 +336,9 @@ std::optional<CharacterClass> runCharacterSelectScreen(sf::RenderWindow& window)
             };
 
         drawCharCard(CharacterClass::Ironclad, sf::Vector2f(leftX, cy - cardH * 0.5f),
-                     L"铁甲战士", L"以力量与重甲碾碎敌人。", sf::Color(220, 80, 70), portraitIronTex, portraitIronOk);
+                     L"战士", L"以力量与重甲碾碎敌人，善于抓住敌人破绽制敌死亡。", sf::Color(220, 80, 70), portraitIronTex, portraitIronOk);
         drawCharCard(CharacterClass::Silent, sf::Vector2f(rightX, cy - cardH * 0.5f),
-                     L"静默猎手", L"以技巧与毒刃悄然取胜。", sf::Color(90, 210, 150), portraitSilentTex, portraitSilentOk);
+                     L"镖客", L"以技巧与毒刃悄然取胜，善于涣散敌人的意志制敌死亡", sf::Color(90, 210, 150), portraitSilentTex, portraitSilentOk);
 
         const float btnW = 288.f;
         const float btnH = 58.f;
