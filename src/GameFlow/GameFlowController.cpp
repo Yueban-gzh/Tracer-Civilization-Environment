@@ -1097,7 +1097,7 @@ bool GameFlowController::initialize(CharacterClass cc) {
     dataLayer_.load_events("");
     register_all_card_effects(cardSystem_);
 
-    playerState_.playerName = "Telys";
+    playerState_.playerName = "溯源者";
     playerState_.potions.clear();
     playerState_.potionSlotCount = 3;
     // Mock：开局随机 3 瓶灵液（可重复；池子与 PotionEffects 已实现效果一致）
